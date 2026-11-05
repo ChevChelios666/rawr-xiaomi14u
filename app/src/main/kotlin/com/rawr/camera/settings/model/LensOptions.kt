@@ -22,7 +22,12 @@ data class LensOptionChoice(
     /** Added to the lens's keys; a lens key with the same tag and scope is replaced. */
     val vendorKeys: List<VendorKey> = emptyList(),
     /** JSON merge patch over the lens profile (objects merge, values replace, null removes); null for none. */
-    val patch: String? = null
+    val patch: String? = null,
+    /**
+     * Other rows this choice forces, by row name to choice label (e.g. 50MP locks "Aperture" to "f/2": the
+     * full-size mode ignores aperture). A locked row's own selection is kept for when the lock goes away.
+     */
+    val locks: Map<String, String> = emptyMap()
 )
 
 /** Most rows / choices per row the capture-screen panel lays out. */
@@ -31,11 +36,37 @@ const val LENS_OPTION_MAX_CHOICES = 8
 
 fun LensProfile.selectOption(row: Int, choice: Int): LensProfile {
     if (row !in options.indices || choice !in options[row].choices.indices) return this
+    if (row in options.lockedRows(options.map { it.selected })) return this
     return copy(options = options.mapIndexed { i, o -> if (i == row) o.copy(selected = choice) else o })
 }
 
-/** Selected choice labels in row order ("f/2.8 · DCG"); empty without options. */
-fun LensProfile.optionSummary(): String = options.mapNotNull { it.selectedChoice?.label }.joinToString(" · ")
+/**
+ * Rows forced by a chosen choice in another row, as row index to choice index, for [picks] (one choice index per
+ * row). Locks from a locked row's own choice don't count; the first lock on a row wins.
+ */
+fun List<LensOption>.lockedRows(picks: List<Int>): Map<Int, Int> {
+    val locked = linkedMapOf<Int, Int>()
+    forEachIndexed { row, option ->
+        val choice = option.choices.getOrNull(picks.getOrElse(row) { 0 }) ?: option.choices.firstOrNull() ?: return@forEachIndexed
+        choice.locks.forEach { (rowName, label) ->
+            val target = indexOfFirst { it.name.trim().equals(rowName.trim(), ignoreCase = true) }
+            if (target < 0 || target == row || target in locked) return@forEach
+            val index = this[target].choices.indexOfFirst { it.label.trim().equals(label.trim(), ignoreCase = true) }
+            if (index >= 0) locked[target] = index
+        }
+    }
+    return locked
+}
+
+/** The choice each row runs with: its selection, or the choice another row locks it to. */
+fun List<LensOption>.effectivePicks(picks: List<Int> = map { it.selected }): List<Int> {
+    val locked = lockedRows(picks)
+    return indices.map { row -> locked[row] ?: picks.getOrElse(row) { 0 } }
+}
+
+/** Running choice labels in row order ("f/2.8 · DCG"); empty without options. */
+fun LensProfile.optionSummary(): String =
+    options.effectivePicks().mapIndexedNotNull { row, pick -> options[row].choices.getOrNull(pick)?.label }.joinToString(" · ")
 
 /** Structural problems with a lens's options; the merged lens is checked separately (LensOptionResolver). */
 fun validateLensOptions(options: List<LensOption>): List<String> = buildList {
@@ -55,6 +86,15 @@ fun validateLensOptions(options: List<LensOption>): List<String> = buildList {
             if (choiceLabel.isEmpty()) add("$label: every choice needs a label")
             else if (!choiceNames.add(choiceLabel.lowercase())) add("$label: two choices are labelled $choiceLabel")
             choice.vendorKeys.forEach { key -> validateVendorKey(key)?.let { add("$label · $choiceLabel: $it") } }
+            choice.locks.forEach { (rowName, lockedLabel) ->
+                val target = options.firstOrNull { it.name.trim().equals(rowName.trim(), ignoreCase = true) }
+                when {
+                    target == null -> add("$label · $choiceLabel: no option row named $rowName to lock")
+                    target === option -> add("$label · $choiceLabel: a choice can't lock its own row")
+                    target.choices.none { it.label.trim().equals(lockedLabel.trim(), ignoreCase = true) } ->
+                        add("$label · $choiceLabel: ${target.name} has no choice $lockedLabel")
+                }
+            }
         }
     }
 }

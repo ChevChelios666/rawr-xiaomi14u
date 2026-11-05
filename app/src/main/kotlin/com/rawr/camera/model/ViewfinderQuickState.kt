@@ -2,6 +2,8 @@ package com.rawr.camera.model
 
 import com.rawr.camera.settings.model.RawrMetering
 import com.rawr.camera.settings.model.SettingsValues
+import com.rawr.camera.settings.model.effectivePicks
+import com.rawr.camera.settings.model.lockedRows
 
 /** Highlight reconstruction as the viewfinder rail presents it: off, or one of the two methods. */
 enum class HighlightQuickMode { Off, Propagation, Opposed }
@@ -25,7 +27,14 @@ data class LensOptionsQuickState(
     val lensId: String,
     val options: List<com.rawr.camera.settings.model.LensOption>
 ) {
-    val summary: String get() = options.mapNotNull { it.selectedChoice?.label }.joinToString(" · ")
+    /** The choice each row runs with (a locked row shows its locked choice). */
+    val picks: List<Int> get() = options.effectivePicks()
+
+    /** Rows another chosen choice locks (e.g. Aperture while Mode is 50MP). */
+    val locked: Set<Int> get() = options.lockedRows(options.map { it.selected }).keys
+
+    val summary: String get() =
+        picks.mapIndexedNotNull { row, pick -> options[row].choices.getOrNull(pick)?.label }.joinToString(" · ")
 }
 
 /** Capture-screen projection of the settings the compact viewfinder rail edits. */

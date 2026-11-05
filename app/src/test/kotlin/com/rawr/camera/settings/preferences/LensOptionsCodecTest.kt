@@ -7,6 +7,7 @@ import com.rawr.camera.settings.model.LensProfile
 import com.rawr.camera.settings.model.VendorKey
 import com.rawr.camera.settings.model.VendorKeyScope
 import com.rawr.camera.settings.model.VendorKeyType
+import com.rawr.camera.settings.model.lockedRows
 import com.rawr.camera.settings.model.optionSummary
 import com.rawr.camera.settings.model.selectOption
 import com.rawr.camera.settings.model.validateLensOptions
@@ -126,6 +127,36 @@ class LensOptionsCodecTest {
         assertTrue(LensOptionsCodec.fromEditorText("""[{"name":"A","choices":[{"nolabel":1}]}]""").isFailure)
         assertTrue(LensOptionsCodec.fromEditorText("not json").isFailure)
         assertFalse(validateLensOptions(listOf(LensOption("A", listOf(LensOptionChoice("x"), LensOptionChoice("X"))))).isEmpty())
+    }
+
+    private val locking = main.copy(options = listOf(
+        LensOption("Aperture", listOf(aperture(1.67), LensOptionChoice("f/2"), aperture(4.0)), selected = 2),
+        mode.copy(choices = mode.choices.mapIndexed { i, c -> if (i == 2) c.copy(locks = mapOf("Aperture" to "f/2")) else c })
+    ))
+
+    @Test
+    fun lockedRowRunsWithItsLockedChoiceAndKeepsItsSelection() {
+        val fifty = locking.selectOption(1, 2)
+        val resolved = LensOptionsCodec.resolve(fifty)
+        assertFalse(resolved.vendorKeys.any { it.tag == "com.xiaomi.lens.aperture" })
+        assertEquals(mapOf(0 to 1), fifty.options.lockedRows(fifty.options.map { it.selected }))
+        assertEquals("f/2 · 50MP", fifty.optionSummary())
+        // Picking a locked row does nothing; its own selection (f/4) comes back with another mode.
+        assertEquals(fifty, fifty.selectOption(0, 0))
+        val normal = fifty.selectOption(1, 0)
+        assertEquals("f/4.0 · Normal", normal.optionSummary())
+        assertEquals(listOf(4.0), LensOptionsCodec.resolve(normal).vendorKeys.first { it.tag == "com.xiaomi.lens.aperture" }.values)
+    }
+
+    @Test
+    fun locksRoundTripAndValidate() {
+        val decoded = LensProfileCodec.decodeBackup(LensProfileCodec.encode(listOf(locking))).single()
+        assertEquals(mapOf("Aperture" to "f/2"), decoded.options[1].choices[2].locks)
+        assertTrue(validateLensOptions(locking.options).isEmpty())
+        val bad = locking.options.mapIndexed { i, o ->
+            if (i == 1) o.copy(choices = o.choices.map { it.copy(locks = mapOf("Aperture" to "f/9")) }) else o
+        }
+        assertFalse(validateLensOptions(bad).isEmpty())
     }
 
     @Test

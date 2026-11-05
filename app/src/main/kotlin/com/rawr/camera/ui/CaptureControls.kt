@@ -180,7 +180,7 @@ internal fun CaptureControls(
         )
         Shutter(
             dispatch = dispatch,
-            modifier = Modifier.align(Alignment.TopCenter).padding(top = 39.dp),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 7.dp + LensSelectorHeight),
             countingDown = state.selfTimerRemainingMs != null,
             longExposure = state.longExposure
         )
@@ -194,10 +194,10 @@ internal fun CaptureControls(
             imageUri = latestImageUri,
             onClick = onOpenLatestImage,
             onLongClick = onOpenRenderer,
-            modifier = Modifier.align(Alignment.TopStart).padding(start = 34.dp, top = 50.dp)
+            modifier = Modifier.align(Alignment.TopStart).padding(start = 34.dp, top = 18.dp + LensSelectorHeight)
         )
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(top = 50.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(top = 18.dp + LensSelectorHeight),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Spacer(Modifier.weight(1f))
@@ -268,22 +268,34 @@ internal fun LensSelector(
 ) {
     val haptics = LocalCaptureHaptics.current
     // Scrolls sideways when a long lens list exceeds the screen width.
+    // X14U build: pills big enough to hit, the selected one filled.
     Row(
         modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(3.dp)
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         state.capabilities.lenses.forEach { lens ->
             val lensSelected = state.selectedLensId == lens.id
+            val pill = androidx.compose.foundation.shape.RoundedCornerShape(18.dp)
             Box(
                 Modifier
-                    .widthIn(min = 32.dp)
-                    .height(28.dp)
+                    .widthIn(min = 46.dp)
+                    .height(36.dp)
+                    .then(
+                        if (lensSelected) {
+                            Modifier
+                                .background(CaptureColors.Accent.copy(alpha = if (enabled) .16f else .08f), pill)
+                                .border(1.dp, CaptureColors.Accent.copy(alpha = if (enabled) .8f else .3f), pill)
+                        } else {
+                            Modifier
+                        }
+                    )
                     .testTag(CaptureTestTags.lens(lens.id))
                     .then(
                         if (enabled) {
                             // Long press opens this lens's profile in settings.
                             Modifier.captureCombinedClickable(
-                                shape = CaptureTextRippleShape,
+                                shape = pill,
                                 onLongClickLabel = "${lens.displayName} lens settings",
                                 onLongClick = {
                                     haptics.selection()
@@ -303,7 +315,8 @@ internal fun LensSelector(
                         role = Role.RadioButton
                         selected = lensSelected
                         if (!enabled) disabled()
-                    },
+                    }
+                    .padding(horizontal = 10.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -314,11 +327,12 @@ internal fun LensSelector(
                         ) {
                             if (enabled) CaptureColors.Accent else CaptureColors.Accent.copy(alpha = .45f)
                         } else {
-                            Color.White.copy(alpha = if (enabled) .38f else .18f)
+                            Color.White.copy(alpha = if (enabled) .62f else .22f)
                         },
                     fontFamily = CaptureMono,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 10.sp,
+                    fontSize = 13.sp,
+                    maxLines = 1,
                     modifier = Modifier.uprightInLandscape(state.orientation)
                 )
             }

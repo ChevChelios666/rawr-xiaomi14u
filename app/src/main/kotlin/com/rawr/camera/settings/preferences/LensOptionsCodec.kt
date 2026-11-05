@@ -4,6 +4,7 @@ import com.rawr.camera.settings.model.LensOption
 import com.rawr.camera.settings.model.LensOptionChoice
 import com.rawr.camera.settings.model.LensProfile
 import com.rawr.camera.settings.model.VendorKey
+import com.rawr.camera.settings.model.effectivePicks
 import com.rawr.camera.settings.model.validateLensOptions
 import com.rawr.camera.settings.model.validateLensProfile
 import org.json.JSONArray
@@ -38,6 +39,7 @@ internal object LensOptionsCodec {
                         put(JSONObject().put("label", choice.label.trim()).apply {
                             if (choice.vendorKeys.isNotEmpty()) put("vendorKeys", LensProfileCodec.encodeKeys(choice.vendorKeys))
                             choice.patch?.let { put("patch", JSONObject(it)) }
+                            if (choice.locks.isNotEmpty()) put("locks", JSONObject().apply { choice.locks.forEach { (k, v) -> put(k, v) } })
                         })
                     }
                 }))
@@ -67,7 +69,10 @@ internal object LensOptionsCodec {
     private fun decodeChoice(o: JSONObject) = LensOptionChoice(
         label = o.getString("label").trim(),
         vendorKeys = LensProfileCodec.decodeKeys(o.optJSONArray("vendorKeys")),
-        patch = o.optJSONObject("patch")?.toString()
+        patch = o.optJSONObject("patch")?.toString(),
+        locks = o.optJSONObject("locks")?.let { l ->
+            l.keys().asSequence().associateWith { l.getString(it) }
+        }.orEmpty()
     )
 
     /**
@@ -87,6 +92,9 @@ internal object LensOptionsCodec {
             for (j in 0 until choices.length()) {
                 val choice = choices.getJSONObject(j)
                 require(choice.get("label") is String && choice.getString("label").isNotBlank()) { "Invalid choice label" }
+                choice.optJSONObject("locks")?.let { locks ->
+                    locks.keys().forEach { name -> require(locks.get(name) is String) { "Invalid lock on $name" } }
+                } ?: require(!choice.has("locks")) { "locks must be an object" }
                 val merged = choice.optJSONObject("patch")?.let { mergePatch(base, it) as JSONObject } ?: JSONObject(base.toString())
                 choice.optJSONArray("vendorKeys")?.let { keys ->
                     val all = merged.optJSONArray("vendorKeys") ?: JSONArray()
@@ -105,12 +113,16 @@ internal object LensOptionsCodec {
     /** The lens the camera runs: [lens] with every selected choice applied, without options. */
     fun resolve(lens: LensProfile): LensProfile = resolve(lens, lens.options.map { it.selected })
 
-    /** [lens] with choice [picks]`[row]` of each row applied (missing or out of range: the row's first choice). */
+    /**
+     * [lens] with choice [picks]`[row]` of each row applied (missing or out of range: the row's first choice), after
+     * locks: a row another chosen choice locks runs with the locked choice.
+     */
     fun resolve(lens: LensProfile, picks: List<Int>): LensProfile {
         if (lens.options.isEmpty()) return lens
         val base = lens.copy(options = emptyList())
+        val effective = lens.options.effectivePicks(picks)
         val chosen = lens.options.mapIndexedNotNull { row, option ->
-            option.choices.getOrNull(picks.getOrElse(row) { 0 }) ?: option.choices.firstOrNull()
+            option.choices.getOrNull(effective[row]) ?: option.choices.firstOrNull()
         }
         var json = LensProfileCodec.encodeLens(base, null)
         chosen.forEach { choice -> choice.patch?.let { json = mergePatch(json, JSONObject(it)) as JSONObject } }
@@ -173,6 +185,7 @@ internal object LensOptionsCodec {
             for (j in 0 until choices.length()) {
                 val choice = choices.getJSONObject(j)
                 if (choice.has("patch")) require(choice.get("patch") is JSONObject) { "${decoded[i].name}: patch must be an object" }
+                if (choice.has("locks")) require(choice.get("locks") is JSONObject) { "${decoded[i].name}: locks must be an object" }
                 val keys = choice.optJSONArray("vendorKeys")
                 require((keys?.length() ?: 0) == decoded[i].choices[j].vendorKeys.size) {
                     "${decoded[i].name} · ${decoded[i].choices[j].label}: a vendor key is malformed"
