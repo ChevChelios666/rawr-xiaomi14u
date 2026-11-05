@@ -115,6 +115,10 @@ internal fun PhysicalCaptureLayout(
                         onOpenLensSettings = onOpenLensSettings,
                         dcp = quick.dcps.firstOrNull { it.lensId == state.selectedLensId },
                         onSelectDcp = { file -> onQuickEvent(CaptureQuickEvent.SelectDcp(state.selectedLensId, file)) },
+                        lensOptions = quick.lensOptions,
+                        onSelectLensOption = { lensId, row, choice ->
+                            onQuickEvent(CaptureQuickEvent.SelectLensOption(lensId, row, choice))
+                        },
                         videoControls = videoControls,
                         onToggleVideoRecording = onToggleVideoRecording,
                         overlay = videoBleed,

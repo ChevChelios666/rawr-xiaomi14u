@@ -89,6 +89,8 @@ internal fun CaptureControls(
     onOpenLensSettings: (String) -> Unit = {},
     dcp: com.rawr.camera.model.DcpQuickState? = null,
     onSelectDcp: (String?) -> Unit = {},
+    lensOptions: List<com.rawr.camera.model.LensOptionsQuickState> = emptyList(),
+    onSelectLensOption: (String, Int, Int) -> Unit = { _, _, _ -> },
     videoControls: VideoControlState = VideoControlState(),
     onToggleVideoRecording: () -> Unit = {},
     /** Transparent background for floating over the 16:9 bleed (video overlay slot). */
@@ -115,6 +117,8 @@ internal fun CaptureControls(
                 state = state,
                 dispatch = dispatch,
                 onOpenLensSettings = onOpenLensSettings,
+                lensOptions = lensOptions,
+                onSelectLensOption = onSelectLensOption,
                 enabled = !recordingLock,
                 modifier = Modifier.padding(top = 2.dp)
             )
@@ -170,6 +174,8 @@ internal fun CaptureControls(
             state = state,
             dispatch = dispatch,
             onOpenLensSettings = onOpenLensSettings,
+            lensOptions = lensOptions,
+            onSelectLensOption = onSelectLensOption,
             modifier = Modifier.align(Alignment.TopCenter).padding(top = 5.dp)
         )
         Shutter(

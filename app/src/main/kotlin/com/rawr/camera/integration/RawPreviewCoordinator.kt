@@ -233,7 +233,15 @@ class RawPreviewCoordinator(application: Application) : AutoCloseable {
 
     /** Enabled lenses in order; null restores the device's built-in lenses. */
     fun setLensProfiles(lenses: List<LensProfile>?) {
-        val json = lenses?.let { LensProfileCodec.encode(it, enabledOnly = true, dcpDir = dcpDir) }
+        val json = lenses?.let { list ->
+            // Lens options: the camera runs each lens with its selected choices applied (keeps the lens id).
+            val resolved = list.map { lens ->
+                runCatching { com.rawr.camera.settings.preferences.LensOptionsCodec.resolve(lens) }
+                    .onFailure { Log.e(TAG, "lens options of ${lens.name} not applied", it) }
+                    .getOrDefault(lens.copy(options = emptyList()))
+            }
+            LensProfileCodec.encode(resolved, enabledOnly = true, dcpDir = dcpDir)
+        }
         postNative { native.setCameraProfile(nativeHandle, json ?: native.builtInCameraProfile()) }
     }
 

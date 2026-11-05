@@ -163,7 +163,9 @@ data class LensProfile(
     val session: LensSession = LensSession(),
     val request: LensRequest = LensRequest(),
     val vendorKeys: List<VendorKey> = emptyList(),
-    val image: LensImage = LensImage()
+    val image: LensImage = LensImage(),
+    /** Option rows over this lens (X14U build, LensOptions.kt); empty for a plain lens. */
+    val options: List<LensOption> = emptyList()
 ) {
     /** A lens on [cameraId] (and [physicalCameraId] inside it) with every other setting at its default. */
     constructor(name: String, cameraId: String, physicalCameraId: String = "") :
@@ -408,6 +410,7 @@ fun validateLensProfile(lens: LensProfile, others: List<LensProfile>): List<Stri
     if (session.gateHold != null && session.gateHold !in GATE_HOLDS) add("Unknown gate hold ${session.gateHold}")
     if (session.gateHold != null && session.gate.isEmpty()) add("A gate hold needs a vendor gate")
     session.workarounds.filter { it !in CAMERA_WORKAROUNDS }.forEach { add("Unknown workaround $it") }
+    addAll(validateLensOptions(lens.options))
     if (session.params == "none") {
         lens.vendorKeys
             .firstOrNull { it.enabled && (it.scope == VendorKeyScope.Session || it.scope == VendorKeyScope.SessionAndRequest) }

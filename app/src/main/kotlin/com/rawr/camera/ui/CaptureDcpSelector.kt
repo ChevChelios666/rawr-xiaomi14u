@@ -16,6 +16,8 @@ import androidx.compose.ui.unit.sp
 import com.rawr.camera.architecture.CaptureDispatch
 import com.rawr.camera.model.CaptureUiState
 import com.rawr.camera.model.DcpQuickState
+import com.rawr.camera.model.LensOptionsQuickState
+import com.rawr.camera.architecture.SelectLens
 
 /** A constant row height keeps the shutter steady when the optional DCP shortcut appears. */
 @Composable
@@ -26,11 +28,27 @@ internal fun LensAndDcpSelector(
     dcp: DcpQuickState?,
     onSelectDcp: (String?) -> Unit,
     enabled: Boolean = true,
-    onOpenLensSettings: (String) -> Unit = {}
+    onOpenLensSettings: (String) -> Unit = {},
+    lensOptions: List<LensOptionsQuickState> = emptyList(),
+    onSelectLensOption: (lensId: String, row: Int, choice: Int) -> Unit = { _, _, _ -> }
 ) {
-    Row(modifier.height(32.dp), verticalAlignment = Alignment.CenterVertically) {
+    // Lens options (X14U build): long press on a lens with options opens its options panel instead of settings.
+    var optionsFor by remember(enabled) { mutableStateOf<String?>(null) }
+    val selectedOptions = lensOptions.firstOrNull { it.lensId == state.selectedLensId }
+    Box(modifier) {
+    Row(Modifier.height(32.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.weight(1f, fill = false)) {
-            LensSelector(state, dispatch, Modifier, enabled, onOpenLensSettings)
+            LensSelector(state, dispatch, Modifier, enabled) { lensId ->
+                if (lensOptions.any { it.lensId == lensId }) {
+                    if (lensId != state.selectedLensId) dispatch(SelectLens(lensId))
+                    optionsFor = lensId
+                } else {
+                    onOpenLensSettings(lensId)
+                }
+            }
+        }
+        if (selectedOptions != null) {
+            LensOptionsButton(selectedOptions, state.orientation, enabled) { optionsFor = selectedOptions.lensId }
         }
         if (dcp != null && dcp.profiles.isNotEmpty()) {
             Box(Modifier.widthIn(max = 136.dp)) {
@@ -74,5 +92,13 @@ internal fun LensAndDcpSelector(
                 }
             }
         }
+    }
+    LensOptionsPanel(
+        expanded = optionsFor != null && enabled,
+        options = lensOptions.firstOrNull { it.lensId == optionsFor },
+        onDismiss = { optionsFor = null },
+        onSelect = { row, choice -> optionsFor?.let { onSelectLensOption(it, row, choice) } },
+        onOpenLensSettings = { optionsFor?.let(onOpenLensSettings) }
+    )
     }
 }

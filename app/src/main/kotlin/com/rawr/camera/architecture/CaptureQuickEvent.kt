@@ -9,6 +9,8 @@ import com.rawr.camera.settings.model.RawrMetering
  */
 sealed interface CaptureQuickEvent {
     data class SelectDcp(val lensId: String, val file: String?) : CaptureQuickEvent
+    /** Lens options (X14U build): choice [choice] in option row [row] of lens [lensId]. */
+    data class SelectLensOption(val lensId: String, val row: Int, val choice: Int) : CaptureQuickEvent
     data object ToggleRawrAe : CaptureQuickEvent
     data class SetMetering(val metering: RawrMetering) : CaptureQuickEvent
     data class SetHighlightMode(val mode: HighlightQuickMode) : CaptureQuickEvent

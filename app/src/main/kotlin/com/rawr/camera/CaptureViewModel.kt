@@ -9,6 +9,7 @@ import com.rawr.camera.architecture.CaptureScreenController
 import com.rawr.camera.architecture.SyncToneControls
 import com.rawr.camera.integration.DeviceLensDefaults
 import com.rawr.camera.settings.model.effectiveLensProfiles
+import com.rawr.camera.settings.model.selectOption
 import com.rawr.camera.integration.NativeCaptureScreenController
 import com.rawr.camera.integration.RawPreviewCoordinator
 import com.rawr.camera.integration.StillCaptureCoordinator
@@ -264,6 +265,11 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                     c.copy(lensProfiles = c.effectiveLensProfiles(DeviceLensDefaults.lenses).map { lens ->
                         if (lens.name == event.lensId) lens.image { selectDcp(event.file) } else lens
                     })
+                is CaptureQuickEvent.SelectLensOption -> c.lensProfiles?.let { lenses ->
+                    c.copy(lensProfiles = lenses.map { lens ->
+                        if (lens.name == event.lensId) lens.selectOption(event.row, event.choice) else lens
+                    })
+                } ?: c
                 CaptureQuickEvent.ToggleRawrAe -> c.copy(rawrAe = c.rawrAe.copy(enabled = !c.rawrAe.enabled))
                 is CaptureQuickEvent.SetMetering -> c.copy(rawrAe = c.rawrAe.copy(metering = event.metering))
                 is CaptureQuickEvent.SetHighlightMode -> {

@@ -20,12 +20,22 @@ data class DcpQuickState(
     val selectedFile: String?
 )
 
+/** A lens's option rows as the capture screen shows them (X14U build). */
+data class LensOptionsQuickState(
+    val lensId: String,
+    val options: List<com.rawr.camera.settings.model.LensOption>
+) {
+    val summary: String get() = options.mapNotNull { it.selectedChoice?.label }.joinToString(" · ")
+}
+
 /** Capture-screen projection of the settings the compact viewfinder rail edits. */
 data class ViewfinderQuickState(
     val rawrAeEnabled: Boolean = false,
     val metering: RawrMetering = RawrMetering.Matrix,
     val highlight: HighlightQuickState = HighlightQuickState(),
     val dcps: List<DcpQuickState> = emptyList(),
+    /** Lenses that have option rows. */
+    val lensOptions: List<LensOptionsQuickState> = emptyList(),
     /** Recording locks the rail like it locks the render profile. */
     val locked: Boolean = false
 )
@@ -43,6 +53,8 @@ internal fun SettingsValues.toViewfinderQuickState(
         if (isVideo) VIDEO_HIGHLIGHT_COMPRESSION_DEFAULT else PHOTO_HIGHLIGHT_COMPRESSION_DEFAULT
     return ViewfinderQuickState(
         dcps = (lensProfiles ?: deviceDefaults).map { DcpQuickState(it.name, it.image.availableDcps, it.image.dcp?.file) },
+        lensOptions = (lensProfiles ?: deviceDefaults).filter { it.options.isNotEmpty() }
+            .map { LensOptionsQuickState(it.name, it.options) },
         rawrAeEnabled = rawrAe.enabled,
         metering = rawrAe.metering,
         highlight = HighlightQuickState(

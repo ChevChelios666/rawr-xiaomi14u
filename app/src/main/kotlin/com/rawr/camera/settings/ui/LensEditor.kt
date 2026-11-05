@@ -122,7 +122,8 @@ internal fun LensEditorScreen(state: SettingsUiState, lensName: String?, dispatc
     val inventory by produceState<CameraInventory?>(null) { value = hardware.cameras() }
     val camera = inventory?.find(draft.camera.id, draft.camera.physical)
     val others = lenses.filterNot { original != null && it.name.equals(original.name, ignoreCase = true) }
-    val problems = validateLensProfile(draft, others)
+    val problems = validateLensProfile(draft, others) +
+        com.rawr.camera.settings.preferences.LensOptionsCodec.resolvedProblems(draft, others)
     val dirty = draft != initial
     val context = LocalContext.current
     val dcpFiles = remember(context) { DcpFileStore(context.applicationContext) }
@@ -229,6 +230,7 @@ internal fun LensEditorScreen(state: SettingsUiState, lensName: String?, dispatc
         CaptureGroup(draft, camera, onPickStream = { pickStream = true }) { draft = it }
         ExtendedExposureGroup(draft.image.exposure) { draft = draft.image { copy(exposure = it) } }
         VendorModeGroup(draft, camera, onEditKey = { editKey = it ?: -1 }) { draft = it }
+        LensOptionsGroup(draft) { draft = it }
         LevelsGroup(
             title = "Black & white levels",
             description = "Dynamic uses the camera's own levels. Static overrides them on every frame, " +

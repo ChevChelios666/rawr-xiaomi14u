@@ -1,4 +1,4 @@
-name: Debug build
+name: Rawr X14U build
 
 on:
   push:
@@ -44,7 +44,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: rawr-debug-${{ github.sha }}
+          name: rawr-x14u-${{ github.sha }}
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 14
 
@@ -55,11 +55,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk rawr-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk rawr-x14u.apk
           gh release delete debug --cleanup-tag --yes || true
-          gh release create debug rawr-debug.apk --prerelease --target "$GITHUB_SHA" \
-            --title "Debug build" \
-            --notes "Debug build of ${GITHUB_SHA::8}. Installs alongside release as Rawr Debug."
+          gh release create debug rawr-x14u.apk --prerelease --target "$GITHUB_SHA" \
+            --title "Rawr X14U" \
+            --notes "Rawr X14U build of ${GITHUB_SHA::8}. Installs alongside Rawr and Rawr Debug."
 
       - uses: actions/upload-artifact@v4
         if: failure()

@@ -364,6 +364,7 @@ internal object LensProfileCodec {
             objectField(image, "distortion")
             choice(image, "mirror", LensMirror.entries.map { it.wireName })
         }
+        LensOptionsCodec.validateBackup(o) { validateBackupLens(it) }
     }
 
     private fun encodeStream(choice: RawStreamChoice) = JSONObject()
@@ -371,7 +372,7 @@ internal object LensProfileCodec {
         .put("width", choice.width.coerceAtLeast(0))
         .put("height", choice.height.coerceAtLeast(0))
 
-    private fun encodeLens(lens: LensProfile, dcpDir: java.io.File?): JSONObject {
+    internal fun encodeLens(lens: LensProfile, dcpDir: java.io.File?): JSONObject {
         val streams = lens.streams
         val raw = encodeStream(streams.raw.choice).apply {
             if (streams.raw.choice.highResLive) put("highResLive", true)
@@ -469,6 +470,8 @@ internal object LensProfileCodec {
             }
             .put("vendorKeys", encodeKeys(lens.vendorKeys))
             .put("image", image)
+            // Options stay in settings and backups; the camera gets the resolved lens (LensOptionsCodec.resolve).
+            .apply { if (lens.options.isNotEmpty() && dcpDir == null) put("options", LensOptionsCodec.encode(lens.options)) }
     }
 
     private fun decodeStream(o: JSONObject?) = RawStreamChoice(
@@ -485,7 +488,7 @@ internal object LensProfileCodec {
     private fun bufferCount(stream: JSONObject?) = stream?.optJSONObject("buffers")?.optInt("count")?.coerceIn(0, 16) ?: 0
 
     /** A schema-2 lens. */
-    private fun decodeLens(o: JSONObject): LensProfile {
+    internal fun decodeLens(o: JSONObject): LensProfile {
         require(!o.has("streamUseCase")) { "streamUseCase is not a profile field; set useCase on a stream" }
         requireCurrentNames(o)
         val camera = o.getJSONObject("camera")
@@ -593,7 +596,8 @@ internal object LensProfileCodec {
                         shutterMaxNs = (e?.optLong("shutterMaxNs") ?: 0L).coerceIn(0L, EXTENDED_SHUTTER_MAX_NS)
                     )
                 }
-            )
+            ),
+            options = LensOptionsCodec.decode(o.optJSONArray("options"))
         )
     }
 
@@ -623,7 +627,7 @@ internal object LensProfileCodec {
         )
     }
 
-    private fun encodeKeys(keys: List<VendorKey>): JSONArray = JSONArray().apply {
+    internal fun encodeKeys(keys: List<VendorKey>): JSONArray = JSONArray().apply {
         keys.forEach { key ->
             put(
                 JSONObject()
@@ -636,7 +640,7 @@ internal object LensProfileCodec {
         }
     }
 
-    private fun decodeKeys(array: JSONArray?): List<VendorKey> {
+    internal fun decodeKeys(array: JSONArray?): List<VendorKey> {
         if (array == null) return emptyList()
         return (0 until array.length()).mapNotNull { i ->
             runCatching {
