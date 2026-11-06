@@ -52,7 +52,7 @@ internal fun LensAndDcpSelector(
             verticalAlignment = Alignment.CenterVertically
         ) {
             slots.forEach { (name, template) ->
-                LensOptionSlotChip(name, template, options, state.orientation, enabled) { row, choice ->
+                LensOptionSlotChip(name, template, options, enabled) { row, choice ->
                     options?.let { onSelectLensOption(it.lensId, row, choice) }
                 }
             }

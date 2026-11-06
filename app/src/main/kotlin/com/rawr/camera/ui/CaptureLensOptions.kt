@@ -39,7 +39,6 @@ import com.rawr.camera.ui.icons.outlined.Palette
 import com.rawr.camera.model.DcpQuickState
 import com.rawr.camera.settings.model.LensOption
 import com.rawr.camera.model.LensOptionsQuickState
-import com.rawr.camera.model.Orientation
 
 /** Test tags of the lens option chips (X14U build). */
 internal object LensOptionTags {
@@ -58,7 +57,6 @@ private val ChoiceShape = RoundedCornerShape(18.dp)
 @Composable
 private fun CaptureChip(
     label: String,
-    orientation: Orientation,
     enabled: Boolean,
     open: Boolean,
     accent: Boolean,
@@ -119,8 +117,8 @@ private fun CaptureChip(
             fontSize = 12.sp,
             fontFamily = CaptureMono,
             fontWeight = FontWeight.Bold,
-            color = textColor,
-            modifier = Modifier.uprightInLandscape(orientation)
+            // Always portrait: rotated, the wide labels were clipped by the chip.
+            color = textColor
         )
     }
 }
@@ -217,7 +215,6 @@ internal fun LensOptionSlotChip(
     name: String,
     template: LensOption,
     options: LensOptionsQuickState?,
-    orientation: Orientation,
     enabled: Boolean,
     onSelect: (row: Int, choice: Int) -> Unit
 ) {
@@ -227,7 +224,6 @@ internal fun LensOptionSlotChip(
     if (options == null || option == null) {
         CaptureChip(
             label = placeholderLabel(template),
-            orientation = orientation,
             enabled = false,
             open = false,
             accent = false,
@@ -244,7 +240,6 @@ internal fun LensOptionSlotChip(
         val on = pick == 1
         CaptureChip(
             label = option.name,
-            orientation = orientation,
             enabled = enabled,
             open = false,
             accent = false,
@@ -261,7 +256,6 @@ internal fun LensOptionSlotChip(
     Box {
         CaptureChip(
             label = label,
-            orientation = orientation,
             enabled = enabled && !locked,
             open = open,
             accent = true,
