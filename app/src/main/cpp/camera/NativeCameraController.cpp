@@ -944,7 +944,7 @@ struct NativeCameraController::Impl final : CameraEventSink {
                                control.capabilities.aeTargetFpsRanges.end(), [&](const auto& range) {
                                    return range[0] == recordingFpsPreference && range[1] == recordingFpsPreference;
                                }) ||
-                   recordingFpsPreference == 60;  // X14U test: 60 runs on frame duration with AE off
+                   (recordingFpsPreference == 60 && control.capabilities.sixtyFpsCapable());  // X14U
         };
         control.recordingFps = recordingFpsPreference > 0 && fixedFpsSupported() ? recordingFpsPreference : 0;
         cadencePolicy.setRecordingFps(control.recordingFps);
@@ -1745,8 +1745,9 @@ struct NativeCameraController::Impl final : CameraEventSink {
         if (cadencePolicy.videoMode() == video && cadencePolicy.videoFps() == sanitizedFps) return;
         const bool enteringVideo = video && !cadencePolicy.videoMode();
         // X14U test: 60 fps needs the session itself configured at 60 (see CameraRequestCadence.h).
-        const bool wasSixty = cadencePolicy.videoMode() && cadencePolicy.videoFps() == 60;
-        const bool sixty = video && sanitizedFps == 60;
+        const bool capable = control.capabilities.sixtyFpsCapable();
+        const bool wasSixty = capable && cadencePolicy.videoMode() && cadencePolicy.videoFps() == 60;
+        const bool sixty = capable && video && sanitizedFps == 60;
         cadencePolicy.setVideoMode(video, fps);
         control.videoMode = cadencePolicy.videoMode();
         control.videoPreviewFps = cadencePolicy.videoFps();
@@ -1792,7 +1793,7 @@ struct NativeCameraController::Impl final : CameraEventSink {
         // X14U test: no HAL advertises a 60/60 AE range here, but with AE off (rawr AE or M) the
         // frame duration alone sets the cadence, so 60 is let through and the RAW stream decides.
         if (fps < 1 || control.capabilities.exposureTimeMinNs > 1'000'000'000LL / fps ||
-            (fps != 60 &&
+            ((fps != 60 || !control.capabilities.sixtyFpsCapable()) &&
              !std::any_of(control.capabilities.aeTargetFpsRanges.begin(), control.capabilities.aeTargetFpsRanges.end(),
                           [fps](const auto& range) { return range[0] == fps && range[1] == fps; }))) {
             diag("CAMERA_RECORDING_FPS_UNSUPPORTED fps=" + std::to_string(fps));

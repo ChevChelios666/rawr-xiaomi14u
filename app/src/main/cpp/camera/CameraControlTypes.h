@@ -85,6 +85,10 @@ struct CameraControlCapabilities {
     int64_t exposureTimeMinNs = 0;
     int64_t exposureTimeMaxNs = 0;
     int64_t maxFrameDurationNs = 0;
+    // X14U: the shortest frame the configured RAW stream (format and size) supports; 0 when unknown.
+    int64_t rawMinFrameDurationNs = 0;
+    // X14U: the RAW stream can run at 60 fps (video 1080p60).
+    bool sixtyFpsCapable() const { return rawMinFrameDurationNs > 0 && rawMinFrameDurationNs <= 16'700'000; }
     // Every request must carry CONTROL_AE_TARGET_FPS_RANGE, even with AE off: the
     // vivo X300 Ultra provider crashes on a full-size mode request without it.
     bool targetFpsRangeRequired = false;

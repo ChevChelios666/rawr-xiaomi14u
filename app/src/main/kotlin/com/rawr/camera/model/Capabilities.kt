@@ -78,6 +78,8 @@ data class CameraCapabilities(
     val manualWhiteBalanceSupported: Boolean = false,
     /** The lens saves DNG only (200 MP): the output format is shown and captured as DNG. */
     val dngOnly: Boolean = false,
+    /** X14U: the lens's RAW stream can run at 60 fps, so video offers 1080p60. */
+    val videoSixtyFps: Boolean = false,
     /** The lens's camera session never delivered a frame and recovery gave up. */
     val lensUnavailable: Boolean = false,
     /** Why the last lens profile was refused (the previous one stays in force); empty when none. */

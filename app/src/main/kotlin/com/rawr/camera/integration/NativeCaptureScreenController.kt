@@ -498,6 +498,14 @@ class NativeCaptureScreenController(
         update { current ->
             prepared.project(current, focusRequestIds.get(), whiteBalanceRequestIds.get())
         }
+        // X14U: 60 fps only where the lens's RAW stream runs at 60; another lens drops to 30.
+        val projected = state.value
+        if (prepared.contextChanged && projected.captureMode == CaptureMode.Video && projected.videoFps == 60 &&
+            !projected.capabilities.videoSixtyFps) {
+            update { it.copy(videoFps = 30) }
+            coordinator.setVideoMode(true, 30)
+            onCapturePreferencesChanged(projected, state.value)
+        }
         selfTimer.reconcile()
     }
 

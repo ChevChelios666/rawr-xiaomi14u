@@ -81,6 +81,18 @@ CameraControlState readInitialCameraControlState(const ACameraMetadata* characte
         e && e->data.i64 && e->count >= 1) {
         state.capabilities.maxFrameDurationNs = e->data.i64[0];
     }
+    // X14U: fastest frame of the configured RAW stream (AIMAGE_FORMAT_RAW16 = 0x20, RAW10 = 0x25).
+    if (const auto e = entry(characteristics, ACAMERA_SCALER_AVAILABLE_MIN_FRAME_DURATIONS);
+        e && e->data.i64 && route.stream.width > 0 && route.stream.height > 0) {
+        const int64_t format = route.stream.format == geometry::RawPixelFormat::Raw10 ? 0x25 : 0x20;
+        for (uint32_t i = 0; i + 3 < e->count; i += 4) {
+            if (e->data.i64[i] == format && e->data.i64[i + 1] == int64_t(route.stream.width) &&
+                e->data.i64[i + 2] == int64_t(route.stream.height)) {
+                state.capabilities.rawMinFrameDurationNs = e->data.i64[i + 3];
+                break;
+            }
+        }
+    }
     auto& caps = state.capabilities;
     caps.advertisedSensitivityMax = caps.sensitivityMax;
     caps.advertisedExposureTimeMaxNs = caps.exposureTimeMaxNs;

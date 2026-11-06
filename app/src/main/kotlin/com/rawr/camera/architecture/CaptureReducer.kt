@@ -94,7 +94,7 @@ object CaptureReducer {
         ToggleVideoLog -> if (state.captureMode == CaptureMode.Video) state.copy(videoLogEnabled = !state.videoLogEnabled) else state
 
         CycleVideoFps -> {
-            val sixty = state.videoResolution == VideoResolutionMode.HD1080
+            val sixty = state.videoResolution == VideoResolutionMode.HD1080 && state.capabilities.videoSixtyFps
             state.copy(videoFps = when (state.videoFps) { 24 -> 30; 30 -> if (sixty) 60 else 24; else -> 24 })
         }
 

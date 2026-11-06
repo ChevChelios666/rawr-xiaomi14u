@@ -80,6 +80,7 @@ std::string serializeCameraControlState(const CameraControlState& st) {
        << ",\"spotAeActive\":" << (st.spotAeActive ? "true" : "false")
        << ",\"videoMode\":" << (st.videoMode ? "true" : "false")
        << ",\"videoPreviewFps\":" << st.videoPreviewFps
+       << ",\"videoSixtyFps\":" << (c.sixtyFpsCapable() ? "true" : "false")
        << ",\"deferredCaptureExposureNs\":" << st.deferredCaptureExposureNs
        << ",\"deferredCaptureReportedSensitivity\":" << st.deferredCaptureReportedSensitivity
        << ",\"longExposureNs\":" << st.longExposureNs << ",\"longExposureStartMs\":" << st.longExposureStartMs
