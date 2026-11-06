@@ -23,15 +23,12 @@ inline std::optional<std::array<int32_t, 2>> cameraTargetFpsRange(const CameraCo
     // A vendor sensor mode that runs at one rate (Xiaomi 75 mm 50 MP: 24 fps) keeps it on every request.
     if (state.capabilities.frameRate > 0)
         return std::array<int32_t, 2>{state.capabilities.frameRate, state.capabilities.frameRate};
-    if (state.recordingFps > 0) {
-        // X14U: an unadvertised rate (60) sends no range; AE off and the frame duration carry it.
-        const bool advertised = std::any_of(state.capabilities.aeTargetFpsRanges.begin(),
-                                            state.capabilities.aeTargetFpsRanges.end(), [&](const auto& range) {
-                                                return range[0] == state.recordingFps && range[1] == state.recordingFps;
-                                            });
-        if (state.recordingFps > 30 && !advertised) return std::nullopt;
-        return std::array<int32_t, 2>{state.recordingFps, state.recordingFps};
-    }
+    // X14U test: 60 fps is not in the advertised AE ranges, but the QTI stream-based FPS table lists
+    // 4096x2304 @ 60. The HAL picks the sensor mode from the session's AE range at configure time, so
+    // video mode at 60 asks for 60/60 on the session and on every request.
+    if (state.recordingFps == 60 || (state.recordingFps == 0 && state.videoMode && state.videoPreviewFps == 60))
+        return std::array<int32_t, 2>{60, 60};
+    if (state.recordingFps > 0) return std::array<int32_t, 2>{state.recordingFps, state.recordingFps};
     const auto& caps = state.capabilities;
     if (priorityRequested && caps.priorityAeTargetFpsMin > 0 &&
         caps.priorityAeTargetFpsMax >= caps.priorityAeTargetFpsMin) {

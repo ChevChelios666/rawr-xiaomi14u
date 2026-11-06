@@ -1744,6 +1744,9 @@ struct NativeCameraController::Impl final : CameraEventSink {
         const auto sanitizedFps = fps > 0 ? fps : 30;
         if (cadencePolicy.videoMode() == video && cadencePolicy.videoFps() == sanitizedFps) return;
         const bool enteringVideo = video && !cadencePolicy.videoMode();
+        // X14U test: 60 fps needs the session itself configured at 60 (see CameraRequestCadence.h).
+        const bool wasSixty = cadencePolicy.videoMode() && cadencePolicy.videoFps() == 60;
+        const bool sixty = video && sanitizedFps == 60;
         cadencePolicy.setVideoMode(video, fps);
         control.videoMode = cadencePolicy.videoMode();
         control.videoPreviewFps = cadencePolicy.videoFps();
@@ -1753,6 +1756,16 @@ struct NativeCameraController::Impl final : CameraEventSink {
         updatePreviewFloorLocked();
         applyHeldShutterLocked();
         submitRepeatingLocked();
+        if (wasSixty != sixty && active && !starting) {
+            diag(std::string("CAMERA_SIXTY_FPS_RESTART on=") + (sixty ? "1" : "0"));
+            active = false;
+            if (!retireSessionLocked(lock, kStopRetireTimeout, "CAMERA_SIXTY_FPS_RESTART"))
+                forceRetireSessionLocked(lock, "CAMERA_SIXTY_FPS_RESTART");
+            teardownCameraResourcesLocked(lock);
+            active = true;
+            startLocked(lock);
+            return;
+        }
         if (!video) restartForSensitivityCalibrationLocked(lock);
     }
     void setShutterAngle(double degrees) {
