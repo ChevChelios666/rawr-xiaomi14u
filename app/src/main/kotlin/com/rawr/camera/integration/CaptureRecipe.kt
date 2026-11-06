@@ -239,6 +239,8 @@ internal object CaptureRecipe {
             put("printDiffusionBloomIntensity", value.printDiffusionBloomIntensity)
             put("printDiffusionBloomSize", value.printDiffusionBloomSize)
         })
+        // X14U: the film recipe for StopBath; the DNG writer moves it into ImageDescription.
+        if (v.filmSimEnabled) put("stopbathSpektra", StopBathSpektra.block(v.filmSimLook, getJSONObject("film")))
         put("multiframe", JSONObject().apply {
             val value = v.multiframeTuning.sanitized()
             put("mergeAlgorithm", value.mergeAlgorithm.name)

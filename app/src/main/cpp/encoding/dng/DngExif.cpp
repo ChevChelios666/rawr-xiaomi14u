@@ -29,6 +29,65 @@ std::string tiffAsciiDescription(std::string text) {
     return text;
 }
 
+// X14U: the "stopbathSpektra" object of the processing recipe (CaptureRecipe.kt), or empty. The recipe is
+// compact org.json output; strings are skipped so braces inside them don't count.
+std::string recipeObject(const std::string& recipe, const std::string& key) {
+    const std::string marker = "\"" + key + "\":";
+    const size_t at = recipe.find(marker);
+    if (at == std::string::npos) return {};
+    const size_t start = at + marker.size();
+    if (start >= recipe.size() || recipe[start] != '{') return {};
+    int depth = 0;
+    bool inString = false;
+    for (size_t i = start; i < recipe.size(); ++i) {
+        const char c = recipe[i];
+        if (inString) {
+            if (c == '\\') ++i;
+            else if (c == '"') inString = false;
+        } else if (c == '"') {
+            inString = true;
+        } else if (c == '{') {
+            ++depth;
+        } else if (c == '}' && --depth == 0) {
+            return recipe.substr(start, i - start + 1);
+        }
+    }
+    return {};
+}
+
+std::string jsonString(const std::string& text) {
+    std::string out = "\"";
+    for (const char ch : text) {
+        const unsigned char c = static_cast<unsigned char>(ch);
+        if (c == '"' || c == '\\') {
+            out += '\\';
+            out += ch;
+        } else if (c == '\n') {
+            out += "\\n";
+        } else if (c == '\r') {
+            out += "\\r";
+        } else if (c == '\t') {
+            out += "\\t";
+        } else if (c < 0x20) {
+            char buf[8];
+            std::snprintf(buf, sizeof(buf), "\\u%04x", c);
+            out += buf;
+        } else {
+            out += ch;
+        }
+    }
+    return out + "\"";
+}
+
+// X14U: with film on, ImageDescription is JSON for StopBath: its Unspektrawesome-style recipe key plus Rawr's own
+// text description under "rawrDescription".
+std::string stopBathDescription(const std::string& text, const std::string& recipe) {
+    const std::string spektra = recipeObject(recipe, "stopbathSpektra");
+    if (spektra.empty()) return text;
+    return "{\"unspektrawesomeRecipe\":{\"capture\":{\"metadata\":{\"spektra\":" + spektra +
+           "}}},\"rawrDescription\":" + jsonString(text) + "}";
+}
+
 std::string exifDateTime(int y, unsigned mo, unsigned d, unsigned h, unsigned mi, unsigned s) {
     char buf[32]{};
     std::snprintf(buf, sizeof(buf), "%04d:%02u:%02u %02u:%02u:%02u", y, mo, d, h, mi, s);
@@ -88,8 +147,9 @@ void fillDngExif(TinyDngWriteParams& p, const rawrcam::imaging::RawSnapshot& fra
     p.lensMake = std::move(lens.make);
     p.lensModel = std::move(lens.model);
     p.software = rawrcam::encoding::kSoftwareName;
-    p.description = tiffAsciiDescription(captureContext.imageDescription.empty() ? rawrcam::encoding::kCapturedWith
-                                                                                 : captureContext.imageDescription);
+    p.description = tiffAsciiDescription(stopBathDescription(
+        captureContext.imageDescription.empty() ? rawrcam::encoding::kCapturedWith : captureContext.imageDescription,
+        captureContext.processingRecipe));
     switch (rawrcam::geometry::presentationQuarterTurns(ctx.geometry.sensorOrientationDegrees,
                                                         captureContext.deviceRotationDegrees)) {
         case 1u:
