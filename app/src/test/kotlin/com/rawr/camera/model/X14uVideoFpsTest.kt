@@ -3,6 +3,7 @@ package com.rawr.camera.model
 import com.rawr.camera.architecture.CaptureReducer
 import com.rawr.camera.architecture.CycleVideoFps
 import com.rawr.camera.architecture.CycleVideoResolution
+import com.rawr.camera.fixtures.CaptureFixtures
 import com.rawr.camera.video.VideoResolutionMode
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -11,7 +12,7 @@ import kotlin.test.assertEquals
 class X14uVideoFpsTest {
     @Test
     fun sixtyOnlyAt1080p() {
-        val hd = CaptureUiState(videoResolution = VideoResolutionMode.HD1080, videoFps = 30)
+        val hd = CaptureUiState(capabilities = CaptureFixtures.baseline(), videoResolution = VideoResolutionMode.HD1080, videoFps = 30)
         assertEquals(60, CaptureReducer.reduce(hd, CycleVideoFps).videoFps)
         val uhd = hd.copy(videoResolution = VideoResolutionMode.UHD4K)
         assertEquals(24, CaptureReducer.reduce(uhd, CycleVideoFps).videoFps)
