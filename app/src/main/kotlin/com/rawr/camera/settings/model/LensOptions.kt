@@ -12,7 +12,9 @@ package com.rawr.camera.settings.model
 data class LensOption(
     val name: String,
     val choices: List<LensOptionChoice>,
-    val selected: Int = 0
+    val selected: Int = 0,
+    /** Shown as an on/off chip named [name]: exactly two choices, the first is off. */
+    val toggle: Boolean = false
 ) {
     val selectedChoice: LensOptionChoice? get() = choices.getOrNull(selected) ?: choices.firstOrNull()
 }
@@ -34,10 +36,29 @@ data class LensOptionChoice(
 const val LENS_OPTION_MAX_ROWS = 4
 const val LENS_OPTION_MAX_CHOICES = 8
 
+/**
+ * Selects [choice] in [row]. If another row's choice locks [row] (DCG on locks 50 mp off), that row goes back to
+ * its first choice first, so one tap switches over (tapping 50 mp while DCG is on turns DCG off and 50 mp on).
+ */
 fun LensProfile.selectOption(row: Int, choice: Int): LensProfile {
     if (row !in options.indices || choice !in options[row].choices.indices) return this
-    if (row in options.lockedRows(options.map { it.selected })) return this
-    return copy(options = options.mapIndexed { i, o -> if (i == row) o.copy(selected = choice) else o })
+    val lockers = options.lockersOf(row, options.map { it.selected })
+    return copy(options = options.mapIndexed { i, o ->
+        when (i) {
+            row -> o.copy(selected = choice)
+            in lockers -> o.copy(selected = 0)
+            else -> o
+        }
+    })
+}
+
+/** Rows whose chosen choice locks [row], for [picks]. */
+fun List<LensOption>.lockersOf(row: Int, picks: List<Int>): Set<Int> {
+    if (row !in indices) return emptySet()
+    return indices.filter { other ->
+        other != row && (getOrNull(other)?.choices?.getOrNull(picks.getOrElse(other) { 0 })?.locks.orEmpty())
+            .keys.any { it.trim().equals(this[row].name.trim(), ignoreCase = true) }
+    }.toSet()
 }
 
 /**
@@ -47,6 +68,7 @@ fun LensProfile.selectOption(row: Int, choice: Int): LensProfile {
 fun List<LensOption>.lockedRows(picks: List<Int>): Map<Int, Int> {
     val locked = linkedMapOf<Int, Int>()
     forEachIndexed { row, option ->
+        if (row in locked) return@forEachIndexed
         val choice = option.choices.getOrNull(picks.getOrElse(row) { 0 }) ?: option.choices.firstOrNull() ?: return@forEachIndexed
         choice.locks.forEach { (rowName, label) ->
             val target = indexOfFirst { it.name.trim().equals(rowName.trim(), ignoreCase = true) }
@@ -80,6 +102,7 @@ fun validateLensOptions(options: List<LensOption>): List<String> = buildList {
         if (option.choices.isEmpty()) add("$label: add at least one choice")
         if (option.choices.size > LENS_OPTION_MAX_CHOICES) add("$label: at most $LENS_OPTION_MAX_CHOICES choices")
         if (option.choices.isNotEmpty() && option.selected !in option.choices.indices) add("$label: selected choice is out of range")
+        if (option.toggle && option.choices.size != 2) add("$label: an on/off option needs exactly two choices (off, on)")
         val choiceNames = mutableSetOf<String>()
         option.choices.forEach { choice ->
             val choiceLabel = choice.label.trim()

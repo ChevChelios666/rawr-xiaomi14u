@@ -1,6 +1,7 @@
 package com.rawr.camera.settings.preferences
 
 import com.rawr.camera.settings.model.LensProfile
+import com.rawr.camera.settings.model.selectOption
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -16,38 +17,81 @@ class X14uBackupConversionTest {
     private fun LensProfile.normalized(name: String) =
         copy(name = name, vendorKeys = vendorKeys.sortedWith(compareBy({ it.tag }, { it.scope.ordinal })), options = emptyList())
 
+    // Aperture index: 0 f/1.67, 1 f/1.8, 2 f/2 (no keys, default), 3 f/2.4, 4 f/2.8, 5 f/3.2, 6 f/4.
+    private val apertures = listOf(2 to "", 0 to " f1.67", 4 to " f2.8", 6 to " f4")
+
     @Test
     fun everyOldMainLensIsAnOptionCombination() {
-        // Aperture: f/1.67, f/2 (no keys, the default), f/2.8, f/4. Mode: Normal, DCG, ISZ, 50MP.
-        val picks = mapOf(
-            "1x" to listOf(1, 0), "1x f1.67" to listOf(0, 0), "1x f2.8" to listOf(2, 0), "1x f4" to listOf(3, 0),
-            "DCG" to listOf(1, 1), "DCG f1.67" to listOf(0, 1), "DCG f2.8" to listOf(2, 1), "DCG f4" to listOf(3, 1),
-            "2x" to listOf(1, 2), "2x f1.67" to listOf(0, 2), "2x f2.8" to listOf(2, 2), "2x f4" to listOf(3, 2),
-            "1x 50MP" to listOf(1, 3)
-        )
+        // 1x rows: Aperture, DCG (off/on), 50 mp (off/on).
         val main = new.getValue("1x")
-        assertEquals(1, main.options[0].selected, "f/2 is the default aperture")
-        for ((oldName, pick) in picks) {
+        assertEquals(listOf("Aperture", "DCG", "50 mp"), main.options.map { it.name })
+        assertEquals(2, main.options[0].selected, "f/2 is the default aperture")
+        for ((aperture, suffix) in apertures) {
+            for ((dcg, prefix) in listOf(0 to "1x", 1 to "DCG")) {
+                val oldName = prefix + suffix
+                assertEquals(
+                    old.getValue(oldName).normalized(oldName),
+                    LensOptionsCodec.resolve(main, listOf(aperture, dcg, 0)).normalized(oldName),
+                    oldName
+                )
+            }
+        }
+    }
+
+    @Test
+    fun isZoomIsItsOwnLensWithTheSameApertures() {
+        val isz = new.getValue("2x")
+        assertEquals(listOf("Aperture"), isz.options.map { it.name })
+        assertEquals(main7(), isz.options[0].choices.map { it.label })
+        for ((aperture, suffix) in apertures) {
+            val oldName = "2x$suffix"
             assertEquals(
                 old.getValue(oldName).normalized(oldName),
-                LensOptionsCodec.resolve(main, pick).normalized(oldName),
+                LensOptionsCodec.resolve(isz, listOf(aperture)).normalized(oldName),
                 oldName
             )
         }
     }
 
+    private fun main7() = listOf("f/1.67", "f/1.8", "f/2", "f/2.4", "f/2.8", "f/3.2", "f/4")
+
     @Test
-    fun fiftyMegapixelsLocksApertureToF2() {
-        // Tested on the phone: aperture keys do nothing at 50 MP, so 50MP runs at f/2 whatever Aperture says.
+    fun newAperturesCopyTheKeysWithTheirValue() {
+        val main = new.getValue("1x")
+        assertEquals(main7(), main.options[0].choices.map { it.label })
+        val reference = LensOptionsCodec.resolve(main, listOf(4, 0, 0)).vendorKeys // f/2.8, tested
+        for ((index, f) in listOf(1 to 1.8, 3 to 2.4, 5 to 3.2)) {
+            val keys = LensOptionsCodec.resolve(main, listOf(index, 0, 0)).vendorKeys
+            assertEquals(listOf(f), keys.first { it.tag == "com.xiaomi.lens.aperture" }.values)
+            assertEquals(
+                reference.filter { it.tag != "com.xiaomi.lens.aperture" },
+                keys.filter { it.tag != "com.xiaomi.lens.aperture" }
+            )
+        }
+    }
+
+    @Test
+    fun fiftyMegapixelsLocksApertureToF2AndDcgOff() {
+        // Tested on the phone: aperture keys do nothing at 50 MP, so 50 mp runs at f/2 whatever Aperture says.
         val main = new.getValue("1x")
         val fifty = old.getValue("1x 50MP").normalized("1x 50MP")
-        for (aperture in 0..3) {
-            assertEquals(fifty, LensOptionsCodec.resolve(main, listOf(aperture, 3)).normalized("1x 50MP"), "aperture $aperture")
+        for (aperture in 0..6) {
+            assertEquals(fifty, LensOptionsCodec.resolve(main, listOf(aperture, 0, 1)).normalized("1x 50MP"), "aperture $aperture")
         }
+    }
+
+    @Test
+    fun dcgAndFiftySwitchOver() {
+        val main = new.getValue("1x")
+        val dcg = main.selectOption(1, 1)
+        val fifty = dcg.selectOption(2, 1)
+        assertEquals(listOf(2, 0, 1), fifty.options.map { it.selected })
+        assertEquals(listOf(2, 1, 0), fifty.selectOption(1, 1).options.map { it.selected })
     }
 
     @Test
     fun otherLensesAreUnchanged() {
         for (name in listOf("0.5x", "3.2x", "5x", "Front")) assertEquals(old.getValue(name), new.getValue(name), name)
+        assertEquals(listOf("0.5x", "1x", "2x", "3.2x", "5x", "Front"), new.keys.toList())
     }
 }

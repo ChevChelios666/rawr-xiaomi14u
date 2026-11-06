@@ -34,6 +34,7 @@ internal object LensOptionsCodec {
             put(JSONObject()
                 .put("name", option.name.trim())
                 .put("selected", option.selected)
+                .apply { if (option.toggle) put("toggle", true) }
                 .put("choices", JSONArray().apply {
                     option.choices.forEach { choice ->
                         put(JSONObject().put("label", choice.label.trim()).apply {
@@ -60,7 +61,8 @@ internal object LensOptionsCodec {
                 LensOption(
                     name = o.getString("name").trim(),
                     choices = choices,
-                    selected = o.optInt("selected", 0).takeIf { it in choices.indices } ?: 0
+                    selected = o.optInt("selected", 0).takeIf { it in choices.indices } ?: 0,
+                    toggle = o.optBoolean("toggle", false)
                 )
             }.getOrNull()
         }
@@ -87,6 +89,7 @@ internal object LensOptionsCodec {
             val row = rows.getJSONObject(i)
             require(row.get("name") is String && row.getString("name").isNotBlank()) { "Invalid option name" }
             if (row.has("selected")) require(row.get("selected") is Number) { "Invalid option selection" }
+            if (row.has("toggle")) require(row.get("toggle") is Boolean) { "Invalid option toggle" }
             val choices = row.getJSONArray("choices")
             require(choices.length() > 0) { "An option row needs a choice" }
             for (j in 0 until choices.length()) {

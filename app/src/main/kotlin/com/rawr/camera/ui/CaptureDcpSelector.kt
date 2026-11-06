@@ -13,32 +13,34 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.rawr.camera.architecture.CaptureDispatch
 import com.rawr.camera.model.CaptureUiState
-import com.rawr.camera.model.DcpQuickState
 import com.rawr.camera.model.LensOptionsQuickState
 
 internal val LensRowHeight = 38.dp
 internal val LensRowGap = 4.dp
 
+/** X14U build: extra space between the option chips and the thumbnail/shutter row. */
+internal val ShutterRowDrop = 20.dp
+
 /** Height of both lens rows; the shutter sits below it in every layout. */
 internal val LensSelectorHeight = LensRowHeight + LensRowGap + CaptureChipHeight
 
 /**
- * X14U build: two rows. The lenses on top; below, one chip per option row of the selected lens (Aperture, Mode)
- * and its DCP. Both rows keep their height whatever the lens has, so the shutter never moves.
+ * X14U build: two rows. The lenses on top; below, the option slots (Aperture, DCG, 50 mp) that stay put on every
+ * lens, greyed where the lens doesn't have them. Both rows keep their height, so the shutter never moves. The DCP
+ * moved to a button beside FILM (DcpSidePill).
  */
 @Composable
 internal fun LensAndDcpSelector(
     state: CaptureUiState,
     dispatch: CaptureDispatch,
     modifier: Modifier,
-    dcp: DcpQuickState?,
-    onSelectDcp: (String?) -> Unit,
     enabled: Boolean = true,
     onOpenLensSettings: (String) -> Unit = {},
     lensOptions: List<LensOptionsQuickState> = emptyList(),
     onSelectLensOption: (lensId: String, row: Int, choice: Int) -> Unit = { _, _, _ -> }
 ) {
     val options = lensOptions.firstOrNull { it.lensId == state.selectedLensId }
+    val slots = lensOptionSlots(lensOptions)
     Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(Modifier.fillMaxWidth().height(LensRowHeight), contentAlignment = Alignment.Center) {
             LensSelector(state, dispatch, Modifier, enabled, onOpenLensSettings)
@@ -49,13 +51,10 @@ internal fun LensAndDcpSelector(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            options?.options?.indices?.forEach { row ->
-                LensOptionChip(options, row, state.orientation, enabled) { r, choice ->
-                    onSelectLensOption(options.lensId, r, choice)
+            slots.forEach { (name, template) ->
+                LensOptionSlotChip(name, template, options, state.orientation, enabled) { row, choice ->
+                    options?.let { onSelectLensOption(it.lensId, row, choice) }
                 }
-            }
-            if (dcp != null && dcp.profiles.isNotEmpty()) {
-                DcpChip(dcp, state.orientation, enabled, onSelectDcp)
             }
         }
     }

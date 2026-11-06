@@ -112,8 +112,6 @@ internal fun CaptureControls(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             LensAndDcpSelector(
-                dcp = dcp,
-                onSelectDcp = onSelectDcp,
                 state = state,
                 dispatch = dispatch,
                 onOpenLensSettings = onOpenLensSettings,
@@ -122,8 +120,9 @@ internal fun CaptureControls(
                 enabled = !recordingLock,
                 modifier = Modifier.padding(top = 2.dp)
             )
+            // X14U build: the thumbnail and shutter row sits ~24dp below the option chips.
             Row(
-                Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 4.dp),
+                Modifier.fillMaxWidth().padding(top = 4.dp + ShutterRowDrop, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
@@ -154,7 +153,9 @@ internal fun CaptureControls(
                 }
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     if (!isVideo) {
-                        PhotoLookToggles(state, dispatch, onOpenFilmSimSettings, onOpenMultiframeSettings)
+                        PhotoLookToggles(state, dispatch, onOpenFilmSimSettings, onOpenMultiframeSettings) {
+                            DcpSidePill(dcp, onSelectDcp) { onOpenLensSettings(state.selectedLensId) }
+                        }
                     }
                 }
             }
@@ -169,8 +170,6 @@ internal fun CaptureControls(
     }
     Box(modifier.background(CaptureColors.Surface)) {
         LensAndDcpSelector(
-            dcp = dcp,
-            onSelectDcp = onSelectDcp,
             state = state,
             dispatch = dispatch,
             onOpenLensSettings = onOpenLensSettings,
@@ -180,7 +179,7 @@ internal fun CaptureControls(
         )
         Shutter(
             dispatch = dispatch,
-            modifier = Modifier.align(Alignment.TopCenter).padding(top = 7.dp + LensSelectorHeight),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 7.dp + LensSelectorHeight + ShutterRowDrop),
             countingDown = state.selfTimerRemainingMs != null,
             longExposure = state.longExposure
         )
@@ -194,16 +193,18 @@ internal fun CaptureControls(
             imageUri = latestImageUri,
             onClick = onOpenLatestImage,
             onLongClick = onOpenRenderer,
-            modifier = Modifier.align(Alignment.TopStart).padding(start = 34.dp, top = 18.dp + LensSelectorHeight)
+            modifier = Modifier.align(Alignment.TopStart).padding(start = 34.dp, top = 18.dp + LensSelectorHeight + ShutterRowDrop)
         )
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(top = 18.dp + LensSelectorHeight),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(top = 18.dp + LensSelectorHeight + ShutterRowDrop),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Spacer(Modifier.weight(1f))
             Spacer(Modifier.width(CaptureDimens.ShutterOuter))
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                PhotoLookToggles(state, dispatch, onOpenFilmSimSettings, onOpenMultiframeSettings)
+                PhotoLookToggles(state, dispatch, onOpenFilmSimSettings, onOpenMultiframeSettings) {
+                    DcpSidePill(dcp, onSelectDcp) { onOpenLensSettings(state.selectedLensId) }
+                }
             }
         }
     }
@@ -214,10 +215,12 @@ private fun PhotoLookToggles(
     state: CaptureUiState,
     dispatch: CaptureDispatch,
     onOpenFilmSimSettings: () -> Unit,
-    onOpenMultiframeSettings: () -> Unit
+    onOpenMultiframeSettings: () -> Unit,
+    /** X14U build: the DCP button, after FILM. */
+    trailing: @Composable () -> Unit = {}
 ) {
     Row(
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(0.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         CompactSidePill(
@@ -238,7 +241,8 @@ private fun PhotoLookToggles(
             onClick = { dispatch(ToggleMultiframe) },
             onLongClick = onOpenMultiframeSettings,
             onLongClickLabel = "Multiframe settings",
-            modifier = Modifier
+            modifier = Modifier,
+            minWidth = SidePillWidth
         )
         CompactSidePill(
             icon = Icons.Outlined.MovieFilter,
@@ -253,8 +257,10 @@ private fun PhotoLookToggles(
             onClick = { dispatch(ToggleFilmSim) },
             onLongClick = onOpenFilmSimSettings,
             onLongClickLabel = "Film simulation settings",
-            modifier = Modifier
+            modifier = Modifier,
+            minWidth = SidePillWidth
         )
+        trailing()
     }
 }
 

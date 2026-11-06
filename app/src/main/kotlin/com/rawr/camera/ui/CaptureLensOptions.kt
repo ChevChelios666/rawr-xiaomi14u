@@ -34,17 +34,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rawr.camera.ui.icons.Icons
+import com.rawr.camera.ui.icons.outlined.Palette
 import com.rawr.camera.model.DcpQuickState
+import com.rawr.camera.settings.model.LensOption
 import com.rawr.camera.model.LensOptionsQuickState
 import com.rawr.camera.model.Orientation
 
 /** Test tags of the lens option chips (X14U build). */
 internal object LensOptionTags {
-    fun chip(row: Int) = "capture_lens_option_$row"
+    fun chip(name: String) = "capture_lens_option_" + name.lowercase().replace(Regex("[^a-z0-9]+"), "_")
     fun choice(row: Int, choice: Int) = "capture_lens_option_${row}_$choice"
 }
 
 internal val CaptureChipHeight = 32.dp
+
+/** Width of each of the three pills beside the shutter (HDR+, FILM, DCP). */
+internal val SidePillWidth = 48.dp
 private val ChipShape = RoundedCornerShape(16.dp)
 private val ChoiceShape = RoundedCornerShape(18.dp)
 
@@ -57,12 +63,15 @@ private fun CaptureChip(
     open: Boolean,
     accent: Boolean,
     testTag: String,
+    filled: Boolean = false,
     description: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    chevron: Boolean = true
 ) {
     val haptics = LocalCaptureHaptics.current
     val textColor = when {
         !enabled -> Color.White.copy(alpha = .28f)
+        filled -> CaptureColors.Accent
         accent -> CaptureColors.Accent
         else -> Color.White.copy(alpha = .72f)
     }
@@ -71,11 +80,29 @@ private fun CaptureChip(
             .height(CaptureChipHeight)
             .widthIn(min = 56.dp, max = 140.dp)
             .clip(ChipShape)
-            .background(if (open) Color.White.copy(alpha = .10f) else Color.Transparent)
-            .border(1.dp, if (open) CaptureColors.Accent else Color.White.copy(alpha = if (enabled) .22f else .10f), ChipShape)
+            .background(
+                when {
+                    filled -> CaptureColors.Accent.copy(alpha = .16f)
+                    open -> Color.White.copy(alpha = .10f)
+                    else -> Color.Transparent
+                }
+            )
+            .border(
+                1.dp,
+                when {
+                    filled || open -> CaptureColors.Accent.copy(alpha = if (enabled) .8f else .3f)
+                    else -> Color.White.copy(alpha = if (enabled) .22f else .10f)
+                },
+                ChipShape
+            )
             .testTag(testTag)
             .then(
-                if (enabled) Modifier.captureClickable(shape = ChipShape, role = Role.DropdownList) { haptics.selection(); onClick() }
+                if (enabled) {
+                    Modifier.captureClickable(shape = ChipShape, role = if (chevron) Role.DropdownList else Role.Switch) {
+                        haptics.selection()
+                        onClick()
+                    }
+                }
                 else Modifier
             )
             .semantics {
@@ -86,7 +113,7 @@ private fun CaptureChip(
         contentAlignment = Alignment.Center
     ) {
         Text(
-            if (enabled) "$label ▾" else label,
+            if (enabled && chevron) "$label ▾" else label,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             fontSize = 12.sp,
@@ -116,13 +143,14 @@ private fun ChoiceGrid(
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = .55f),
             modifier = Modifier.padding(start = 2.dp)
         )
-        labels.indices.chunked(2).forEach { line ->
+        val perLine = if (labels.size > 4) 3 else 2
+        labels.indices.chunked(perLine).forEach { line ->
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 line.forEach { index ->
                     val isSelected = index == selected
                     Box(
                         Modifier
-                            .width(112.dp)
+                            .width(if (perLine == 3) 80.dp else 112.dp)
                             .height(36.dp)
                             .clip(ChoiceShape)
                             .background(
@@ -158,21 +186,77 @@ private fun ChoiceGrid(
 }
 
 /**
- * One option row of the selected lens as a chip (e.g. Aperture "f/2"). A row locked by another choice (Aperture
- * while Mode is 50MP) shows its locked value, greyed, and doesn't open.
+ * The option slots shown on every lens: each option row name found on any lens, in the order first seen (1x gives
+ * Aperture, DCG, 50 mp). Paired with the first row of that name, for its kind and its greyed label.
+ */
+internal fun lensOptionSlots(all: List<LensOptionsQuickState>): List<Pair<String, LensOption>> {
+    val seen = linkedMapOf<String, Pair<String, LensOption>>()
+    all.forEach { lens ->
+        lens.options.forEach { option ->
+            seen.getOrPut(option.name.trim().lowercase()) { option.name.trim() to option }
+        }
+    }
+    return seen.values.toList()
+}
+
+/** Greyed label of a slot the lens doesn't have: "f/–" when every choice starts "f/", else the row name. */
+private fun placeholderLabel(option: LensOption): String {
+    if (option.toggle) return option.name
+    val labels = option.choices.map { it.label.trim() }
+    val prefix = labels.reduceOrNull { a, b -> a.commonPrefixWith(b) }.orEmpty().takeWhile { !it.isDigit() }
+    return if (prefix.length >= 2) "$prefix–" else option.name
+}
+
+/**
+ * One option slot as a chip. On a lens without the row: greyed. A select row (Aperture) opens a popup and is greyed
+ * while another choice locks it (50 mp locks f/2). An on/off row (DCG, 50 mp) flips on tap; a locked one still
+ * flips, switching the locking row off.
  */
 @Composable
-internal fun LensOptionChip(
-    options: LensOptionsQuickState,
-    row: Int,
+internal fun LensOptionSlotChip(
+    name: String,
+    template: LensOption,
+    options: LensOptionsQuickState?,
     orientation: Orientation,
     enabled: Boolean,
     onSelect: (row: Int, choice: Int) -> Unit
 ) {
-    val option = options.options[row]
+    val row = options?.options?.indexOfFirst { it.name.trim().equals(name, ignoreCase = true) } ?: -1
+    val option = options?.options?.getOrNull(row)
+    val slotTag = LensOptionTags.chip(name)
+    if (options == null || option == null) {
+        CaptureChip(
+            label = placeholderLabel(template),
+            orientation = orientation,
+            enabled = false,
+            open = false,
+            accent = false,
+            testTag = slotTag,
+            description = "$name: not available on this lens.",
+            onClick = {},
+            chevron = !template.toggle
+        )
+        return
+    }
     val pick = options.picks.getOrElse(row) { option.selected }
-    val label = option.choices.getOrNull(pick)?.label.orEmpty()
     val locked = row in options.locked
+    if (option.toggle) {
+        val on = pick == 1
+        CaptureChip(
+            label = option.name,
+            orientation = orientation,
+            enabled = enabled,
+            open = false,
+            accent = false,
+            filled = on,
+            testTag = slotTag,
+            description = "${option.name} ${if (on) "on" else "off"}. Tap to turn ${if (on) "off" else "on"}.",
+            onClick = { onSelect(row, if (on) 0 else 1) },
+            chevron = false
+        )
+        return
+    }
+    val label = option.choices.getOrNull(pick)?.label.orEmpty()
     var open by remember(options.lensId, row, enabled, locked) { mutableStateOf(false) }
     Box {
         CaptureChip(
@@ -181,7 +265,7 @@ internal fun LensOptionChip(
             enabled = enabled && !locked,
             open = open,
             accent = true,
-            testTag = LensOptionTags.chip(row),
+            testTag = slotTag,
             description = "${option.name}: $label." + if (locked) " Fixed by the current mode." else " Tap to change.",
             onClick = { open = true }
         )
@@ -200,43 +284,50 @@ internal fun LensOptionChip(
     }
 }
 
-/** Short DCP name for the chip: the last word ("X14Ultra Main" -> "Main", "Xiaomi-14Ultra-Tele122" -> "Tele122"). */
+/** Short DCP name: the last word ("X14Ultra Main" -> "Main", "Xiaomi-14Ultra-Tele122" -> "Tele122"). */
 internal fun shortDcpName(name: String): String =
     name.trim().split(' ', '-', '_').lastOrNull { it.isNotBlank() } ?: name
 
-/** The lens's camera profile as a chip; the popup lists full names and the camera's own colour. */
+/**
+ * DCP button beside FILM (same pill style): accent while the lens uses a DCP; tap picks one, long press opens the
+ * lens's settings. Dim and inert on a lens without DCPs.
+ */
 @Composable
-internal fun DcpChip(
-    dcp: DcpQuickState,
-    orientation: Orientation,
-    enabled: Boolean,
-    onSelect: (String?) -> Unit
+internal fun DcpSidePill(
+    dcp: DcpQuickState?,
+    onSelect: (String?) -> Unit,
+    onOpenLensSettings: () -> Unit
 ) {
-    val selected = dcp.profiles.firstOrNull { it.file == dcp.selectedFile }
-    val label = selected?.let { shortDcpName(it.name) } ?: "Default"
-    var open by remember(dcp.lensId, enabled) { mutableStateOf(false) }
-    val files = listOf<String?>(null) + dcp.profiles.map { it.file }
-    val names = listOf("Default") + dcp.profiles.map { shortDcpName(it.name) }
+    val profiles = dcp?.profiles.orEmpty()
+    val selected = profiles.firstOrNull { it.file == dcp?.selectedFile }
+    var open by remember(dcp?.lensId) { mutableStateOf(false) }
+    val files = listOf<String?>(null) + profiles.map { it.file }
+    val names = listOf("Default") + profiles.map { shortDcpName(it.name) }
     Box {
-        CaptureChip(
-            label = label,
-            orientation = orientation,
-            enabled = enabled,
-            open = open,
-            accent = false,
+        CompactSidePill(
+            icon = Icons.Outlined.Palette,
+            label = "DCP",
+            active = selected != null,
             testTag = CaptureTestTags.DCP_PROFILE,
-            description = "DCP profile: ${selected?.name ?: "camera default"}. Tap to choose.",
-            onClick = { open = true }
+            contentDescription = when {
+                profiles.isEmpty() -> "No DCP profiles for this lens. Long press for lens settings."
+                selected != null -> "DCP ${selected.name}. Tap to choose. Long press for lens settings."
+                else -> "DCP: camera default. Tap to choose. Long press for lens settings."
+            },
+            onClick = { if (profiles.isNotEmpty()) open = true },
+            onLongClick = onOpenLensSettings,
+            onLongClickLabel = "Lens settings",
+            minWidth = SidePillWidth
         )
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+        DropdownMenu(expanded = open && dcp != null, onDismissRequest = { open = false }) {
             ChoiceGrid(
                 title = "DCP",
                 labels = names,
-                selected = files.indexOf(dcp.selectedFile).coerceAtLeast(0),
+                selected = files.indexOf(dcp?.selectedFile).coerceAtLeast(0),
                 tag = { CaptureTestTags.dcpOption(files[it]) },
                 onPick = { index ->
                     open = false
-                    if (files[index] != dcp.selectedFile) onSelect(files[index])
+                    if (files[index] != dcp?.selectedFile) onSelect(files[index])
                 }
             )
         }

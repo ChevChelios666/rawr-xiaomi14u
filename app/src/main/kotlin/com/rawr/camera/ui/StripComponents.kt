@@ -396,7 +396,9 @@ internal fun CompactSidePill(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
-    onLongClickLabel: String? = null
+    onLongClickLabel: String? = null,
+    /** X14U build: three pills beside the shutter need less than the default width. */
+    minWidth: androidx.compose.ui.unit.Dp = CaptureDimens.CompactPillMinWidth
 ) {
     val haptics = LocalCaptureHaptics.current
     val contentColor = if (active) CaptureColors.Accent else Color.White.copy(alpha = .55f)
@@ -404,7 +406,7 @@ internal fun CompactSidePill(
     // Generous invisible touch target retained.
     Box(
         modifier
-            .widthIn(min = CaptureDimens.CompactPillMinWidth)
+            .widthIn(min = minWidth)
             .height(CaptureDimens.CompactPillHeight)
             .testTag(testTag)
             .captureCombinedClickable(

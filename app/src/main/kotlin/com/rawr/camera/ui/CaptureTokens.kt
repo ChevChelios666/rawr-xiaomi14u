@@ -27,8 +27,8 @@ internal object CaptureColors {
 internal object CaptureDimens {
     val TopBarHeight = 48.dp
     val MonitorHeight = 22.dp
-    // X14U build: +42dp for the second lens row (options and DCP chips).
-    val VideoControlsClassicHeight = 216.dp
+    // X14U build: +42dp for the second lens row (option chips), +20dp shutter row drop.
+    val VideoControlsClassicHeight = 236.dp
     // Lens 30 + compact shutter row 78 + video record row 62.
     val CompactVideoControlsMinimumHeight = 170.dp
     val VideoRecordRowHeight = 62.dp

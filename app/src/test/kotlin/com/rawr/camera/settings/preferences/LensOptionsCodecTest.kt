@@ -141,11 +141,19 @@ class LensOptionsCodecTest {
         assertFalse(resolved.vendorKeys.any { it.tag == "com.xiaomi.lens.aperture" })
         assertEquals(mapOf(0 to 1), fifty.options.lockedRows(fifty.options.map { it.selected }))
         assertEquals("f/2 · 50MP", fifty.optionSummary())
-        // Picking a locked row does nothing; its own selection (f/4) comes back with another mode.
-        assertEquals(fifty, fifty.selectOption(0, 0))
+        // Picking a locked row switches the locking row back to its first choice.
+        assertEquals("f/1.67 · Normal", fifty.selectOption(0, 0).optionSummary())
+        // Its own selection (f/4) comes back with another mode.
         val normal = fifty.selectOption(1, 0)
         assertEquals("f/4.0 · Normal", normal.optionSummary())
         assertEquals(listOf(4.0), LensOptionsCodec.resolve(normal).vendorKeys.first { it.tag == "com.xiaomi.lens.aperture" }.values)
+    }
+
+    @Test
+    fun toggleRowsRoundTripAndNeedTwoChoices() {
+        val lens = main.copy(options = listOf(LensOption("DCG", listOf(LensOptionChoice("Off"), LensOptionChoice("On")), toggle = true)))
+        assertTrue(LensProfileCodec.decodeBackup(LensProfileCodec.encode(listOf(lens))).single().options.single().toggle)
+        assertFalse(validateLensOptions(listOf(LensOption("DCG", listOf(LensOptionChoice("On")), toggle = true))).isEmpty())
     }
 
     @Test
