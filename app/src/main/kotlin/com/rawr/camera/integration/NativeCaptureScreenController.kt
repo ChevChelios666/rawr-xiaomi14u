@@ -107,7 +107,8 @@ class NativeCaptureScreenController(
                     syncOverlayArming()
                 }
                 selfTimer.reconcile()
-                if (action is SetCaptureMode || action is CycleVideoFps || action is RestoreCapturePreferences) {
+                if (action is SetCaptureMode || action is CycleVideoFps || action is CycleVideoResolution ||
+                    action is RestoreCapturePreferences) {
                     val current = state.value
                     coordinator.setVideoMode(current.captureMode == CaptureMode.Video, current.videoFps)
                 }

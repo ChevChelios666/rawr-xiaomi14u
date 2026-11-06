@@ -219,7 +219,7 @@ internal fun LensOptionSlotChip(
     onSelect: (row: Int, choice: Int) -> Unit
 ) {
     val row = options?.options?.indexOfFirst { it.name.trim().equals(name, ignoreCase = true) } ?: -1
-    val option = options?.options?.getOrNull(row)
+    val option = options?.options?.getOrNull(row)?.takeIf { row !in options.unavailable }
     val slotTag = LensOptionTags.chip(name)
     if (options == null || option == null) {
         CaptureChip(

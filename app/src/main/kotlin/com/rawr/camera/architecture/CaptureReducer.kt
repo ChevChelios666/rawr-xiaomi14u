@@ -1,5 +1,6 @@
 package com.rawr.camera.architecture
 
+import com.rawr.camera.video.VideoResolutionMode
 import com.rawr.camera.model.*
 
 /** Pure reducer for presentation-only capture-screen state. */
@@ -22,7 +23,9 @@ object CaptureReducer {
                 captureLayout = action.captureLayout,
                 captureMode = action.captureMode,
                 videoResolution = action.videoResolution,
-                videoFps = action.videoFps.coerceVideoFps(),
+                // X14U: 60 fps is 1080p only (4K/Open Gate can't develop in 16.6 ms).
+                videoFps = action.videoFps.coerceVideoFps()
+                    .let { if (it == 60 && action.videoResolution != VideoResolutionMode.HD1080) 30 else it },
                 videoLogEnabled = action.videoLogEnabled,
                 selfTimer = action.selfTimer,
                 // A restored preference never resumes a mid-flight countdown.
@@ -83,13 +86,16 @@ object CaptureReducer {
         }
 
         CycleVideoResolution -> {
-            state.copy(videoResolution = state.videoResolution.next())
+            val resolution = state.videoResolution.next()
+            state.copy(videoResolution = resolution,
+                videoFps = if (state.videoFps == 60 && resolution != VideoResolutionMode.HD1080) 30 else state.videoFps)
         }
 
         ToggleVideoLog -> if (state.captureMode == CaptureMode.Video) state.copy(videoLogEnabled = !state.videoLogEnabled) else state
 
         CycleVideoFps -> {
-            state.copy(videoFps = when (state.videoFps) { 24 -> 30; 30 -> 60; else -> 24 })
+            val sixty = state.videoResolution == VideoResolutionMode.HD1080
+            state.copy(videoFps = when (state.videoFps) { 24 -> 30; 30 -> if (sixty) 60 else 24; else -> 24 })
         }
 
         CycleSelfTimer -> {

@@ -25,7 +25,9 @@ data class DcpQuickState(
 /** A lens's option rows as the capture screen shows them (X14U build). */
 data class LensOptionsQuickState(
     val lensId: String,
-    val options: List<com.rawr.camera.settings.model.LensOption>
+    val options: List<com.rawr.camera.settings.model.LensOption>,
+    /** Rows that don't apply now: in video mode, rows the lens's video lens lacks (DCG, 50 mp on 1x -> 1xV). */
+    val unavailable: Set<Int> = emptySet()
 ) {
     /** The choice each row runs with (a locked row shows its locked choice). */
     val picks: List<Int> get() = options.effectivePicks()
@@ -62,8 +64,18 @@ internal fun SettingsValues.toViewfinderQuickState(
         if (isVideo) VIDEO_HIGHLIGHT_COMPRESSION_DEFAULT else PHOTO_HIGHLIGHT_COMPRESSION_DEFAULT
     return ViewfinderQuickState(
         dcps = (lensProfiles ?: deviceDefaults).map { DcpQuickState(it.name, it.image.availableDcps, it.image.dcp?.file) },
-        lensOptions = (lensProfiles ?: deviceDefaults).filter { it.options.isNotEmpty() }
-            .map { LensOptionsQuickState(it.name, it.options) },
+        lensOptions = (lensProfiles ?: deviceDefaults).let { lenses ->
+            lenses.filter { it.options.isNotEmpty() }.map { lens ->
+                val video = lens.videoLens?.trim()?.takeIf { isVideo && it.isNotEmpty() }
+                    ?.let { name -> lenses.firstOrNull { it.name.trim().equals(name, ignoreCase = true) } }
+                val unavailable = video?.let { target ->
+                    lens.options.indices.filter { row ->
+                        target.options.none { it.name.trim().equals(lens.options[row].name.trim(), ignoreCase = true) }
+                    }.toSet()
+                }.orEmpty()
+                LensOptionsQuickState(lens.name, lens.options, unavailable)
+            }
+        },
         rawrAeEnabled = rawrAe.enabled,
         metering = rawrAe.metering,
         highlight = HighlightQuickState(
