@@ -83,7 +83,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         if (resolution == null && fps == null) return
         val next = settingsEditor.update { current -> current.copy(
             videoResolutionId = resolution?.persistedId() ?: current.videoResolutionId,
-            videoFps = fps?.takeIf { it == 24 || it == 30 } ?: current.videoFps
+            videoFps = fps?.takeIf { it == 24 || it == 30 || it == 60 } ?: current.videoFps
         ) }
         controller.dispatch(next.capturePreferences())
         settingsSync.updatePreviewCrop(controller.state.value.captureMode, controller.state.value.videoResolution)

@@ -45,7 +45,7 @@ bool NativeAvRecorder::supportsTimestampPolicy(TimestampPolicy policy) noexcept 
 
 NativeAvRecorder::NativeAvRecorder(int outputFd, Settings settings) : outputFd_(outputFd), settings_(settings) {
     if (outputFd_ < 0 || settings_.width <= 0 || settings_.height <= 0 || (settings_.width & 1) != 0 ||
-        (settings_.height & 1) != 0 || (settings_.fps != 24 && settings_.fps != 30) || settings_.bitrate < 1'000'000 ||
+        (settings_.height & 1) != 0 || (settings_.fps != 24 && settings_.fps != 30 && settings_.fps != 60) || settings_.bitrate < 1'000'000 ||
         settings_.bitrate > 400'000'000 || settings_.intraFrames < 1 || settings_.intraFrames > 60 ||
         settings_.rotationDegrees % 90 != 0 || settings_.bitrateMode < -1 || settings_.bitrateMode > 2 ||
         settings_.maxBFrames < -1 || settings_.maxBFrames > 4 ||

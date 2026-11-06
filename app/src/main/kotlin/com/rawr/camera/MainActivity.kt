@@ -76,7 +76,7 @@ class MainActivity : ComponentActivity() {
                 null
             },
             fps = if (intent.hasExtra("raw_video_fps")) {
-                intent.getIntExtra("raw_video_fps", 30).takeIf { it == 24 || it == 30 }
+                intent.getIntExtra("raw_video_fps", 30).takeIf { it == 24 || it == 30 || it == 60 }
             } else {
                 null
             }

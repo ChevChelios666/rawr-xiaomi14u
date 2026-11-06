@@ -943,7 +943,8 @@ struct NativeCameraController::Impl final : CameraEventSink {
             return std::any_of(control.capabilities.aeTargetFpsRanges.begin(),
                                control.capabilities.aeTargetFpsRanges.end(), [&](const auto& range) {
                                    return range[0] == recordingFpsPreference && range[1] == recordingFpsPreference;
-                               });
+                               }) ||
+                   recordingFpsPreference == 60;  // X14U test: 60 runs on frame duration with AE off
         };
         control.recordingFps = recordingFpsPreference > 0 && fixedFpsSupported() ? recordingFpsPreference : 0;
         cadencePolicy.setRecordingFps(control.recordingFps);
@@ -1775,9 +1776,12 @@ struct NativeCameraController::Impl final : CameraEventSink {
             if (deviceSession.session()) (void)submitRepeatingLocked();
             return true;
         }
+        // X14U test: no HAL advertises a 60/60 AE range here, but with AE off (rawr AE or M) the
+        // frame duration alone sets the cadence, so 60 is let through and the RAW stream decides.
         if (fps < 1 || control.capabilities.exposureTimeMinNs > 1'000'000'000LL / fps ||
-            !std::any_of(control.capabilities.aeTargetFpsRanges.begin(), control.capabilities.aeTargetFpsRanges.end(),
-                         [fps](const auto& range) { return range[0] == fps && range[1] == fps; })) {
+            (fps != 60 &&
+             !std::any_of(control.capabilities.aeTargetFpsRanges.begin(), control.capabilities.aeTargetFpsRanges.end(),
+                          [fps](const auto& range) { return range[0] == fps && range[1] == fps; }))) {
             diag("CAMERA_RECORDING_FPS_UNSUPPORTED fps=" + std::to_string(fps));
             return false;
         }

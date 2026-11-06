@@ -23,7 +23,15 @@ inline std::optional<std::array<int32_t, 2>> cameraTargetFpsRange(const CameraCo
     // A vendor sensor mode that runs at one rate (Xiaomi 75 mm 50 MP: 24 fps) keeps it on every request.
     if (state.capabilities.frameRate > 0)
         return std::array<int32_t, 2>{state.capabilities.frameRate, state.capabilities.frameRate};
-    if (state.recordingFps > 0) return std::array<int32_t, 2>{state.recordingFps, state.recordingFps};
+    if (state.recordingFps > 0) {
+        // X14U: an unadvertised rate (60) sends no range; AE off and the frame duration carry it.
+        const bool advertised = std::any_of(state.capabilities.aeTargetFpsRanges.begin(),
+                                            state.capabilities.aeTargetFpsRanges.end(), [&](const auto& range) {
+                                                return range[0] == state.recordingFps && range[1] == state.recordingFps;
+                                            });
+        if (state.recordingFps > 30 && !advertised) return std::nullopt;
+        return std::array<int32_t, 2>{state.recordingFps, state.recordingFps};
+    }
     const auto& caps = state.capabilities;
     if (priorityRequested && caps.priorityAeTargetFpsMin > 0 &&
         caps.priorityAeTargetFpsMax >= caps.priorityAeTargetFpsMin) {

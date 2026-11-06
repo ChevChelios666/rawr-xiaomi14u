@@ -43,6 +43,12 @@ embed_spirv(video_demosaic_quad ${VIDEO_PIPELINE_SHADER_DIR}/video_demosaic_quad
   FLAGS -I${SC} -I${VIDEO_PIPELINE_SHADER_DIR}
   DEPENDS ${VIDEO_PIPELINE_SHADER_DIR}/video_quad_core.glsl ${SC}/lens_shading.glsl ${SC}/cfa_common.glsl)
 
+# X14U: 2x reduced recordings (1080p) through the quad demosaic, averaged per cell.
+embed_spirv(video_demosaic_quad_reduce ${VIDEO_PIPELINE_SHADER_DIR}/video_demosaic_quad_reduce.comp
+  video_demosaic_quad_reduce_spv OUTPUT_DIR ${VP_GEN}
+  FLAGS -I${SC} -I${VIDEO_PIPELINE_SHADER_DIR}
+  DEPENDS ${VIDEO_PIPELINE_SHADER_DIR}/video_quad_core.glsl ${SC}/lens_shading.glsl ${SC}/cfa_common.glsl)
+
 # Optimized SPIR-V: Adreno's compiler rejects the unoptimized strip pass
 # (vkCreateComputePipelines VK_ERROR_UNKNOWN), as with the gain map shaders.
 foreach(PASS h v)
@@ -54,7 +60,7 @@ foreach(PASS h v)
 endforeach()
 
 add_library(video_pipeline STATIC src/VideoDemosaic.cpp ${video_demosaic_HDR} ${video_demosaic_1x_HDR}
-  ${video_demosaic_quad_HDR}
+  ${video_demosaic_quad_HDR} ${video_demosaic_quad_reduce_HDR}
   ${video_downscale_h_HDR}
   ${video_downscale_v_HDR})
 add_library(rawr::video_pipeline ALIAS video_pipeline)

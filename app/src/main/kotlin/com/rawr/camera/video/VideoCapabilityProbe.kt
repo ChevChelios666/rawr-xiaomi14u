@@ -32,7 +32,7 @@ internal object VideoCapabilityProbe {
                     val size = outputModes.getJSONObject(index)
                     val width = size.getInt("width")
                     val height = size.getInt("height")
-                    for (fps in listOf(24, 30)) {
+                    for (fps in listOf(24, 30, 60)) {
                         modes.put(
                             JSONObject()
                                 .put("width", width)

@@ -1,0 +1,49 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_control_flow_attributes : require
+
+// X14U: 2x reduced recordings (1080p from the 4K RAW crop) through the quad
+// demosaic. One thread per 2x2 Bayer cell, as in video_demosaic_quad.comp, but
+// the cell's four demosaiced pixels are averaged into one output pixel, so a
+// workgroup covers 16x16 output pixels (32x32 sensor pixels). Clip state is one
+// texel per 2x2 output pixels (4x4 sensor pixels), OR-ed through shared memory.
+#define VIDEO_QT 16
+layout(local_size_x = VIDEO_QT, local_size_y = VIDEO_QT, local_size_z = 1) in;
+#define VIDEO_RAW_IMAGE_BINDING 0
+#define VIDEO_RAW_BUFFER_BINDING 1
+#define VIDEO_LSC_BINDING 3
+#include "video_quad_core.glsl"
+layout(binding = 2, rgba16f) uniform writeonly image2D linearOut;
+layout(binding = 4, r16ui) uniform writeonly uimage2D clipStateOut;
+
+shared uint cellClip[VIDEO_QT * VIDEO_QT];
+
+void main() {
+    videoLoadTile();
+    videoBuildPlane();
+    ivec2 cell = ivec2(gl_GlobalInvocationID.xy);  // == output pixel
+    ivec2 local = ivec2(gl_LocalInvocationID.xy);
+    bool inside = cell.x < int(pc.outWidth) && cell.y < int(pc.outHeight);
+    uint state = 0u;
+    if (inside) {
+        ivec2 base = ivec2(pc.cropX, pc.cropY) + cell * 2;
+        videoLoadCellPlane(base);
+        vec3 sum = vec3(0.0);
+        [[unroll]] for (int dy = 0; dy < 2; ++dy) {
+            [[unroll]] for (int dx = 0; dx < 2; ++dx) {
+                ivec2 q = base + ivec2(dx, dy);
+                float value = videoCachedAt(q);
+                sum += videoPixelRgb(dx, dy, value) * videoGainAt(q);
+                if (value >= 0.995) state |= 1u << uint(videoChannelRel(ivec2(dx, dy)));
+            }
+        }
+        imageStore(linearOut, cell, vec4(sum * 0.25, 1.0));
+    }
+    cellClip[local.y * VIDEO_QT + local.x] = state;
+    barrier();
+    if (inside && (local.x & 1) == 0 && (local.y & 1) == 0) {
+        int i = local.y * VIDEO_QT + local.x;
+        uint merged = cellClip[i] | cellClip[i + 1] | cellClip[i + VIDEO_QT] | cellClip[i + VIDEO_QT + 1];
+        imageStore(clipStateOut, cell / 2, uvec4(merged, 0u, 0u, 0u));
+    }
+}

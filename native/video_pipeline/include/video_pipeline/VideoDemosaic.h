@@ -60,9 +60,13 @@ class VideoDemosaic final {
     // `adb shell setprop debug.rawr.video_downscale box` restores the former
     // 2x2 box average; anything else uses the anti-aliasing filter.
     void selectDownscaleFilter();
-    void setAntiAlias(bool enabled) noexcept { antiAlias_ = enabled; }
+    void setAntiAlias(bool enabled) noexcept {
+        antiAlias_ = enabled;
+        quadReduce_ = false;
+    }
     const char* method() const noexcept {
         if (!reduceCfa_) return quad_ ? "quad_guided_chroma" : "tiled_mhc_5x5";
+        if (quadReduce_) return "quad_guided_chroma_avg2x";
         return antiAlias_ ? "strip_mhc_lanczos3_2x+chroma420" : "tiled_mhc_fused_2x_area";
     }
 
@@ -84,6 +88,10 @@ class VideoDemosaic final {
     uint32_t cropX_ = 0, cropY_ = 0;
     bool reduceCfa_ = false;
     bool quad_ = false;  // 1:1 recording runs the quad-per-thread shader
+    // X14U: 2x reduction through the quad shader, averaging each cell (default
+    // for 1080p; `setprop debug.rawr.video_downscale aa|box` for the old paths).
+    bool quadReduce_ = false;
+    VkPipeline quadReducePipeline_ = VK_NULL_HANDLE;
     VkDescriptorSetLayout descriptorLayout_ = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
     VkPipeline pipeline_ = VK_NULL_HANDLE;

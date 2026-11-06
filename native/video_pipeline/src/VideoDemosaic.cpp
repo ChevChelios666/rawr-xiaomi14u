@@ -12,6 +12,7 @@
 #include "video_demosaic.h"
 #include "video_demosaic_1x.h"
 #include "video_demosaic_quad.h"
+#include "video_demosaic_quad_reduce.h"
 #include "video_downscale_h.h"
 #include "video_downscale_v.h"
 #include "video_pipeline/VideoCrop.h"
@@ -126,6 +127,17 @@ VideoDemosaic::VideoDemosaic(const rawr::vk::GpuContext& context, uint32_t rawWi
                                     "VIDEO_QUAD_PIPELINE rejected, using tiled MHC: %s", error.what());
             }
         }
+        if (reduceCfa_) {
+            try {
+                quadReducePipeline_ = createComputePipeline(device, pipelineLayout_, video_demosaic_quad_reduce_spv,
+                                                            video_demosaic_quad_reduce_spv_size,
+                                                            "video quad reduce pipeline");
+                quadReduce_ = true;
+            } catch (const std::exception& error) {
+                __android_log_print(ANDROID_LOG_WARN, "RawrNativeVideo",
+                                    "VIDEO_QUAD_REDUCE_PIPELINE rejected: %s", error.what());
+            }
+        }
         if (!pipeline_)
             pipeline_ = reduceCfa_ ? createComputePipeline(device, pipelineLayout_, video_demosaic_spv,
                                                            video_demosaic_spv_size, "video demosaic pipeline")
@@ -175,8 +187,11 @@ VideoDemosaic::~VideoDemosaic() { destroy(); }
 
 void VideoDemosaic::selectDownscaleFilter() {
     char value[PROP_VALUE_MAX]{};
-    const bool box = __system_property_get("debug.rawr.video_downscale", value) > 0 && std::strcmp(value, "box") == 0;
+    const bool set = __system_property_get("debug.rawr.video_downscale", value) > 0;
+    const bool box = set && std::strcmp(value, "box") == 0;
+    const bool aa = set && std::strcmp(value, "aa") == 0;
     setAntiAlias(!box);
+    quadReduce_ = !box && !aa && quadReducePipeline_ != VK_NULL_HANDLE;
     if (reduceCfa_)
         __android_log_print(ANDROID_LOG_INFO, "RawrNativeVideo", "VIDEO_DOWNSCALE_FILTER method=%s", method());
 }
@@ -371,6 +386,8 @@ void VideoDemosaic::destroy() noexcept {
     }
     if (descriptorPool_) vkDestroyDescriptorPool(device, descriptorPool_, nullptr);
     if (pipeline_) vkDestroyPipeline(device, pipeline_, nullptr);
+    if (quadReducePipeline_) vkDestroyPipeline(device, quadReducePipeline_, nullptr);
+    quadReducePipeline_ = VK_NULL_HANDLE;
     if (pipelineLayout_) vkDestroyPipelineLayout(device, pipelineLayout_, nullptr);
     if (descriptorLayout_) vkDestroyDescriptorSetLayout(device, descriptorLayout_, nullptr);
     descriptorPool_ = VK_NULL_HANDLE;
@@ -396,7 +413,7 @@ void VideoDemosaic::record(VkCommandBuffer command, uint32_t frameSlot, const Fr
     VkDescriptorBufferInfo rawBuffer{useBuffer ? frame.rawBuffer : lscBuffers_[frameSlot].buffer, 0, VK_WHOLE_SIZE};
     // The anti-aliased 2x path's strip pass writes the shared luma/chroma
     // images; recordVertical then fills this slot's output.
-    const bool antiAlias = reduceCfa_ && antiAlias_;
+    const bool antiAlias = reduceCfa_ && antiAlias_ && !quadReduce_;
     VkDescriptorImageInfo output{};
     output.imageView = antiAlias ? lumaChroma_.view : outputs_[frameSlot].view;
     output.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -512,12 +529,14 @@ void VideoDemosaic::record(VkCommandBuffer command, uint32_t frameSlot, const Fr
                       (stripHeight_ + kStripRows - 1u) / kStripRows, 1);
         recordVertical(command, frameSlot, frame);
     } else {
-        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_);
+        const bool quadReduce = reduceCfa_ && quadReduce_;
+        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, quadReduce ? quadReducePipeline_ : pipeline_);
         vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout_, 0, 1,
                                 &descriptors_[frameSlot], 0, nullptr);
         vkCmdPushConstants(command, pipelineLayout_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), &push);
         // Quad shader: 16x16 threads cover 32x32 output pixels (VIDEO_QT in
         // video_demosaic_quad.comp); otherwise 16x16 workgroups (VIDEO_TILE in video_demosaic.comp).
+        // Quad reduce: 16x16 threads cover 16x16 output pixels (32x32 sensor).
         const uint32_t tile = quad_ ? 32u : 16u;
         vkCmdDispatch(command, (outputWidth_ + tile - 1u) / tile, (outputHeight_ + tile - 1u) / tile, 1);
     }
