@@ -472,6 +472,7 @@ internal object LensProfileCodec {
             .put("image", image)
             // Options stay in settings and backups; the camera gets the resolved lens (LensOptionsCodec.resolve).
             .apply { if (lens.options.isNotEmpty() && dcpDir == null) put("options", LensOptionsCodec.encode(lens.options)) }
+            .apply { if (!lens.videoLens.isNullOrBlank() && dcpDir == null) put("videoLens", lens.videoLens.trim()) }
     }
 
     private fun decodeStream(o: JSONObject?) = RawStreamChoice(
@@ -597,7 +598,8 @@ internal object LensProfileCodec {
                     )
                 }
             ),
-            options = LensOptionsCodec.decode(o.optJSONArray("options"))
+            options = LensOptionsCodec.decode(o.optJSONArray("options")),
+            videoLens = o.optString("videoLens").trim().takeIf { it.isNotEmpty() }
         )
     }
 

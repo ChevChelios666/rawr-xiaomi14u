@@ -141,6 +141,37 @@ internal object LensOptionsCodec {
         return patched.copy(name = base.name, enabled = base.enabled, vendorKeys = keys, options = emptyList())
     }
 
+    /**
+     * The lenses as the camera runs them (X14U): lenses another lens names as its video lens are left out (no pill of
+     * their own); in [video] mode a lens with a video lens runs as it, under its own id, with its option picks carried
+     * over by row name and choice label (rows the video lens lacks are dropped). Then every lens's options resolve.
+     */
+    fun forCamera(lenses: List<LensProfile>, video: Boolean, onError: (LensProfile, Throwable) -> Unit = { _, _ -> })
+        : List<LensProfile> {
+        fun named(name: String?) = name?.trim()?.takeIf { it.isNotEmpty() }
+            ?.let { n -> lenses.firstOrNull { it.name.trim().equals(n, ignoreCase = true) } }
+        val hidden = lenses.filter { it.enabled }.mapNotNull { named(it.videoLens)?.name?.trim()?.lowercase() }.toSet()
+        return lenses.filterNot { it.name.trim().lowercase() in hidden }.map { lens ->
+            val target = if (video) named(lens.videoLens)?.takeIf { it.videoLens == null } else null
+            val source = target?.let { videoTarget(lens, it) } ?: lens
+            runCatching { resolve(source) }.onFailure { onError(lens, it) }.getOrDefault(source.copy(options = emptyList()))
+        }
+    }
+
+    /** [target] under [lens]'s id, with [lens]'s current picks applied to the rows they share. */
+    internal fun videoTarget(lens: LensProfile, target: LensProfile): LensProfile {
+        val picks = lens.options.effectivePicks(lens.options.map { it.selected })
+        val options = target.options.map { row ->
+            val index = lens.options.indexOfFirst { it.name.trim().equals(row.name.trim(), ignoreCase = true) }
+            val label = lens.options.getOrNull(index)?.choices?.getOrNull(picks.getOrElse(index) { -1 })?.label?.trim()
+            val match = row.choices.indexOfFirst { it.label.trim().equals(label, ignoreCase = true) }
+            if (match >= 0) row.copy(selected = match) else row
+        }
+        // The DCP follows the capture screen's pill, which edits [lens].
+        val image = target.image.copy(dcp = lens.image.dcp, dcpProfiles = lens.image.dcpProfiles)
+        return target.copy(name = lens.name, enabled = lens.enabled, options = options, image = image, videoLens = null)
+    }
+
     /** Problems of the lens with each choice applied (the other rows at their selection), deduplicated. */
     fun resolvedProblems(lens: LensProfile, others: List<LensProfile>): List<String> {
         if (lens.options.isEmpty()) return emptyList()

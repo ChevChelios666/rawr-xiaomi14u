@@ -165,7 +165,12 @@ data class LensProfile(
     val vendorKeys: List<VendorKey> = emptyList(),
     val image: LensImage = LensImage(),
     /** Option rows over this lens (X14U build, LensOptions.kt); empty for a plain lens. */
-    val options: List<LensOption> = emptyList()
+    val options: List<LensOption> = emptyList(),
+    /**
+     * X14U build: in video mode this lens runs as the named lens (e.g. 1x -> its 16:9 RAW16 "1xV"), keeping this
+     * lens's id, label and option picks. The named lens is hidden from the capture screen's lens row.
+     */
+    val videoLens: String? = null
 ) {
     /** A lens on [cameraId] (and [physicalCameraId] inside it) with every other setting at its default. */
     constructor(name: String, cameraId: String, physicalCameraId: String = "") :
@@ -411,6 +416,14 @@ fun validateLensProfile(lens: LensProfile, others: List<LensProfile>): List<Stri
     if (session.gateHold != null && session.gate.isEmpty()) add("A gate hold needs a vendor gate")
     session.workarounds.filter { it !in CAMERA_WORKAROUNDS }.forEach { add("Unknown workaround $it") }
     addAll(validateLensOptions(lens.options))
+    lens.videoLens?.trim()?.takeIf { it.isNotEmpty() }?.let { target ->
+        val named = others.firstOrNull { it.name.trim().equals(target, ignoreCase = true) }
+        when {
+            target.equals(lens.name.trim(), ignoreCase = true) -> add("A lens can't be its own video lens")
+            others.isNotEmpty() && named == null -> add("Video lens $target doesn't exist")
+            named?.videoLens != null -> add("Video lens $target has a video lens of its own")
+        }
+    }
     if (session.params == "none") {
         lens.vendorKeys
             .firstOrNull { it.enabled && (it.scope == VendorKeyScope.Session || it.scope == VendorKeyScope.SessionAndRequest) }

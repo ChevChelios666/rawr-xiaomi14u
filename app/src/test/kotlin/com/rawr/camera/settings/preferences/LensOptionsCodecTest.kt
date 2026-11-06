@@ -167,6 +167,41 @@ class LensOptionsCodecTest {
         assertFalse(validateLensOptions(bad).isEmpty())
     }
 
+    private val video = LensProfile("1xV", "2").copy(
+        streams = com.rawr.camera.settings.model.LensStreams().let { st ->
+            st.copy(raw = st.raw.copy(choice = st.raw.choice.copy(width = 4096, height = 2304)))
+        },
+        options = listOf(LensOption("Aperture", listOf(aperture(1.67), LensOptionChoice("f/2"), aperture(2.8)), selected = 1))
+    )
+
+    @Test
+    fun videoLensRunsInVideoModeUnderTheLensIdAndIsHidden() {
+        val wide = main.copy(videoLens = "1xV").selectOption(0, 1)
+        val lenses = listOf(LensProfile("0.5x", "3"), wide, video)
+        val photo = LensOptionsCodec.forCamera(lenses, video = false)
+        assertEquals(listOf("0.5x", "1x"), photo.map { it.name })
+        assertEquals("0", photo[1].camera.id)
+        val recording = LensOptionsCodec.forCamera(lenses, video = true)
+        assertEquals(listOf("0.5x", "1x"), recording.map { it.name })
+        assertEquals("2", recording[1].camera.id)
+        assertEquals(2304, recording[1].streams.raw.choice.height)
+        // f/2.8 on 1x carries over to the video lens's f/2.8; its Mode row has no counterpart there.
+        assertEquals(listOf(2.8), recording[1].vendorKeys.first { it.tag == "com.xiaomi.lens.aperture" }.values)
+        assertFalse(recording[1].vendorKeys.any { it.tag == modeKey })
+    }
+
+    @Test
+    fun videoLensRoundTripsAndValidates() {
+        val wide = main.copy(videoLens = "1xV")
+        val decoded = LensProfileCodec.decodeBackup(LensProfileCodec.encode(listOf(wide, video)))
+        assertEquals("1xV", decoded[0].videoLens)
+        assertTrue(validateLensProfile(wide, listOf(video)).isEmpty())
+        assertFalse(validateLensProfile(wide.copy(videoLens = "9x"), listOf(video)).isEmpty())
+        assertFalse(validateLensProfile(wide.copy(videoLens = "1x"), listOf(video)).isEmpty())
+        val camera = JSONObject(LensProfileCodec.encode(listOf(wide), dcpDir = java.io.File("dcp")))
+        assertFalse(camera.getJSONArray("lenses").getJSONObject(0).has("videoLens"))
+    }
+
     @Test
     fun mergePatchFollowsRfc7386() {
         val merged = LensOptionsCodec.mergePatch(

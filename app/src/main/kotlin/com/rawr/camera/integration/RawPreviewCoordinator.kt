@@ -233,12 +233,23 @@ class RawPreviewCoordinator(application: Application) : AutoCloseable {
 
     /** Enabled lenses in order; null restores the device's built-in lenses. */
     fun setLensProfiles(lenses: List<LensProfile>?) {
+        val video = synchronized(lensSync) {
+            lensProfiles = lenses
+            lensVideoMode
+        }
+        pushLensProfiles(lenses, video)
+    }
+
+    // X14U: lenses with a video lens run as it in video mode, so the profile follows the capture mode.
+    private val lensSync = Any()
+    private var lensProfiles: List<LensProfile>? = null
+    private var lensVideoMode = false
+
+    private fun pushLensProfiles(lenses: List<LensProfile>?, video: Boolean) {
         val json = lenses?.let { list ->
             // Lens options: the camera runs each lens with its selected choices applied (keeps the lens id).
-            val resolved = list.map { lens ->
-                runCatching { com.rawr.camera.settings.preferences.LensOptionsCodec.resolve(lens) }
-                    .onFailure { Log.e(TAG, "lens options of ${lens.name} not applied", it) }
-                    .getOrDefault(lens.copy(options = emptyList()))
+            val resolved = com.rawr.camera.settings.preferences.LensOptionsCodec.forCamera(list, video) { lens, error ->
+                Log.e(TAG, "lens options of ${lens.name} not applied", error)
             }
             LensProfileCodec.encode(resolved, enabledOnly = true, dcpDir = dcpDir)
         }
@@ -305,8 +316,15 @@ class RawPreviewCoordinator(application: Application) : AutoCloseable {
         )
     }
 
-    fun setVideoMode(isVideo: Boolean, fps: Int) =
+    fun setVideoMode(isVideo: Boolean, fps: Int) {
+        val lenses = synchronized(lensSync) {
+            val changed = lensVideoMode != isVideo
+            lensVideoMode = isVideo
+            lensProfiles?.takeIf { changed && it.any { lens -> !lens.videoLens.isNullOrBlank() } }
+        }
         postNative { native.setVideoMode(nativeHandle, isVideo, fps) }
+        if (lenses != null) pushLensProfiles(lenses, isVideo)
+    }
 
     fun beginVideoFps(fps: Int): Boolean = cameraWorker.submit<Boolean> {
         if (synchronized(this) { closed }) false else native.setRecordingFps(nativeHandle, fps)

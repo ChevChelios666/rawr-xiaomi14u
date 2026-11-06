@@ -226,6 +226,16 @@ internal fun LensEditorScreen(state: SettingsUiState, lensName: String?, dispatc
                     "DNG files keep the sensor pixels and store the flip in their orientation.",
                 onSelect = { draft = draft.image { copy(mirror = it) } }
             )
+            SettingDivider()
+            DropdownChoiceRow(
+                title = "Video lens",
+                selected = draft.videoLens?.let { v -> others.firstOrNull { it.name.equals(v, ignoreCase = true) }?.name ?: v },
+                values = listOf<String?>(null) + others.filter { it.videoLens == null }.map { it.name },
+                label = { it ?: "None" },
+                supportingText = "In video mode this lens runs as the chosen lens (e.g. a 16:9 RAW16 mode for 60 fps), " +
+                    "keeping its name and options. The chosen lens is hidden from the capture screen.",
+                onSelect = { draft = draft.copy(videoLens = it) }
+            )
         }
         CaptureGroup(draft, camera, onPickStream = { pickStream = true }) { draft = it }
         ExtendedExposureGroup(draft.image.exposure) { draft = draft.image { copy(exposure = it) } }
