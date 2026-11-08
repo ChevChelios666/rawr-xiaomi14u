@@ -1,4 +1,5 @@
 #include "capture/single/SingleFrameCaptureOutputs.h"
+#include "encoding/dng/DngFilmTone.h"
 
 #include <android/log.h>
 #include <unistd.h>
@@ -50,6 +51,7 @@ void SingleFrameCaptureOutputs::prepare(const imaging::RawSnapshot& captured, co
     if (dng_) {
         dng_->imageDescription = description;
         dng_->baselineExposureEV = static_cast<float>(std::log2(std::max(1.0e-6f, gain)));
+        if (filmEnabled) dng_->filmTone = encoding::dng::filmToneFrom(tone, gain);
     }
 }
 bool SingleFrameCaptureOutputs::startDng(std::shared_ptr<const imaging::RawSnapshot> frame, const std::string& recipe) {

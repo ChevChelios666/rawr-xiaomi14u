@@ -21,6 +21,18 @@ enum class DngCompression : std::uint8_t {
     Uncompressed = 1,  // DNG Compression=1, legacy layout.
 };
 
+// X14U: per-shot numbers that act on the signal before the film, written for StopBath (spektra.rawr in
+// ImageDescription; see DngExif.cpp). Set where the render's tone is final (single frame and multiframe).
+struct DngFilmTone {
+    float aePostGain = 1.0f;          // ratio
+    float renderExposureEv = 0.0f;    // TonemapParams::exposureEV
+    float sceneKeyEv = 0.0f;          // adaptiveTone.keyEv
+    float highlightAnchorEv = 0.0f;   // adaptiveTone.highlightEv
+    float shadowLiftEv = 0.0f;        // adaptiveTone.liftEv
+    float localToneShadowsEv = 0.0f;  // localTone.shadowsEv
+    bool sceneKeyMetering = false;
+};
+
 struct DngCaptureContext {
     // Owned destination; moves to DngCaptureWriter, which closes it on every outcome.
     OutputFd outputFd;
@@ -44,6 +56,7 @@ struct DngCaptureContext {
     // encoder embeds every recipe string verbatim and never parses it.
     std::string frameRecipe;
     std::string imageDescription;             // frozen human-readable capture/render settings
+    std::optional<DngFilmTone> filmTone;      // X14U: StopBath spektra.rawr (film shots)
     std::optional<float> baselineExposureEV;  // DNG render hint; RAW samples are unchanged.
     // Merged DNGs: {shot, read} variance scale applied to the reference
     // frame's NoiseProfile (S, O), so raw developers see the merge's noise

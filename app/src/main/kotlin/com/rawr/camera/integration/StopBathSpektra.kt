@@ -46,6 +46,15 @@ internal object StopBathSpektra {
         films.getOrNull(look.film)?.let { (id, name) -> put("film", name); put("filmId", id) }
         papers.getOrNull(look.paper)?.let { (id, name) -> put("print", name); put("printId", id) }
         formats.getOrNull(look.filmFormat)?.let { put("format", it) }
-        put("settings", JSONObject(settings.toString()))
+        put("settings", JSONObject(settings.toString()).apply {
+            // Film-engine switches Rawr never changes: the native FilmLook defaults (spektrafilm RenderParams),
+            // written so StopBath doesn't have to assume them.
+            put("colorAdaptation", false)
+            put("colorAdaptationInputCompression", true)
+            put("colorAdaptationCurveSmoothing", true)
+            put("colorAdaptationOutputLightnessCompression", true)
+            put("colorAdaptationOutputChromaCompression", true)
+            put("autoExposure", false)
+        })
     }
 }

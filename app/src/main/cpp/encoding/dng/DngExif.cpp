@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <ctime>
 #include <limits>
 #include <string>
@@ -12,6 +13,7 @@
 
 #include "geometry/LensDistortion.h"
 #include "geometry/OrientationTransform.h"
+#include "spektrafilm/SpektraFilm.h"
 
 namespace rawrcam::encoding::dng {
 namespace {
@@ -79,13 +81,104 @@ std::string jsonString(const std::string& text) {
     return out + "\"";
 }
 
-// X14U: with film on, ImageDescription is JSON for StopBath: its Unspektrawesome-style recipe key plus Rawr's own
-// text description under "rawrDescription".
-std::string stopBathDescription(const std::string& text, const std::string& recipe) {
-    const std::string spektra = recipeObject(recipe, "stopbathSpektra");
+// X14U: non-ASCII UTF-8 as \uXXXX (surrogate pairs above U+FFFF), so the ASCII tag keeps valid, lossless JSON.
+// Non-ASCII bytes only occur inside JSON strings, where the escape is legal.
+std::string asciiJson(const std::string& json) {
+    std::string out;
+    out.reserve(json.size());
+    for (size_t i = 0; i < json.size();) {
+        const unsigned char c = static_cast<unsigned char>(json[i]);
+        if (c < 0x80) {
+            out += static_cast<char>(c);
+            ++i;
+            continue;
+        }
+        const int extra = (c & 0xE0) == 0xC0 ? 1 : (c & 0xF0) == 0xE0 ? 2 : (c & 0xF8) == 0xF0 ? 3 : -1;
+        uint32_t cp = extra == 1 ? (c & 0x1Fu) : extra == 2 ? (c & 0x0Fu) : (c & 0x07u);
+        bool ok = extra > 0;
+        for (int k = 1; ok && k <= extra; ++k) {
+            if (i + k >= json.size()) { ok = false; break; }
+            const unsigned char cc = static_cast<unsigned char>(json[i + k]);
+            if ((cc & 0xC0) != 0x80) ok = false;
+            else cp = (cp << 6) | (cc & 0x3Fu);
+        }
+        if (!ok) cp = 0xFFFD;
+        char buf[16];
+        if (cp > 0xFFFF) {
+            cp -= 0x10000;
+            std::snprintf(buf, sizeof(buf), "\\u%04x\\u%04x", 0xD800u + (cp >> 10), 0xDC00u + (cp & 0x3FFu));
+        } else {
+            std::snprintf(buf, sizeof(buf), "\\u%04x", cp);
+        }
+        out += buf;
+        i += ok ? static_cast<size_t>(extra) + 1 : 1;
+    }
+    return out;
+}
+
+// Full float precision (9 significant digits round-trips a float); JSON has no NaN/Inf.
+std::string jsonNumber(float value) {
+    if (!std::isfinite(value)) return "0";
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%.9g", static_cast<double>(value));
+    return buf;
+}
+
+// The preset's filmExposureEv inside the spektra block's settings (org.json output), or 0.
+float settingsNumber(const std::string& spektra, const char* key) {
+    const std::string marker = std::string("\"") + key + "\":";
+    const size_t at = spektra.find(marker);
+    if (at == std::string::npos) return 0.0f;
+    return std::strtof(spektra.c_str() + at + marker.size(), nullptr);
+}
+
+// X14U: spektra.rawr, the per-shot numbers that act on the signal before the film (StopBath reproduces them).
+std::string filmToneObject(const DngFilmTone& t, const std::string& spektra) {
+    const float lift = std::log2(std::max(t.aePostGain, 1.0e-6f));
+    const float effective = std::clamp(settingsNumber(spektra, "filmExposureEv") +
+                                           std::min(lift, spektrafilm_native::FilmLook::kMaxFilmLiftEv) +
+                                           t.renderExposureEv,
+                                       -10.0f, 10.0f);
+    std::string o = "{";
+    // Auto-exposure post gain (ratio, not EV): scene-linear input is multiplied by it before tone/film; the film gets
+    // log2 of it (capped at filmLiftCapEv) added to its exposure, and the adaptive-tone meter sees luma * aePostGain.
+    o += "\"aePostGain\":" + jsonNumber(t.aePostGain);
+    // Render exposure (EV) of the Linear stage (user's Render exposure plus any multiframe lift): added to the film exposure.
+    o += ",\"renderExposureEv\":" + jsonNumber(t.renderExposureEv);
+    // Cap on log2(aePostGain) that reaches the film exposure (spektrafilm_native::FilmLook::kMaxFilmLiftEv).
+    o += ",\"filmLiftCapEv\":" + jsonNumber(spektrafilm_native::FilmLook::kMaxFilmLiftEv);
+    // What the film shader got: settings.filmExposureEv + min(log2(aePostGain), filmLiftCapEv) + renderExposureEv,
+    // clamped to [-10, 10]; applied as exp2(this) to the film's raw exposure (SpektraFilmExposure.comp).
+    o += ",\"filmExposureEvEffective\":" + jsonNumber(effective);
+    // Adaptive tone (shader_common/shaders/adaptive_tone.glsl, rawrAdaptiveToneGain): before the film, linear RGB is
+    // multiplied by a gain from AP1 luminance Y * aePostGain. The gain peaks at shadowLiftEv EV of lift
+    // kAdaptivePeakBelowKeyEv (1.5 EV) below sceneKeyEv, fades to no lift kAdaptiveToeEv (5 EV) further down, and
+    // rolls back to no lift at highlightAnchorEv (log2 scene luminance). shadowLiftEv 0 = off (no gain at all).
+    o += ",\"sceneKeyEv\":" + jsonNumber(t.sceneKeyEv);
+    o += ",\"highlightAnchorEv\":" + jsonNumber(t.highlightAnchorEv);
+    o += ",\"shadowLiftEv\":" + jsonNumber(t.shadowLiftEv);
+    // Local tone / exposure fusion (StillRenderSequence) before the film: shadows rendered from a synthetic exposure
+    // this many EV brighter, blended region by region. 0 = off.
+    o += ",\"localToneShadowsEv\":" + jsonNumber(t.localToneShadowsEv);
+    // Whether the scene meter's adaptive tone was active for this shot (shadowLiftEv > 0).
+    o += std::string(",\"sceneKeyMetering\":") + (t.sceneKeyMetering ? "true" : "false");
+    return o + "}";
+}
+
+// X14U: with film on, ImageDescription is JSON for StopBath (Rawr recipe metadata handoff, sections 1-7):
+// {"spektraRecipe":1,"capture":{"metadata":{"identity":{...},"spektra":{...,"rawr":{...}}}},"rawrDescription":"..."}.
+// StopBath 0.124.0+ reads this key and layout (older builds only read "unspektrawesomeRecipe").
+constexpr const char* kStopBathRecipeKey = "spektraRecipe";
+
+std::string stopBathDescription(const std::string& text, const std::string& recipe,
+                                const std::optional<DngFilmTone>& tone) {
+    std::string spektra = recipeObject(recipe, "stopbathSpektra");
     if (spektra.empty()) return text;
-    return "{\"unspektrawesomeRecipe\":{\"capture\":{\"metadata\":{\"spektra\":" + spektra +
-           "}}},\"rawrDescription\":" + jsonString(text) + "}";
+    if (tone) spektra.insert(spektra.size() - 1, ",\"rawr\":" + filmToneObject(*tone, spektra));
+    return asciiJson(std::string("{\"") + kStopBathRecipeKey +
+                     "\":1,\"capture\":{\"metadata\":{\"identity\":{\"appName\":\"Rawr\",\"appVersion\":" +
+                     jsonString(RAWR_VERSION_NAME) + "},\"spektra\":" + spektra + "}},\"rawrDescription\":" +
+                     jsonString(text) + "}");
 }
 
 std::string exifDateTime(int y, unsigned mo, unsigned d, unsigned h, unsigned mi, unsigned s) {
@@ -149,7 +242,7 @@ void fillDngExif(TinyDngWriteParams& p, const rawrcam::imaging::RawSnapshot& fra
     p.software = rawrcam::encoding::kSoftwareName;
     p.description = tiffAsciiDescription(stopBathDescription(
         captureContext.imageDescription.empty() ? rawrcam::encoding::kCapturedWith : captureContext.imageDescription,
-        captureContext.processingRecipe));
+        captureContext.processingRecipe, captureContext.filmTone));
     switch (rawrcam::geometry::presentationQuarterTurns(ctx.geometry.sensorOrientationDegrees,
                                                         captureContext.deviceRotationDegrees)) {
         case 1u:

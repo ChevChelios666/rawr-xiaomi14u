@@ -1,3 +1,4 @@
+#include "encoding/dng/DngFilmTone.h"
 #include "capture/multiframe/mfsr/MfsrCaptureJob.h"
 
 #include <android/log.h>
@@ -172,6 +173,11 @@ void MfsrCaptureJob::runStages(Published& published) {
     const float liftEv = headroomCapture ? 0.0f : dngLiftEv;
     auto frozenTonemap = work->frozenTonemap;
     frozenTonemap.exposureEV += liftEv;
+    if (work->filmEnabled) {
+        // X14U: StopBath spektra.rawr, from the tone the merged render uses (includes the multiframe lift).
+        mergedDng.filmTone = encoding::dng::filmToneFrom(frozenTonemap, frozenTonemap.aePostGain);
+        baseDng.filmTone = mergedDng.filmTone;
+    }
     if (liftEv > 0.0f) {
         // Older dark-frame captures lift the render through exposureEV, which
         // DNG re-renders do not read: fold it into the recipe's post-gain.

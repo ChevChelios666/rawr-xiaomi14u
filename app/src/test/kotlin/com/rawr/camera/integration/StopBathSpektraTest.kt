@@ -23,6 +23,8 @@ class StopBathSpektraTest {
         assertEquals("std35", block.getString("format"))
         assertEquals(0.5, block.getJSONObject("settings").getDouble("filmExposureEv"))
         assertTrue(block.getBoolean("enabled"))
+        assertEquals(false, block.getJSONObject("settings").getBoolean("colorAdaptation"))
+        assertEquals(true, block.getJSONObject("settings").getBoolean("colorAdaptationCurveSmoothing"))
     }
 
     @Test
