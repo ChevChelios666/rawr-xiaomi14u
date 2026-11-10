@@ -15,7 +15,8 @@ class X14uBackupConversionTest {
     private val new = LensProfileCodec.decodeBackup(resource("new.json")).associateBy { it.name }
 
     private fun LensProfile.normalized(name: String) =
-        copy(name = name, vendorKeys = vendorKeys.sortedWith(compareBy({ it.tag }, { it.scope.ordinal })), options = emptyList())
+        copy(name = name, vendorKeys = vendorKeys.sortedWith(compareBy({ it.tag }, { it.scope.ordinal })), options = emptyList(),
+            videoLens = null)
 
     // Aperture index: 0 f/1.67, 1 f/1.8, 2 f/2 (no keys, default), 3 f/2.4, 4 f/2.8, 5 f/3.2, 6 f/4.
     private val apertures = listOf(2 to "", 0 to " f1.67", 4 to " f2.8", 6 to " f4")
@@ -71,13 +72,35 @@ class X14uBackupConversionTest {
     }
 
     @Test
-    fun fiftyMegapixelsLocksApertureToF2AndDcgOff() {
-        // Tested on the phone: aperture keys do nothing at 50 MP, so 50 mp runs at f/2 whatever Aperture says.
+    fun fiftyMegapixelsRunsAsTheHidden50MpLens() {
+        // 50 mp On runs 1x as the hidden lens "50MP" (its own overrides); it locks Aperture to f/2 and DCG off.
         val main = new.getValue("1x")
         val fifty = old.getValue("1x 50MP").normalized("1x 50MP")
+        assertEquals("50MP", main.options[2].choices[1].runAs)
+        assertEquals(mapOf("Aperture" to "f/2", "DCG" to "Off"), main.options[2].choices[1].locks)
+        val lenses = new.values.toList()
         for (aperture in 0..6) {
-            assertEquals(fifty, LensOptionsCodec.resolve(main, listOf(aperture, 0, 1)).normalized("1x 50MP"), "aperture $aperture")
+            val picked = main.copy(options = main.options.mapIndexed { i, o -> o.copy(selected = listOf(aperture, 0, 1)[i]) })
+            val running = LensOptionsCodec.forCamera(lenses.map { if (it.name == "1x") picked else it }, video = false)
+                .first { it.name == "1x" }
+            assertEquals(fifty, running.copy(image = fifty.image).normalized("1x 50MP"), "aperture $aperture")
         }
+        assertEquals(fifty, LensOptionsCodec.resolve(new.getValue("50MP")).copy(image = fifty.image).normalized("1x 50MP"))
+    }
+
+    @Test
+    fun videoRunsAsTheHidden1xVLensWithItsDcgRow() {
+        val lenses = new.values.toList()
+        assertEquals("1xV", new.getValue("1x").videoLens)
+        val video = LensOptionsCodec.forCamera(lenses, video = true)
+        assertEquals(listOf("0.5x", "1x", "2x", "3.2x", "5x", "Front"), video.map { it.name })
+        val main = video.first { it.name == "1x" }
+        assertEquals("2", main.camera.id)
+        assertEquals(4096 to 2304, main.streams.raw.choice.width to main.streams.raw.choice.height)
+        val dcg = LensOptionsCodec.forCamera(lenses.map { if (it.name == "1x") it.selectOption(1, 1) else it }, video = true)
+            .first { it.name == "1x" }
+        assertEquals(4096 to 3072, dcg.streams.raw.choice.width to dcg.streams.raw.choice.height)
+        assertEquals(listOf(7.0), dcg.vendorKeys.first { it.tag == "org.codeaurora.qcamera3.sensor_meta_data.current_mode" }.values)
     }
 
     @Test
@@ -92,6 +115,7 @@ class X14uBackupConversionTest {
     @Test
     fun otherLensesAreUnchanged() {
         for (name in listOf("0.5x", "3.2x", "5x", "Front")) assertEquals(old.getValue(name), new.getValue(name), name)
-        assertEquals(listOf("0.5x", "1x", "2x", "3.2x", "5x", "Front"), new.keys.toList())
+        assertEquals(listOf("0.5x", "1x", "2x", "3.2x", "5x", "Front", "1xV", "50MP"), new.keys.toList())
+        assertEquals(setOf("1xv", "50mp"), LensOptionsCodec.hiddenLensNames(new.values.toList()))
     }
 }
