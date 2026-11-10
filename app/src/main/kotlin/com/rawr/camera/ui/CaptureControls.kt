@@ -216,10 +216,10 @@ internal fun PhotoLookToggles(
     dispatch: CaptureDispatch,
     onOpenFilmSimSettings: () -> Unit,
     onOpenMultiframeSettings: () -> Unit,
-    /** X14U build: the DCP button, after FILM. */
-    trailing: @Composable () -> Unit = {},
     /** X14U: each pill turns in place in landscape. */
-    pillModifier: Modifier = Modifier
+    pillModifier: Modifier = Modifier,
+    /** X14U build: the DCP button, after FILM. */
+    trailing: @Composable () -> Unit = {}
 ) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(0.dp),

@@ -297,7 +297,8 @@ internal fun X14uCaptureLayout(
         val frameWidth = minOf(maxWidth - 16.dp, 379.dp * s, (maxHeight * .6f) * .75f)
         val frame = DpSize(frameWidth, frameWidth * 4f / 3f)
         val bottom = top + frame.height
-        val shutterCenter = minOf(bottom + 175.dp * s, maxHeight - 50.dp)
+        val fullHeight = maxHeight
+        val shutterCenter = minOf(bottom + 175.dp * s, fullHeight - 50.dp)
         Box(Modifier.fillMaxSize()) {
             CaptureViewfinder(
                 state = state,
@@ -322,7 +323,7 @@ internal fun X14uCaptureLayout(
             // Controls float over a 16:9 preview that runs past the photo frame.
             if (videoBleed) {
                 Box(
-                    Modifier.fillMaxWidth().offset(y = bottom).height(maxHeight - bottom)
+                    Modifier.fillMaxWidth().offset(y = bottom).height(fullHeight - bottom)
                         .background(CaptureColors.Background.copy(alpha = .6f))
                 )
             }
@@ -1626,12 +1627,12 @@ private fun X14uShutterRow(
                         minWidth = SidePillWidth,
                         modifier = turn
                     )
-                    DcpSidePill(dcp, { if (enabled) onSelectDcp(it) }, { onOpenLensSettings(state.selectedLensId) }, turn)
+                    DcpSidePill(dcp, { if (enabled) onSelectDcp(it) }, modifier = turn, onOpenLensSettings = { onOpenLensSettings(state.selectedLensId) })
                 }
             } else {
                 PhotoLookToggles(
                     state, dispatch, onOpenFilmSimSettings, onOpenMultiframeSettings,
-                    trailing = { DcpSidePill(dcp, onSelectDcp, { onOpenLensSettings(state.selectedLensId) }, turn) },
+                    trailing = { DcpSidePill(dcp, onSelectDcp, modifier = turn, onOpenLensSettings = { onOpenLensSettings(state.selectedLensId) }) },
                     pillModifier = turn
                 )
             }

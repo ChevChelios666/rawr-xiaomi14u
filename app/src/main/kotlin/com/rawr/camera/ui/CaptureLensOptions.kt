@@ -290,8 +290,8 @@ internal fun shortDcpName(name: String): String =
 internal fun DcpSidePill(
     dcp: DcpQuickState?,
     onSelect: (String?) -> Unit,
-    onOpenLensSettings: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenLensSettings: () -> Unit
 ) {
     val profiles = dcp?.profiles.orEmpty()
     val selected = profiles.firstOrNull { it.file == dcp?.selectedFile }
