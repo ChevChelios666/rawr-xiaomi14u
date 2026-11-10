@@ -53,7 +53,8 @@ internal fun PhysicalCaptureLayout(
     onToggleVideoRecording: () -> Unit = {}
 ) {
     // X14U: Pro (photo) and Video use the new screen; Photo is the classic Rawr screen.
-    if (X14U_NEW_CAPTURE_SCREEN && (state.captureMode == CaptureMode.Video || LocalCaptureExtras.current.proUi)) {
+    // X14U: Photo, Pro and Video all use the new screen (Photo with the A·M·S·I row).
+    if (X14U_NEW_CAPTURE_SCREEN) {
         X14uCaptureLayout(
             state, dispatch, preview, renderProfiles, onSelectRenderProfile, onOpenSettings, latestImageUri,
             onOpenLatestImage, onOpenRenderer, onOpenFilmSimSettings, onOpenMultiframeSettings, onOpenLensSettings,

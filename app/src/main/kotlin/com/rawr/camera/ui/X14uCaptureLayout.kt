@@ -102,6 +102,7 @@ import com.rawr.camera.model.ViewfinderQuickState
 import com.rawr.camera.model.WhiteBalanceMode
 import com.rawr.camera.model.agxStripState
 import com.rawr.camera.model.capabilityFor
+import com.rawr.camera.model.exposureOwners
 import com.rawr.camera.model.focusDistanceLabel
 import com.rawr.camera.model.formatFilmStripValue
 import com.rawr.camera.model.mfNormalizedFromDiopters
@@ -246,13 +247,26 @@ internal fun X14uCaptureLayout(
         open
     }
     val film = state.filmSimEnabled && !isVideo && filmQuick != null
+    // Photo (not Pro): the AMSI row instead of the full exposure row.
+    val simplePhoto = !isVideo && !LocalCaptureExtras.current.proUi
 
     // Cells and editors for what is showing.
     val cells: List<X14uCell>
     val editorFor: (String) -> X14uEditor
     when (panel) {
         null -> {
-            cells = exposureCells(state, quick, lensOptions)
+            val all = exposureCells(state, quick, lensOptions)
+            cells = if (simplePhoto) {
+                // Photo: only the cells the exposure mode lets you set (A: EV · M: SS, ISO · S: SS, EV · I: ISO, EV), plus F.
+                val owners = state.exposureOwners().map {
+                    when (it) {
+                        ExposureParameter.Ev -> "ev"
+                        ExposureParameter.Shutter -> "ss"
+                        ExposureParameter.Iso -> "iso"
+                    }
+                }
+                owners.mapNotNull { k -> all.firstOrNull { it.key == k } } + all.filter { it.key == "f" }
+            } else all
             editorFor = { key -> exposureEditor(key, state, dispatch, lensOptions, recordingLock, onQuickEvent) }
         }
         X14uPanel.Exposure -> {
@@ -312,7 +326,7 @@ internal fun X14uCaptureLayout(
             }
         }
     }
-    val currentKey = if (panel == null) selected else (panelKey?.takeIf { k -> cells.any { it.key == k } } ?: cells.firstOrNull()?.key)
+    val currentKey = if (panel == null) selected?.takeIf { k -> cells.any { it.key == k } } else (panelKey?.takeIf { k -> cells.any { it.key == k } } ?: cells.firstOrNull()?.key)
 
     BoxWithConstraints(modifier) {
         val s = (maxHeight / X14uGeometry.reference).coerceIn(.8f, 1.25f)
@@ -382,13 +396,14 @@ internal fun X14uCaptureLayout(
             CaptureTopBar(state, dispatch, onOpenSettings, videoLocked = recordingLock, showLog = false) {
                 X14uOptionToggles(quick, lensOptions, isVideo, enabled = !recordingLock, orientation, onQuickEvent)
             }
-            X14uCellRow(
-                cells = cells,
-                selectedKey = currentKey,
-                orientation = orientation,
-                modifier = Modifier.fillMaxWidth().offset(y = bottom + 6.dp * s).height(48.dp * s)
-            ) { key ->
+            val onCellTap: (String) -> Unit = { key ->
                 if (panel == null) selected = if (selected == key) null else key else panelKey = key
+            }
+            val rowModifier = Modifier.fillMaxWidth().offset(y = bottom + 6.dp * s).height(48.dp * s)
+            if (panel == null && simplePhoto) {
+                X14uPhotoRow(cells, currentKey, state, dispatch, enabled = !recordingLock, modifier = rowModifier, onTap = onCellTap)
+            } else {
+                X14uCellRow(cells = cells, selectedKey = currentKey, orientation = orientation, modifier = rowModifier, onTap = onCellTap)
             }
             Box(
                 Modifier.fillMaxWidth().offset(y = bottom + 58.dp * s).height(76.dp * s).padding(horizontal = 12.dp),
@@ -712,7 +727,6 @@ private fun X14uCellRow(
     modifier: Modifier,
     onTap: (String) -> Unit
 ) {
-    val haptics = LocalCaptureHaptics.current
     val scroll = cells.size > 6
     Row(
         modifier
@@ -724,50 +738,143 @@ private fun X14uCellRow(
             if (cell.groupStart) {
                 Box(Modifier.padding(horizontal = 4.dp).size(1.dp, 22.dp).background(Color.White.copy(alpha = .2f)))
             }
-            val isOpen = cell.key == selectedKey
-            Box(
-                Modifier
-                    .then(if (scroll) Modifier.width(66.dp) else Modifier.weight(1f))
-                    .fillMaxHeight()
-                    .captureClickable(shape = CaptureTextRippleShape, enabled = cell.enabled) {
-                        haptics.selection()
-                        onTap(cell.key)
-                    }
-                    .semantics {
-                        contentDescription = "${cell.label} ${cell.value}"
-                        selected = isOpen
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    Modifier.uprightInLandscape(orientation),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        cell.value,
-                        fontFamily = X14uFont,
-                        fontSize = dpText(if (scroll) 14f else 16f),
-                        lineHeight = dpText(if (scroll) 16f else 19f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Clip,
-                        color = when {
-                            isOpen -> CaptureColors.Accent
-                            !cell.enabled -> Color.White.copy(alpha = .35f)
-                            cell.changed -> CaptureColors.AccentSoft
-                            else -> Color.White
-                        }
-                    )
-                    Text(
-                        cell.label,
-                        fontFamily = X14uFont,
-                        fontSize = dpText(10.5f),
-                        lineHeight = dpText(12f),
-                        maxLines = 1,
-                        color = if (isOpen) CaptureColors.Accent else Color.White.copy(alpha = if (cell.enabled) .55f else .25f)
-                    )
+            X14uCellView(
+                cell, cell.key == selectedKey, orientation, compact = scroll,
+                modifier = (if (scroll) Modifier.width(66.dp) else Modifier.weight(1f)).fillMaxHeight(),
+                onTap = onTap
+            )
+        }
+    }
+}
+
+@Composable
+private fun X14uCellView(
+    cell: X14uCell,
+    isOpen: Boolean,
+    orientation: Orientation,
+    compact: Boolean,
+    modifier: Modifier,
+    onTap: (String) -> Unit
+) {
+    val haptics = LocalCaptureHaptics.current
+    Box(
+        modifier
+            .captureClickable(shape = CaptureTextRippleShape, enabled = cell.enabled) {
+                haptics.selection()
+                onTap(cell.key)
+            }
+            .semantics {
+                contentDescription = "${cell.label} ${cell.value}"
+                selected = isOpen
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            Modifier.uprightInLandscape(orientation),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                cell.value,
+                fontFamily = X14uFont,
+                fontSize = dpText(if (compact) 14f else 16f),
+                lineHeight = dpText(if (compact) 16f else 19f),
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
+                color = when {
+                    isOpen -> CaptureColors.Accent
+                    !cell.enabled -> Color.White.copy(alpha = .35f)
+                    cell.changed -> CaptureColors.AccentSoft
+                    else -> Color.White
+                }
+            )
+            Text(
+                cell.label,
+                fontFamily = X14uFont,
+                fontSize = dpText(10.5f),
+                lineHeight = dpText(12f),
+                maxLines = 1,
+                color = if (isOpen) CaptureColors.Accent else Color.White.copy(alpha = if (cell.enabled) .55f else .25f)
+            )
+        }
+    }
+}
+
+/** Photo mode: the A·M·S·I pill (exposure mode / priorities) at the left, that mode's cells centred, aperture at the right. */
+@Composable
+private fun X14uPhotoRow(
+    cells: List<X14uCell>,
+    selectedKey: String?,
+    state: CaptureUiState,
+    dispatch: CaptureDispatch,
+    enabled: Boolean,
+    modifier: Modifier,
+    onTap: (String) -> Unit
+) {
+    val orientation = state.orientation
+    val aperture = cells.firstOrNull { it.key == "f" }
+    Row(modifier.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        X14uAmsiPill(state, dispatch, enabled)
+        Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+            Row(Modifier.fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                cells.filter { it.key != "f" }.forEach { cell ->
+                    X14uCellView(cell, cell.key == selectedKey, orientation, compact = false,
+                        modifier = Modifier.width(66.dp).fillMaxHeight(), onTap = onTap)
                 }
             }
         }
+        Box(Modifier.size(1.dp, 22.dp).background(Color.White.copy(alpha = .15f)))
+        if (aperture != null) {
+            X14uCellView(aperture, aperture.key == selectedKey, orientation, compact = false,
+                modifier = Modifier.width(64.dp).fillMaxHeight(), onTap = onTap)
+        }
+    }
+}
+
+/** A · M · S · I: auto, manual, shutter priority, ISO priority. Modes the camera can't run are greyed. */
+@Composable
+private fun X14uAmsiPill(state: CaptureUiState, dispatch: CaptureDispatch, enabled: Boolean) {
+    val haptics = LocalCaptureHaptics.current
+    val supported = state.capabilities.supportedExposureModes
+    val current = state.exposureControl.mode
+    Row(
+        Modifier.height(28.dp).background(Color.White.copy(alpha = .08f), RoundedCornerShape(14.dp)).padding(horizontal = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        listOf(ExposureMode.Auto to "A", ExposureMode.Manual to "M", ExposureMode.ShutterPriority to "S", ExposureMode.IsoPriority to "I")
+            .forEach { (mode, letter) ->
+                val on = mode == current
+                val usable = enabled && mode in supported
+                Box(
+                    Modifier
+                        .size(24.dp)
+                        .background(if (on) CaptureColors.Accent.copy(alpha = .22f) else Color.Transparent, CircleShape)
+                        .captureClickable(shape = CircleShape, enabled = usable) {
+                            if (!on) {
+                                haptics.selection()
+                                dispatch(SetExposureMode(mode))
+                            }
+                        }
+                        .semantics {
+                            contentDescription = "Exposure mode $letter"
+                            role = Role.RadioButton
+                            selected = on
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        letter,
+                        fontFamily = X14uFont,
+                        fontWeight = if (on) FontWeight.Medium else FontWeight.Normal,
+                        fontSize = dpText(12.5f),
+                        color = when {
+                            on -> CaptureColors.Accent
+                            usable -> Color.White.copy(alpha = .75f)
+                            else -> Color.White.copy(alpha = .25f)
+                        },
+                        modifier = Modifier.uprightInLandscape(state.orientation)
+                    )
+                }
+            }
     }
 }
 

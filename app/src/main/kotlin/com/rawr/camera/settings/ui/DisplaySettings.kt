@@ -62,29 +62,6 @@ internal fun ControlStyleSettings(state: SettingsUiState, dispatch: SettingsDisp
     val haptics = LocalSettingsHaptics.current
     SettingsPageContainer {
         SettingsGroup(
-            title = "Capture Layout",
-            description = "For the Photo mode (the classic Rawr screen). Pro and Video use the X14U screen. " +
-                "Classic keeps SS/ISO/EV sliders in the viewfinder. Compact moves WB/SS/ISO/EV to scrubbable buttons by the shutter, with multiframe and film sim pills."
-        ) {
-            SettingsSelectionRow(
-                title = "Classic",
-                selected = state.values.captureControlLayout == CaptureControlLayout.Classic,
-                onClick = {
-                    haptics.detent()
-                    dispatch.invoke(SetCaptureControlLayout(CaptureControlLayout.Classic))
-                }
-            )
-            SettingDivider()
-            SettingsSelectionRow(
-                title = "Compact",
-                selected = state.values.captureControlLayout == CaptureControlLayout.Compact,
-                onClick = {
-                    haptics.detent()
-                    dispatch.invoke(SetCaptureControlLayout(CaptureControlLayout.Compact))
-                }
-            )
-        }
-        SettingsGroup(
             description = "Changes only the visual material used by Capture Screen controls. Layout and interaction stay identical."
         ) {
             SettingsSelectionRow(
