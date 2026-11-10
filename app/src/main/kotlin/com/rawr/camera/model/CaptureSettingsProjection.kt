@@ -3,11 +3,9 @@ package com.rawr.camera.model
 import com.rawr.camera.settings.model.*
 
 internal fun SettingsValues.toRenderProfileQuickState(): RenderProfileQuickState {
-    val logOptions = VideoLogProfile.entries.map { RenderProfileQuickOption(RenderProfileSelection.Log(it), it.label) }
     if (isLogActive) return RenderProfileQuickState(
-        options = logOptions,
-        selectedId = RenderProfileSelection.Log(videoLogProfile), log = true,
-        videoOptions = copy(videoLogEnabled = false).toRenderProfileQuickState().options + logOptions
+        options = VideoLogProfile.entries.map { RenderProfileQuickOption(RenderProfileSelection.Log(it), it.label) },
+        selectedId = RenderProfileSelection.Log(videoLogProfile), log = true
     )
     val usable = userLutProfiles.filter { it.stages.isNotEmpty() }
     val builtIns = listOf(ColorRenderProfile.RawrBase, if (isVideo) ColorRenderProfile.Rec709 else ColorRenderProfile.SRgb)
@@ -23,7 +21,7 @@ internal fun SettingsValues.toRenderProfileQuickState(): RenderProfileQuickState
             ?: RenderProfileSelection.Agx(regularAgxPreset()).takeIf { regularRenderProfile() == ColorRenderProfile.AgX }
             ?: RenderProfileSelection.BuiltIn(regularRenderProfile().takeIf { it in builtIns } ?: ColorRenderProfile.RawrBase),
         agx = if (isAgxActive()) AgxQuickState(activeAgxValues(), activeAgxDefaults()) else null
-    ).let { state -> if (isVideo) state.copy(videoOptions = state.options + logOptions) else state }
+    )
 }
 
 // Compact viewfinder film strip: preset switching + numeric scrubs apply

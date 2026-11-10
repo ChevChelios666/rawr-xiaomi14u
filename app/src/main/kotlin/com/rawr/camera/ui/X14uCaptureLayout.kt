@@ -233,15 +233,6 @@ internal fun X14uCaptureLayout(
     var lookTab by remember { mutableStateOf("TONE") }
     var panelKey by remember { mutableStateOf<String?>(null) }
     var showNumbers by remember { mutableStateOf(false) }
-    // A video profile on the other side of the LOG switch: switch LOG first, then select it.
-    var pendingProfile by remember { mutableStateOf<com.rawr.camera.model.RenderProfileSelection?>(null) }
-    LaunchedEffect(renderProfiles.log, pendingProfile) {
-        val pending = pendingProfile ?: return@LaunchedEffect
-        if ((pending is com.rawr.camera.model.RenderProfileSelection.Log) == renderProfiles.log) {
-            pendingProfile = null
-            onSelectRenderProfile(pending)
-        }
-    }
     LaunchedEffect(state.captureMode, state.selectedLensId) {
         selected = null
         panel = null
@@ -274,23 +265,14 @@ internal fun X14uCaptureLayout(
                 "PROFILE" -> {
                     val label = renderProfiles.options.firstOrNull { it.id == renderProfiles.selectedId }?.label ?: "RAWR NTRL"
                     cells = listOf(X14uCell("profile", label, if (renderProfiles.log) "LOG PROFILE" else "PROFILE"))
-                    // Video lists the regular and the LOG profiles together; picking across switches LOG.
-                    val options = if (isVideo && renderProfiles.videoOptions.isNotEmpty()) renderProfiles.videoOptions else renderProfiles.options
+                    // LOG on lists the LOG profiles, LOG off the usual ones.
+                    val options = renderProfiles.options
                     editorFor = {
                         X14uEditor.Chips(
                             options.map { it.label },
                             options.indexOfFirst { it.id == renderProfiles.selectedId },
                             enabled = !renderProfiles.locked
-                        ) { i ->
-                            val pick = options[i].id
-                            val wantsLog = pick is com.rawr.camera.model.RenderProfileSelection.Log
-                            if (isVideo && wantsLog != renderProfiles.log) {
-                                pendingProfile = pick
-                                dispatch(ToggleVideoLog)
-                            } else {
-                                onSelectRenderProfile(pick)
-                            }
-                        }
+                        ) { i -> onSelectRenderProfile(options[i].id) }
                     }
                 }
                 "HL" -> {
