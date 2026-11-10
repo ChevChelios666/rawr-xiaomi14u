@@ -1,5 +1,6 @@
 package com.rawr.camera.settings.preferences
 
+import com.rawr.camera.settings.model.withLensOverrides
 import com.rawr.camera.settings.model.AgxCatalog
 import com.rawr.camera.settings.model.AgxParameter
 import com.rawr.camera.settings.model.AgxPreset
@@ -1292,8 +1293,10 @@ object SettingsPreferencesStore {
                     gpuFiles.setEnabled(values.customGpuDriverEnabled)
                     gpuEnabled = values.customGpuDriverEnabled
                 }
-                com.rawr.camera.integration.LiveTonemapState.publish(values.activeImageTone())
-                com.rawr.camera.integration.LiveTonemapState.publishAgx(values.activeAgxValues())
+                // X14U: the live tone is the active lens's (per-lens tone overrides).
+                val live = values.withLensOverrides()
+                com.rawr.camera.integration.LiveTonemapState.publish(live.activeImageTone())
+                com.rawr.camera.integration.LiveTonemapState.publishAgx(live.activeAgxValues())
             },
             onPersisted = { saved, live ->
                 // A newer edit may already be visible while this older write finishes.

@@ -5,7 +5,7 @@ package com.rawr.camera.settings.model
  * capture-screen order; disabled lenses are kept but not sent to the camera.
  * The name doubles as the app's lens id and the capture-screen label.
  */
-const val LENS_NAME_MAX_LENGTH = 4
+const val LENS_NAME_MAX_LENGTH = 6
 
 enum class VendorKeyScope(val wireName: String, val label: String) {
     /** Session parameter, set when each capture session (photo or video) is created. */
@@ -170,7 +170,12 @@ data class LensProfile(
      * X14U build: in video mode this lens runs as the named lens (e.g. 1x -> its 16:9 RAW16 "1xV"), keeping this
      * lens's id, label and option picks. The named lens is hidden from the capture screen's lens row.
      */
-    val videoLens: String? = null
+    val videoLens: String? = null,
+    /**
+     * X14U build: per-lens overrides of global settings, by [LensOverrides] key (Rawr AE, tone, detail,
+     * multiframe). Kept in settings and backups; the camera never receives them.
+     */
+    val overrides: Map<String, String> = emptyMap()
 ) {
     /** A lens on [cameraId] (and [physicalCameraId] inside it) with every other setting at its default. */
     constructor(name: String, cameraId: String, physicalCameraId: String = "") :
@@ -305,10 +310,12 @@ data class LensImage(
     val dcp: LensDcp? = null,
     val exposure: LensExposure = LensExposure(),
     /** Imported choices retained even while camera colour is selected. */
-    val dcpProfiles: List<LensDcp> = emptyList()
+    val dcpProfiles: List<LensDcp> = emptyList(),
+    /** X14U build: camera profile for video, separate from the photo [dcp]; null for the camera's own. */
+    val videoDcp: LensDcp? = null
 ) {
     /** Includes the selection from older settings that stored only one profile. */
-    val availableDcps: List<LensDcp> get() = (dcpProfiles + listOfNotNull(dcp)).distinctBy { it.file }
+    val availableDcps: List<LensDcp> get() = (dcpProfiles + listOfNotNull(dcp, videoDcp)).distinctBy { it.file }
 
     fun importDcp(profile: LensDcp): LensImage =
         copy(dcp = profile, dcpProfiles = (availableDcps + profile).distinctBy { it.file })
@@ -316,6 +323,12 @@ data class LensImage(
     fun selectDcp(file: String?): LensImage = when {
         file == null -> copy(dcpProfiles = availableDcps, dcp = null)
         else -> availableDcps.firstOrNull { it.file == file }?.let { copy(dcp = it) } ?: this
+    }
+
+    /** Video's profile, chosen from the same imported profiles. */
+    fun selectVideoDcp(file: String?): LensImage = when {
+        file == null -> copy(dcpProfiles = availableDcps, videoDcp = null)
+        else -> availableDcps.firstOrNull { it.file == file }?.let { copy(dcpProfiles = availableDcps, videoDcp = it) } ?: this
     }
 
     fun moveDcp(from: Int, to: Int): LensImage {
@@ -331,7 +344,8 @@ data class LensImage(
 
     fun removeDcp(file: String): LensImage = copy(
         dcpProfiles = availableDcps.filterNot { it.file == file },
-        dcp = dcp?.takeUnless { it.file == file }
+        dcp = dcp?.takeUnless { it.file == file },
+        videoDcp = videoDcp?.takeUnless { it.file == file }
     )
 }
 
@@ -424,6 +438,16 @@ fun validateLensProfile(lens: LensProfile, others: List<LensProfile>): List<Stri
             named?.videoLens != null -> add("Video lens $target has a video lens of its own")
         }
     }
+    lens.options.flatMap { it.choices }.mapNotNull { it.runAs?.trim()?.takeIf { n -> n.isNotEmpty() } }.distinct().forEach { target ->
+        val named = others.firstOrNull { it.name.trim().equals(target, ignoreCase = true) }
+        when {
+            target.equals(lens.name.trim(), ignoreCase = true) -> add("A choice can't run the lens as itself")
+            others.isNotEmpty() && named == null -> add("Run-as lens $target doesn't exist")
+            named != null && (named.videoLens != null || named.options.any { o -> o.choices.any { it.runAs != null } }) ->
+                add("Run-as lens $target runs as another lens itself")
+        }
+    }
+    lens.overrides.keys.filter { LensOverrides.spec(it) == null }.forEach { add("Unknown override $it") }
     if (session.params == "none") {
         lens.vendorKeys
             .firstOrNull { it.enabled && (it.scope == VendorKeyScope.Session || it.scope == VendorKeyScope.SessionAndRequest) }

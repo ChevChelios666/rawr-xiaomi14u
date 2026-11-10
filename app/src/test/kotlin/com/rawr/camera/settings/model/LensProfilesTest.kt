@@ -16,7 +16,8 @@ class LensProfilesTest {
     @Test
     fun nameIsRequiredShortAndUnique() {
         assertEquals(listOf("Name is required"), validateLensProfile(lens.copy(name = " "), emptyList()))
-        assertEquals(listOf("Name must be at most 4 characters"), validateLensProfile(lens.copy(name = "12345"), emptyList()))
+        assertEquals(listOf("Name must be at most 6 characters"), validateLensProfile(lens.copy(name = "1234567"), emptyList()))
+        assertTrue(validateLensProfile(lens.copy(name = "Front"), emptyList()).isEmpty())
         assertEquals(
             listOf("Another lens is named Tele"),
             validateLensProfile(lens.copy(name = "Tele"), listOf(lens.copy(name = "tele")))

@@ -237,6 +237,7 @@ internal fun LensEditorScreen(state: SettingsUiState, lensName: String?, dispatc
                 onSelect = { draft = draft.copy(videoLens = it) }
             )
         }
+        LensOverridesGroup(draft, state.values) { draft = it }
         CaptureGroup(draft, camera, onPickStream = { pickStream = true }) { draft = it }
         ExtendedExposureGroup(draft.image.exposure) { draft = draft.image { copy(exposure = it) } }
         VendorModeGroup(draft, camera, onEditKey = { editKey = it ?: -1 }) { draft = it }

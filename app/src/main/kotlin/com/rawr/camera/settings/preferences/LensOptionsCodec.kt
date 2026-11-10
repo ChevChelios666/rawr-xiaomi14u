@@ -5,6 +5,7 @@ import com.rawr.camera.settings.model.LensOptionChoice
 import com.rawr.camera.settings.model.LensProfile
 import com.rawr.camera.settings.model.VendorKey
 import com.rawr.camera.settings.model.effectivePicks
+import com.rawr.camera.settings.model.runAsTarget
 import com.rawr.camera.settings.model.validateLensOptions
 import com.rawr.camera.settings.model.validateLensProfile
 import org.json.JSONArray
@@ -41,6 +42,7 @@ internal object LensOptionsCodec {
                             if (choice.vendorKeys.isNotEmpty()) put("vendorKeys", LensProfileCodec.encodeKeys(choice.vendorKeys))
                             choice.patch?.let { put("patch", JSONObject(it)) }
                             if (choice.locks.isNotEmpty()) put("locks", JSONObject().apply { choice.locks.forEach { (k, v) -> put(k, v) } })
+                            choice.runAs?.trim()?.takeIf { it.isNotEmpty() }?.let { put("runAs", it) }
                         })
                     }
                 }))
@@ -74,7 +76,8 @@ internal object LensOptionsCodec {
         patch = o.optJSONObject("patch")?.toString(),
         locks = o.optJSONObject("locks")?.let { l ->
             l.keys().asSequence().associateWith { l.getString(it) }
-        }.orEmpty()
+        }.orEmpty(),
+        runAs = o.optString("runAs").trim().takeIf { it.isNotEmpty() }
     )
 
     /**
@@ -98,6 +101,7 @@ internal object LensOptionsCodec {
                 choice.optJSONObject("locks")?.let { locks ->
                     locks.keys().forEach { name -> require(locks.get(name) is String) { "Invalid lock on $name" } }
                 } ?: require(!choice.has("locks")) { "locks must be an object" }
+                if (choice.has("runAs")) require(choice.get("runAs") is String) { "runAs must be a lens name" }
                 val merged = choice.optJSONObject("patch")?.let { mergePatch(base, it) as JSONObject } ?: JSONObject(base.toString())
                 choice.optJSONArray("vendorKeys")?.let { keys ->
                     val all = merged.optJSONArray("vendorKeys") ?: JSONArray()
@@ -150,16 +154,31 @@ internal object LensOptionsCodec {
         : List<LensProfile> {
         fun named(name: String?) = name?.trim()?.takeIf { it.isNotEmpty() }
             ?.let { n -> lenses.firstOrNull { it.name.trim().equals(n, ignoreCase = true) } }
-        val hidden = lenses.filter { it.enabled }.mapNotNull { named(it.videoLens)?.name?.trim()?.lowercase() }.toSet()
+        val hidden = hiddenLensNames(lenses)
         return lenses.filterNot { it.name.trim().lowercase() in hidden }.map { lens ->
-            val target = if (video) named(lens.videoLens)?.takeIf { it.videoLens == null } else null
-            val source = target?.let { videoTarget(lens, it) } ?: lens
-            runCatching { resolve(source) }.onFailure { onError(lens, it) }.getOrDefault(source.copy(options = emptyList()))
+            val target = if (video) named(lens.videoLens)?.takeIf { it.videoLens == null }
+            else named(lens.runAsTarget())?.takeIf { it.videoLens == null && it.runAsTarget() == null }
+            val source = target?.let { videoTarget(lens, it, video) } ?: lens
+            val resolved = runCatching { resolve(source) }.onFailure { onError(lens, it) }
+                .getOrDefault(source.copy(options = emptyList()))
+            // Video runs with the lens's video DCP (Default unless chosen); overrides never reach the camera.
+            val image = if (video) resolved.image.copy(dcp = lens.image.videoDcp) else resolved.image
+            resolved.copy(image = image, overrides = emptyMap())
         }
     }
 
+    /** Lower-case names of lenses that run only inside another lens (its video lens, or an option's run-as lens). */
+    fun hiddenLensNames(lenses: List<LensProfile>): Set<String> {
+        fun named(name: String?) = name?.trim()?.takeIf { it.isNotEmpty() }
+            ?.let { n -> lenses.firstOrNull { it.name.trim().equals(n, ignoreCase = true) } }
+        return lenses.filter { it.enabled }.flatMap { lens ->
+            listOfNotNull(named(lens.videoLens)) +
+                lens.options.flatMap { o -> o.choices.mapNotNull { named(it.runAs) } }
+        }.map { it.name.trim().lowercase() }.toSet()
+    }
+
     /** [target] under [lens]'s id, with [lens]'s current picks applied to the rows they share. */
-    internal fun videoTarget(lens: LensProfile, target: LensProfile): LensProfile {
+    internal fun videoTarget(lens: LensProfile, target: LensProfile, video: Boolean = true): LensProfile {
         val picks = lens.options.effectivePicks(lens.options.map { it.selected })
         val options = target.options.map { row ->
             val index = lens.options.indexOfFirst { it.name.trim().equals(row.name.trim(), ignoreCase = true) }
@@ -168,7 +187,11 @@ internal object LensOptionsCodec {
             if (match >= 0) row.copy(selected = match) else row
         }
         // The DCP follows the capture screen's pill, which edits [lens].
-        val image = target.image.copy(dcp = lens.image.dcp, dcpProfiles = lens.image.dcpProfiles)
+        val image = target.image.copy(
+            dcp = if (video) lens.image.videoDcp else lens.image.dcp,
+            videoDcp = lens.image.videoDcp,
+            dcpProfiles = lens.image.dcpProfiles
+        )
         return target.copy(name = lens.name, enabled = lens.enabled, options = options, image = image, videoLens = null)
     }
 

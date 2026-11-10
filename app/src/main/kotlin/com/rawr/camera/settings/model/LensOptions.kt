@@ -29,7 +29,12 @@ data class LensOptionChoice(
      * Other rows this choice forces, by row name to choice label (e.g. 50MP locks "Aperture" to "f/2": the
      * full-size mode ignores aperture). A locked row's own selection is kept for when the lock goes away.
      */
-    val locks: Map<String, String> = emptyMap()
+    val locks: Map<String, String> = emptyMap(),
+    /**
+     * Runs the lens as another lens of the list while chosen (photo mode), e.g. 1x "50 mp · On" runs as the hidden
+     * lens "50MP" holding the 50 MP setup and its own overrides. That lens is hidden from the lens row. Null: none.
+     */
+    val runAs: String? = null
 )
 
 /** Most rows / choices per row the capture-screen panel lays out. */

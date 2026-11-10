@@ -36,7 +36,8 @@ internal class CaptureSettingsSync(
         previewCoordinator.setInternalTraceCaptureEnabled(true)
         syncSetting({ it.controlSurfaceStyle }) { controller.dispatch(SetControlSurfaceStyle(it)) }
         syncSetting({ it.oisEnabledPreference }) { previewCoordinator.setOisEnabled(it) }
-        syncSetting({ it.lensProfiles }) { previewCoordinator.setLensProfiles(it) }
+        // Per-lens overrides change settings, not the lens the camera runs (no restart when one changes).
+        syncSetting({ it.lensProfiles?.map { lens -> lens.copy(overrides = emptyMap()) } }) { previewCoordinator.setLensProfiles(it) }
         // Start on the last used lens. Startup only: later values come from
         // the user's own switches, and replaying one could undo a newer switch.
         // Native falls back to the first lens if this one left the profile.

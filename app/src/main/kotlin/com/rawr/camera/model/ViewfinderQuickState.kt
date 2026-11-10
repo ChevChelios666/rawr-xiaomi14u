@@ -4,6 +4,7 @@ import com.rawr.camera.settings.model.RawrMetering
 import com.rawr.camera.settings.model.SettingsValues
 import com.rawr.camera.settings.model.effectivePicks
 import com.rawr.camera.settings.model.lockedRows
+import com.rawr.camera.settings.model.overrideLens
 
 /** Highlight reconstruction as the viewfinder rail presents it: off, or one of the two methods. */
 enum class HighlightQuickMode { Off, Propagation, Opposed }
@@ -48,7 +49,15 @@ data class ViewfinderQuickState(
     /** Lenses that have option rows. */
     val lensOptions: List<LensOptionsQuickState> = emptyList(),
     /** Recording locks the rail like it locks the render profile. */
-    val locked: Boolean = false
+    val locked: Boolean = false,
+    /** X14U: every Rawr AE option, for the Exposure panel. */
+    val rawrAe: com.rawr.camera.settings.model.RawrAeSettings = com.rawr.camera.settings.model.RawrAeSettings(),
+    /** X14U: lenses with per-lens overrides (their own or their run-as lens's): a dot under the lens name. */
+    val overrideLenses: Set<String> = emptySet(),
+    /** X14U: the lens whose overrides apply now ("50MP" while 1x runs at 50 MP). */
+    val overrideLens: String? = null,
+    /** X14U: true in video mode (the DCP pill then edits the video DCP). */
+    val video: Boolean = false
 )
 
 internal const val HIGHLIGHT_THRESHOLD_DEFAULT = 1f
@@ -63,7 +72,22 @@ internal fun SettingsValues.toViewfinderQuickState(
     val compressionDefault =
         if (isVideo) VIDEO_HIGHLIGHT_COMPRESSION_DEFAULT else PHOTO_HIGHLIGHT_COMPRESSION_DEFAULT
     return ViewfinderQuickState(
-        dcps = (lensProfiles ?: deviceDefaults).map { DcpQuickState(it.name, it.image.availableDcps, it.image.dcp?.file) },
+        dcps = (lensProfiles ?: deviceDefaults).map {
+            DcpQuickState(it.name, it.image.availableDcps, (if (isVideo) it.image.videoDcp else it.image.dcp)?.file)
+        },
+        overrideLenses = (lensProfiles ?: deviceDefaults).let { lenses ->
+            lenses.filter { lens ->
+                lens.overrides.isNotEmpty() || lens.options.any { o ->
+                    o.choices.any { c ->
+                        val target = c.runAs?.trim()
+                        target != null && lenses.any { it.name.trim().equals(target, ignoreCase = true) && it.overrides.isNotEmpty() }
+                    }
+                }
+            }.map { it.name }.toSet()
+        },
+        overrideLens = overrideLens()?.name,
+        video = isVideo,
+        rawrAe = rawrAe,
         lensOptions = (lensProfiles ?: deviceDefaults).let { lenses ->
             lenses.filter { it.options.isNotEmpty() }.map { lens ->
                 val video = lens.videoLens?.trim()?.takeIf { isVideo && it.isNotEmpty() }

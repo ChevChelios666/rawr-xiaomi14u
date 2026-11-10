@@ -16,4 +16,7 @@ sealed interface CaptureQuickEvent {
     data class SetHighlightMode(val mode: HighlightQuickMode) : CaptureQuickEvent
     data class SetHighlightThreshold(val value: Float) : CaptureQuickEvent
     data class SetHighlightCompression(val value: Float) : CaptureQuickEvent
+    /** X14U Exposure panel: one Rawr AE option (Night Look, balance, slowest shutter, digital gain). */
+    data class SetRawrAeOption(val edit: (com.rawr.camera.settings.model.RawrAeSettings) -> com.rawr.camera.settings.model.RawrAeSettings) :
+        CaptureQuickEvent
 }

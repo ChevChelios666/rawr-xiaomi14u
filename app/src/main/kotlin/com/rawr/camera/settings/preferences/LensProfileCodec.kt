@@ -454,6 +454,7 @@ internal object LensProfileCodec {
                         i.dcpProfiles.distinctBy { it.file }.forEach { put(JSONObject().put("file", it.file).put("name", it.name)) }
                     })
                 }
+                if (dcpDir == null) i.videoDcp?.let { put("videoDcp", JSONObject().put("file", it.file).put("name", it.name)) }
                 i.dcp?.let { dcp ->
                     put("dcp", JSONObject().put("file", dcp.file).put("name", dcp.name)
                         .apply { dcpDir?.let { put("path", java.io.File(it, dcp.file).absolutePath) } })
@@ -473,6 +474,10 @@ internal object LensProfileCodec {
             // Options stay in settings and backups; the camera gets the resolved lens (LensOptionsCodec.resolve).
             .apply { if (lens.options.isNotEmpty() && dcpDir == null) put("options", LensOptionsCodec.encode(lens.options)) }
             .apply { if (!lens.videoLens.isNullOrBlank() && dcpDir == null) put("videoLens", lens.videoLens.trim()) }
+            .apply {
+                if (lens.overrides.isNotEmpty() && dcpDir == null)
+                    put("overrides", JSONObject().apply { lens.overrides.toSortedMap().forEach { (k, v) -> put(k, v) } })
+            }
     }
 
     private fun decodeStream(o: JSONObject?) = RawStreamChoice(
@@ -583,6 +588,9 @@ internal object LensProfileCodec {
                 dcp = image?.optJSONObject("dcp")?.let { d ->
                     d.optString("file").takeIf { DcpFileStore.isFileName(it) }?.let { BundledDcpProfiles.reference(it, d.optString("name")) }
                 },
+                videoDcp = image?.optJSONObject("videoDcp")?.let { d ->
+                    d.optString("file").takeIf { DcpFileStore.isFileName(it) }?.let { BundledDcpProfiles.reference(it, d.optString("name")) }
+                },
                 dcpProfiles = image?.optJSONArray("dcpProfiles")?.let { profiles ->
                     (0 until profiles.length()).mapNotNull { index ->
                         profiles.optJSONObject(index)?.let { d ->
@@ -599,7 +607,10 @@ internal object LensProfileCodec {
                 }
             ),
             options = LensOptionsCodec.decode(o.optJSONArray("options")),
-            videoLens = o.optString("videoLens").trim().takeIf { it.isNotEmpty() }
+            videoLens = o.optString("videoLens").trim().takeIf { it.isNotEmpty() },
+            overrides = o.optJSONObject("overrides")?.let { m ->
+                m.keys().asSequence().mapNotNull { k -> (m.opt(k) as? String)?.let { k to it } }.toMap()
+            }.orEmpty()
         )
     }
 

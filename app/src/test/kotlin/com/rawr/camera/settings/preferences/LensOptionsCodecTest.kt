@@ -202,6 +202,68 @@ class LensOptionsCodecTest {
         assertFalse(camera.getJSONArray("lenses").getJSONObject(0).has("videoLens"))
     }
 
+    private val fifty = LensProfile("50MP", "2").copy(
+        streams = com.rawr.camera.settings.model.LensStreams().let { st ->
+            st.copy(raw = st.raw.copy(choice = st.raw.choice.copy(width = 8192, height = 6144, highResLive = true)))
+        },
+        overrides = mapOf("detail.sharpening" to "Sharp")
+    )
+    private val runAsMain = main.copy(
+        options = listOf(
+            LensOption("Aperture", listOf(aperture(1.67), LensOptionChoice("f/2"), aperture(2.8)), selected = 2),
+            LensOption("50 mp", listOf(LensOptionChoice("Off"), LensOptionChoice("On", runAs = "50MP",
+                locks = mapOf("Aperture" to "f/2"))), toggle = true)
+        )
+    )
+
+    @Test
+    fun runAsChoiceRunsTheHiddenLensUnderTheLensIdInPhotoOnly() {
+        val lenses = listOf(runAsMain.selectOption(1, 1), fifty)
+        val photo = LensOptionsCodec.forCamera(lenses, video = false)
+        assertEquals(listOf("1x"), photo.map { it.name })
+        assertEquals("2", photo[0].camera.id)
+        assertEquals(6144, photo[0].streams.raw.choice.height)
+        assertTrue(photo[0].overrides.isEmpty())
+        // Off: the lens itself; the 50MP lens stays hidden.
+        val off = LensOptionsCodec.forCamera(listOf(runAsMain, fifty), video = false)
+        assertEquals(listOf("1x"), off.map { it.name })
+        assertEquals("0", off[0].camera.id)
+        assertEquals(listOf(2.8), off[0].vendorKeys.first { it.tag == "com.xiaomi.lens.aperture" }.values)
+        assertTrue(validateLensProfile(runAsMain, listOf(fifty)).isEmpty())
+        assertFalse(validateLensProfile(runAsMain, listOf(video)).isEmpty())
+    }
+
+    @Test
+    fun runAsAndOverridesRoundTripButNeverReachTheCamera() {
+        val lens = runAsMain.copy(overrides = mapOf("multiframe.enabled" to "true"))
+        val encoded = LensProfileCodec.encode(listOf(lens, fifty))
+        val decoded = LensProfileCodec.decode(encoded)!!
+        assertEquals("50MP", decoded[0].options[1].choices[1].runAs)
+        assertEquals(mapOf("multiframe.enabled" to "true"), decoded[0].overrides)
+        assertEquals(mapOf("detail.sharpening" to "Sharp"), decoded[1].overrides)
+        val backup = LensProfileCodec.decodeBackup(encoded)
+        assertEquals(decoded.map { it.overrides }, backup.map { it.overrides })
+        assertEquals("50MP", backup[0].options[1].choices[1].runAs)
+        val camera = JSONObject(LensProfileCodec.encode(listOf(LensOptionsCodec.resolve(lens)), dcpDir = java.io.File("dcp")))
+        assertFalse(camera.getJSONArray("lenses").getJSONObject(0).has("overrides"))
+    }
+
+    @Test
+    fun videoUsesTheVideoDcpAndPhotoThePhotoDcp() {
+        val photoDcp = com.rawr.camera.settings.model.LensDcp("0123456789abcdef0123456789abcdef.dcp", "Photo")
+        val videoDcp = com.rawr.camera.settings.model.LensDcp("fedcba9876543210fedcba9876543210.dcp", "Video")
+        val wide = main.copy(videoLens = "1xV").image { copy(dcp = photoDcp, dcpProfiles = listOf(photoDcp, videoDcp)) }
+        val lenses = listOf(wide, video, LensProfile("5x", "5").image { copy(dcp = photoDcp) })
+        assertEquals(photoDcp, LensOptionsCodec.forCamera(lenses, video = false)[0].image.dcp)
+        // Video defaults to the camera's own colour, also on a lens without a video lens.
+        assertEquals(listOf(null, null), LensOptionsCodec.forCamera(lenses, video = true).map { it.image.dcp })
+        val chosen = lenses.map { if (it.name == "1x") it.image { selectVideoDcp(videoDcp.file) } else it }
+        assertEquals(videoDcp, LensOptionsCodec.forCamera(chosen, video = true)[0].image.dcp)
+        assertEquals(photoDcp, LensOptionsCodec.forCamera(chosen, video = false)[0].image.dcp)
+        val decoded = LensProfileCodec.decode(LensProfileCodec.encode(chosen))!!
+        assertEquals(videoDcp.file, decoded[0].image.videoDcp?.file)
+    }
+
     @Test
     fun mergePatchFollowsRfc7386() {
         val merged = LensOptionsCodec.mergePatch(

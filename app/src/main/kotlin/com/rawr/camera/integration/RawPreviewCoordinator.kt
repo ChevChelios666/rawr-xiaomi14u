@@ -320,7 +320,10 @@ class RawPreviewCoordinator(application: Application) : AutoCloseable {
         val lenses = synchronized(lensSync) {
             val changed = lensVideoMode != isVideo
             lensVideoMode = isVideo
-            lensProfiles?.takeIf { changed && it.any { lens -> !lens.videoLens.isNullOrBlank() } }
+            // Also when a lens's photo and video DCP differ (video has its own DCP choice).
+            lensProfiles?.takeIf {
+                changed && it.any { lens -> !lens.videoLens.isNullOrBlank() || lens.image.dcp != lens.image.videoDcp }
+            }
         }
         postNative { native.setVideoMode(nativeHandle, isVideo, fps) }
         if (lenses != null) pushLensProfiles(lenses, isVideo)

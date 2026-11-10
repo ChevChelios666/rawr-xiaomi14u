@@ -38,6 +38,8 @@ import com.rawr.camera.settings.model.FilmSimSpecs
 import com.rawr.camera.settings.model.SettingsCatalog
 import com.rawr.camera.settings.model.withRenderProfile
 import com.rawr.camera.settings.model.SettingsValues
+import com.rawr.camera.settings.model.editThroughLens
+import com.rawr.camera.settings.model.withLensOverrides
 import com.rawr.camera.settings.model.options
 import com.rawr.camera.settings.model.persistedId
 import com.rawr.camera.settings.model.storedValue
@@ -67,7 +69,13 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     private val settingsDefaults = SettingsCatalog.initialState().values
     private val settingsEditor = SettingsPreferencesStore.editor(application, settingsDefaults)
 
-    private val latestSettings: SettingsValues get() = settingsEditor.state.value
+    /** X14U: what the camera and captures use: global settings with the active lens's overrides applied. */
+    private val latestSettings: SettingsValues get() = settingsEditor.state.value.withLensOverrides()
+    private val effectiveValues = settingsEditor.values.map { it.withLensOverrides() }
+
+    /** A capture-screen edit: settings the active lens overrides change on the lens ([perLens] keys always). */
+    private fun updateForLens(perLens: Set<String> = emptySet(), edit: (SettingsValues) -> SettingsValues): SettingsValues =
+        settingsEditor.update { it.editThroughLens(perLens, DeviceLensDefaults.lenses, edit) }
     val cameraLocation = com.rawr.camera.location.CameraLocation.get(application)
     val foreground = com.rawr.camera.integration.CaptureForeground(cameraLocation::setForeground)
     fun videoImageSettings(): com.rawr.camera.video.VideoImageSettings = latestSettings.toVideoImageSettings()
@@ -85,7 +93,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             videoResolutionId = resolution?.persistedId() ?: current.videoResolutionId,
             videoFps = fps?.takeIf { it == 24 || it == 30 || it == 60 } ?: current.videoFps
         ) }
-        controller.dispatch(next.capturePreferences())
+        controller.dispatch(next.withLensOverrides().capturePreferences())
         settingsSync.updatePreviewCrop(controller.state.value.captureMode, controller.state.value.videoResolution)
     }
 
@@ -94,7 +102,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     private val mutableFilmSimQuick = MutableStateFlow(settingsDefaults.toFilmSimQuickState())
     val filmSimQuick: StateFlow<FilmSimQuickState> = mutableFilmSimQuick.asStateFlow()
     val viewfinderQuick: StateFlow<ViewfinderQuickState> = settingsEditor.state
-        .map { it.toViewfinderQuickState(DeviceLensDefaults.lenses) }
+        .map { it.withLensOverrides().toViewfinderQuickState(DeviceLensDefaults.lenses) }
         .distinctUntilChanged()
         .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly,
             latestSettings.toViewfinderQuickState(DeviceLensDefaults.lenses))
@@ -133,14 +141,25 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             },
             onLensSelected = { lensId -> settingsEditor.update { it.copy(lastLensId = lensId) } },
             onCapturePreferencesChanged = { before, after ->
-                settingsEditor.update { it.withCapturePreferenceChanges(before, after) }
+                // HDR+ is remembered per lens. Mode and LOG switches change what tone settings mean, so they edit
+                // the global settings directly.
+                if (before.captureMode != after.captureMode || before.videoLogEnabled != after.videoLogEnabled) {
+                    settingsEditor.update {
+                        it.withCapturePreferenceChanges(before, after.copy(
+                            experimentalMultiframeEnabled = before.experimentalMultiframeEnabled))
+                    }
+                } else {
+                    updateForLens(setOf(com.rawr.camera.settings.model.LensOverrides.HDR_PLUS)) {
+                        it.withCapturePreferenceChanges(before, after)
+                    }
+                }
                 settingsSync.updatePreviewCrop(after.captureMode, after.videoResolution)
             }
         )
 
     private val settingsSync by lazy {
         com.rawr.camera.integration.CaptureSettingsSync(
-            viewModelScope, settingsEditor.values, { latestSettings }, previewCoordinator, controller
+            viewModelScope, effectiveValues, { latestSettings }, previewCoordinator, controller
         )
     }
 
@@ -188,13 +207,13 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         refreshLatestGalleryImage()
         viewModelScope.launch { recordingBackend.recoverInterrupted() }
         viewModelScope.launch {
-            settingsEditor.values.map { it.capturePreferences() }.distinctUntilChanged().collect { preferences ->
+            effectiveValues.map { it.capturePreferences() }.distinctUntilChanged().collect { preferences ->
                 controller.dispatch(preferences)
                 settingsSync.updatePreviewCrop(controller.state.value.captureMode, controller.state.value.videoResolution)
             }
         }
         viewModelScope.launch {
-            settingsEditor.values.map { it.toRenderProfileQuickState() }.distinctUntilChanged().collect {
+            effectiveValues.map { it.toRenderProfileQuickState() }.distinctUntilChanged().collect {
                 mutableRenderProfiles.value = it
             }
         }
@@ -225,7 +244,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
 
     fun selectRenderProfileFromCapture(selection: com.rawr.camera.model.RenderProfileSelection) {
         if (latestSettings.isVideo && videoSelectionLocked()) return
-        val next = settingsEditor.update { it.withRenderProfile(selection) }
+        val next = settingsEditor.update { it.withRenderProfile(selection) }.withLensOverrides()
         mutableRenderProfiles.value = next.toRenderProfileQuickState()
         previewCoordinator.setColorRenderProfile(next.effectiveRenderProfileId(), next.regularLutProfileId())
         controller.dispatch(SyncToneControls.fromImageTone(next.activeImageTone()))
@@ -258,18 +277,18 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     /** Rail edits go through settings; CaptureSettingsSync projects them onto the preview and stills. */
     fun onQuickEvent(event: CaptureQuickEvent) {
         if (latestSettings.isVideo && videoSelectionLocked()) return
-        settingsEditor.update { c ->
+        when (event) {
+            is CaptureQuickEvent.SelectDcp, is CaptureQuickEvent.SelectLensOption -> {
+                settingsEditor.update { c -> c.withLensQuickEvent(event) }
+                return
+            }
+            else -> Unit
+        }
+        updateForLens { c ->
             val video = c.isVideo
             when (event) {
-                is CaptureQuickEvent.SelectDcp -> if (controller.state.value.selectedLensId != event.lensId) c else
-                    c.copy(lensProfiles = c.effectiveLensProfiles(DeviceLensDefaults.lenses).map { lens ->
-                        if (lens.name == event.lensId) lens.image { selectDcp(event.file) } else lens
-                    })
-                is CaptureQuickEvent.SelectLensOption -> c.lensProfiles?.let { lenses ->
-                    c.copy(lensProfiles = lenses.map { lens ->
-                        if (lens.name == event.lensId) lens.selectOption(event.row, event.choice) else lens
-                    })
-                } ?: c
+                is CaptureQuickEvent.SelectDcp, is CaptureQuickEvent.SelectLensOption -> c
+                is CaptureQuickEvent.SetRawrAeOption -> c.copy(rawrAe = event.edit(c.rawrAe))
                 CaptureQuickEvent.ToggleRawrAe -> c.copy(rawrAe = c.rawrAe.copy(enabled = !c.rawrAe.enabled))
                 is CaptureQuickEvent.SetMetering -> c.copy(rawrAe = c.rawrAe.copy(metering = event.metering))
                 is CaptureQuickEvent.SetHighlightMode -> {
@@ -292,8 +311,23 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Lens-list edits from the capture screen (DCP pill, option toggles); the video DCP in video mode. */
+    private fun SettingsValues.withLensQuickEvent(event: CaptureQuickEvent): SettingsValues = when (event) {
+        is CaptureQuickEvent.SelectDcp -> if (controller.state.value.selectedLensId != event.lensId) this else
+            copy(lensProfiles = effectiveLensProfiles(DeviceLensDefaults.lenses).map { lens ->
+                if (lens.name != event.lensId) lens
+                else if (isVideo) lens.image { selectVideoDcp(event.file) } else lens.image { selectDcp(event.file) }
+            })
+        is CaptureQuickEvent.SelectLensOption -> lensProfiles?.let { lenses ->
+            copy(lensProfiles = lenses.map { lens ->
+                if (lens.name == event.lensId) lens.selectOption(event.row, event.choice) else lens
+            })
+        } ?: this
+        else -> this
+    }
+
     private fun persistQuickTone(parameter: ToneParameter, value: Int) {
-        settingsEditor.update { current ->
+        updateForLens { current ->
             current.editActiveProfileTone { it.withToneParameter(parameter, value.coerceIn(-100, 100).toFloat()) }
         }
     }
@@ -306,7 +340,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
 
     private fun persistRenderExposure(tenths: Int) {
         val ev = com.rawr.camera.model.TonemapControlContract.exposureEvFromTenths(tenths)
-        settingsEditor.update { current -> current.editActiveProfileTone { it.copy(renderExposure = ev) } }
+        updateForLens { current -> current.editActiveProfileTone { it.copy(renderExposure = ev) } }
     }
 
     /** Diagnostic camera-ID override; native routing remains authoritative. */

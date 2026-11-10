@@ -50,10 +50,21 @@ internal fun LensOptionsGroup(draft: LensProfile, onChange: (LensProfile) -> Uni
             )
             SettingDivider()
         }
+        // X14U: choices that run the lens as another (hidden) lens, e.g. "50 mp runs as: 50MP".
+        draft.options.forEach { option ->
+            option.choices.filter { !it.runAs.isNullOrBlank() }.forEach { choice ->
+                SettingsRow(
+                    title = "${option.name} ${choice.label} runs as",
+                    value = choice.runAs.orEmpty(),
+                    supportingText = "That lens holds the setup and its own overrides; it's hidden from the lens row"
+                )
+                SettingDivider()
+            }
+        }
         SettingsRow(
             title = if (draft.options.isEmpty()) "Add options" else "Edit options",
             value = if (draft.options.isEmpty()) "None" else "${draft.options.size} rows",
-            supportingText = "JSON: name, choices (label, vendorKeys, patch)",
+            supportingText = "JSON: name, choices (label, vendorKeys, patch, locks, runAs)",
             testTag = lensEditorTag("options"),
             onClick = { editing = true }
         )
@@ -71,6 +82,7 @@ private fun choiceDetail(choice: com.rawr.camera.settings.model.LensOptionChoice
     val parts = buildList {
         if (choice.vendorKeys.isNotEmpty()) add("${choice.vendorKeys.size} key${if (choice.vendorKeys.size == 1) "" else "s"}")
         if (choice.patch != null) add("patch")
+        choice.runAs?.let { add("runs as $it") }
     }
     return parts.joinToString(" · ").ifEmpty { null }
 }
