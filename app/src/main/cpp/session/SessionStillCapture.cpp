@@ -85,6 +85,10 @@ uint64_t SessionEngine::requestRawStillCapture(rawrcam::encoding::dng::DngCaptur
     }
     // Long exposure: the viewfinder runs a shorter shutter, so the capture is
     // its own one-shot frame; wait for it instead of the next viewfinder frame.
+    // X14U: armed before the request exists, so no frame can slip in between.
+    if (longExposure)
+        capture_.single().expectOptimizedFrameForNextRequest(
+            std::chrono::milliseconds(longExposure->exposureTimeNs / 1'000'000 + 1000));
     const uint64_t requestId = capture_.requestSingle(std::move(dngContext), std::move(jpegContext), [this] {
         return ingressQueue_.latestTimestamp(realtime_.generation());
     });

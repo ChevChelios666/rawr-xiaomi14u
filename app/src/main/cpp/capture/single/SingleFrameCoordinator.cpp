@@ -157,7 +157,13 @@ class SingleFrameCoordinator::Impl {
         entry->shot->setAdmission(persistence::CaptureReservation(std::move(reservation)), persistence::jobPath(filesDir_, dng.displayName), nextId_++);
         entry->shot->setAssetManager(assetManager_);
         entry->id = entry->shot->requestRawStillCapture(std::move(dng), std::move(jpeg));
+        const auto optimizedWait = nextOptimizedWait_;
+        nextOptimizedWait_.reset();
         if (!entry->id) return 0;
+        if (optimizedWait) {
+            entry->optimized = true;
+            entry->optimizedWait = *optimizedWait;
+        }
         diagnostics::RuntimeTraceRecorder::instance().record(diagnostics::RuntimeTraceStage::StillAccepted, 0,
                                                              entry->id);
         prepare(entry);
@@ -192,6 +198,8 @@ class SingleFrameCoordinator::Impl {
         changed_.notify_one();
         return entry->id;
     }
+    std::optional<std::chrono::milliseconds> nextOptimizedWait_;
+    void expectOptimizedFrameForNextRequest(std::chrono::milliseconds extraWait) { nextOptimizedWait_ = extraWait; }
     void expectOptimizedFrame(uint64_t id, std::chrono::milliseconds extraWait) {
         for (const auto& entry : entries())
             if (entry->id == id) {
@@ -253,6 +261,13 @@ class SingleFrameCoordinator::Impl {
             // photo is taken from a later moment than the press.
             if (!entry->prepared.load()) waitPrepared(*entry, kPreparationWait);
             if (!entry->prepared.load() || !entry->shot->captureRequested()) continue;
+            // X14U: advance() above skipped this entry while its RAW destination was still allocating, so a long
+            // exposure's "wait for my own frame" was never applied and the next viewfinder frame was taken
+            // (1/5 s at raised ISO instead of the honoured long frame). Apply it now, before claiming.
+            if (entry->optimized && !entry->optimizedApplied) {
+                entry->shot->expectOptimizedFrame(entry->id, entry->optimizedWait);
+                entry->optimizedApplied = true;
+            }
             const bool claimed = entry->shot->deferSubmittedFrame(metadata, color, tone, gain, filmEnabled, filmLook);
             if (!claimed && !entry->shot->captureRequested()) {
                 if (!entry->shot->hasDngCompletion()) entry->shot->failLensShadingTimeout("raw_snapshot_failed");
@@ -489,6 +504,9 @@ void SingleFrameCoordinator::disableRawSnapshot(const std::string& reason) { imp
 bool SingleFrameCoordinator::rawSnapshotConfigured() const noexcept { return impl_->rawSnapshotConfigured(); }
 uint64_t SingleFrameCoordinator::rawSnapshotBytes() const noexcept { return impl_->rawSnapshotBytes(); }
 bool SingleFrameCoordinator::captureRequested() const noexcept { return impl_->captureRequested(); }
+void SingleFrameCoordinator::expectOptimizedFrameForNextRequest(std::chrono::milliseconds extraWait) {
+    impl_->expectOptimizedFrameForNextRequest(extraWait);
+}
 uint64_t SingleFrameCoordinator::requestRawStillCapture(encoding::dng::DngCaptureContext dngContext,
                                                         rawrcam::capture::JpegCaptureRequest jpegContext) {
     return impl_->requestRawStillCapture(std::move(dngContext), std::move(jpegContext));

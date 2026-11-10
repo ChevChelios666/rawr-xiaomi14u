@@ -61,6 +61,9 @@ class SingleFrameCoordinator final {
     uint64_t recover(const std::string& name, bool multiframe, int dng, int merged, int jpeg);
     // The capture waits for the tagged one-shot frame (extraWait: its exposure).
     void expectOptimizedFrame(uint64_t requestId, std::chrono::milliseconds extraWait = {});
+    // X14U: the next accepted request waits for its tagged frame from the start (no window in which the
+    // first viewfinder frame after the press can be taken instead of a long exposure).
+    void expectOptimizedFrameForNextRequest(std::chrono::milliseconds extraWait);
 
     // Processes only the still-capture branch of an already timestamp-paired RAW
     // frame. The caller remains responsible for the AImage lease and for replacing
