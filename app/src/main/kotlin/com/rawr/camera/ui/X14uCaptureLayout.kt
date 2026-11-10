@@ -37,6 +37,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -452,18 +453,18 @@ private fun RowScope.X14uOptionToggles(
         if (video && !available) return@forEach
         val on = available && options!!.picks.getOrElse(row) { 0 } == 1
         TopBarSlot {
+            val color = when {
+                on -> if (enabled) CaptureColors.Accent else CaptureColors.Accent.copy(alpha = .45f)
+                available && enabled -> Color.White.copy(alpha = .55f)
+                else -> Color.White.copy(alpha = .22f)
+            }
             Text(
                 name.uppercase().replace(" ", ""),
                 fontFamily = X14uFont,
                 fontWeight = FontWeight.Medium,
                 fontSize = dpText(13f),
                 maxLines = 1,
-                textDecoration = if (on) TextDecoration.None else TextDecoration.LineThrough,
-                color = when {
-                    on -> if (enabled) CaptureColors.Accent else CaptureColors.Accent.copy(alpha = .45f)
-                    available && enabled -> Color.White.copy(alpha = .55f)
-                    else -> Color.White.copy(alpha = .22f)
-                },
+                color = color,
                 modifier = Modifier
                     .captureClickable(shape = RoundedCornerShape(8.dp), enabled = available && enabled, role = Role.Switch) {
                         haptics.selection()
@@ -472,6 +473,16 @@ private fun RowScope.X14uOptionToggles(
                     .semantics { contentDescription = "$name ${if (on) "on" else "off"}" }
                     .padding(horizontal = 6.dp, vertical = 10.dp)
                     .uprightInLandscape(orientation)
+                    // Off: one diagonal slash, top left to bottom right, like the timer-off icon.
+                    .drawWithContent {
+                        drawContent()
+                        if (!on) drawLine(
+                            color,
+                            Offset(-2.dp.toPx(), 0f),
+                            Offset(size.width + 2.dp.toPx(), size.height),
+                            strokeWidth = 1.5.dp.toPx()
+                        )
+                    }
             )
         }
     }
