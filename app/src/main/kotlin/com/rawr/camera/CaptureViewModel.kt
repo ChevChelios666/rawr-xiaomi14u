@@ -57,6 +57,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.rawr.camera.settings.model.withModeLookSwitch
 
 /**
  * Application lifetime owner.
@@ -99,7 +100,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, latestSettings.x14uProUi)
 
     fun setProUi(pro: Boolean) {
-        settingsEditor.update { it.copy(x14uProUi = pro) }
+        settingsEditor.update { prev -> prev.copy(x14uProUi = pro).withModeLookSwitch(prev) }
     }
 
     /** X14U: the AUDIO button (tap: mute / unmute). */
@@ -179,9 +180,11 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 // HDR+ is remembered per lens. Mode and LOG switches change what tone settings mean, so they edit
                 // the global settings directly.
                 if (before.captureMode != after.captureMode || before.videoLogEnabled != after.videoLogEnabled) {
-                    settingsEditor.update {
-                        it.withCapturePreferenceChanges(before, after.copy(
+                    // X14U: each mode keeps its own Look / Exposure set (lens overrides still win).
+                    settingsEditor.update { prev ->
+                        prev.withCapturePreferenceChanges(before, after.copy(
                             experimentalMultiframeEnabled = before.experimentalMultiframeEnabled))
+                            .withModeLookSwitch(prev)
                     }
                 } else {
                     updateForLens(setOf(com.rawr.camera.settings.model.LensOverrides.HDR_PLUS)) {

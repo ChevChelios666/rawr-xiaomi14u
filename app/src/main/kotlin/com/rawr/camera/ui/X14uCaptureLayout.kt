@@ -249,23 +249,42 @@ internal fun X14uCaptureLayout(
     val film = state.filmSimEnabled && !isVideo && filmQuick != null
     // Photo (not Pro): the AMSI row instead of the full exposure row.
     val simplePhoto = !isVideo && !LocalCaptureExtras.current.proUi
-    // Photo and Pro (and Video) each remember their own exposure mode (A·M·S·I): switching restores the other's.
-    var photoExposure by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(ExposureMode.Auto.name) }
-    var proExposure by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
-    var lastSimple by remember { mutableStateOf(simplePhoto) }
+    // Photo, Pro and Video each remember their own exposure mode (A·M·S·I) and white balance: switching mode saves
+    // the one left and restores the one entered (a mode not visited yet keeps the current ones; Photo starts on A).
+    val uiMode = when { isVideo -> "video"; simplePhoto -> "photo"; else -> "pro" }
+    val modeMemory = androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+    var lastMode by remember { mutableStateOf(uiMode) }
     val exposureMode = state.exposureControl.mode
+    val wbNow = "${state.whiteBalanceMode.name},${state.whiteBalanceTemperatureK},${state.whiteBalanceTint}"
+    fun memoryOf(raw: String): Map<String, String> =
+        raw.split(';').filter { '=' in it }.associate { it.substringBefore('=') to it.substringAfter('=') }
     androidx.compose.runtime.SideEffect {
-        if (lastSimple == simplePhoto) {
-            if (simplePhoto) photoExposure = exposureMode.name else proExposure = exposureMode.name
+        if (lastMode == uiMode) {
+            modeMemory.value = (memoryOf(modeMemory.value) + (uiMode to "${exposureMode.name}|$wbNow"))
+                .entries.joinToString(";") { "${it.key}=${it.value}" }
         }
     }
-    LaunchedEffect(simplePhoto) {
-        if (lastSimple != simplePhoto) {
-            val target = (if (simplePhoto) photoExposure else proExposure)
-                ?.let { name -> ExposureMode.entries.firstOrNull { it.name == name } }
-            lastSimple = simplePhoto
-            if (target != null && target != exposureMode && target in state.capabilities.supportedExposureModes) {
-                dispatch(SetExposureMode(target))
+    LaunchedEffect(uiMode) {
+        if (lastMode == uiMode) return@LaunchedEffect
+        lastMode = uiMode
+        val saved = memoryOf(modeMemory.value)[uiMode]
+        val exposureName = saved?.substringBefore('|') ?: if (uiMode == "photo") ExposureMode.Auto.name else null
+        val target = exposureName?.let { name -> ExposureMode.entries.firstOrNull { it.name == name } }
+        if (target != null && target != state.exposureControl.mode && target in state.capabilities.supportedExposureModes) {
+            dispatch(SetExposureMode(target))
+        }
+        val wb = saved?.substringAfter('|', "")?.split(',')
+        val wbMode = wb?.getOrNull(0)?.let { name -> WhiteBalanceMode.entries.firstOrNull { it.name == name } }
+        val temp = wb?.getOrNull(1)?.toIntOrNull()
+        val tint = wb?.getOrNull(2)?.toIntOrNull()
+        if (wbMode != null && temp != null && tint != null) {
+            val locked = CaptureTransitions.isWhiteBalanceLocked(state)
+            when {
+                wbMode == WhiteBalanceMode.ManualTempTint && !locked -> dispatch(LockWhiteBalance(temp, tint))
+                wbMode == WhiteBalanceMode.ManualTempTint ->
+                    if (temp != state.whiteBalanceTemperatureK || tint != state.whiteBalanceTint)
+                        dispatch(SetWhiteBalanceTempTint(temp, tint))
+                wbMode != state.whiteBalanceMode -> dispatch(SetWhiteBalanceMode(wbMode))
             }
         }
     }
