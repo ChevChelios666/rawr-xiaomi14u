@@ -8,8 +8,37 @@ data class VideoControlState(
     val busy: Boolean = false,
     val status: String = "REC",
     val timing: VideoTimingState? = null,
-    val audio: com.rawr.camera.video.VideoAudioInput = com.rawr.camera.video.VideoAudioInput()
-)
+    val audio: com.rawr.camera.video.VideoAudioInput = com.rawr.camera.video.VideoAudioInput(),
+    /** X14U: Settings → Video → Show diagnostics. */
+    val diagnostics: Boolean = false,
+    /** X14U: the take that just ended (summary shown when it had problems, or always with diagnostics). */
+    val lastTake: VideoTakeSummary? = null
+) {
+    /** Recording health for the timer's dot. */
+    val health: VideoHealth get() = timing?.let { VideoHealth.of(it, fps) } ?: VideoHealth.Good
+}
+
+/** The recording timer's dot: keeping up, near the frame budget, or dropping frames. */
+enum class VideoHealth {
+    Good, Tight, Dropping;
+
+    companion object {
+        fun of(timing: VideoTimingState, fps: Int): VideoHealth {
+            val budgetMs = 1000.0 / fps.coerceAtLeast(1)
+            return when {
+                timing.dropped > 0 -> Dropping
+                timing.gpuPeakMs > budgetMs * 0.85 || (timing.actualFps > 0 && timing.actualFps < fps * 0.95) -> Tight
+                else -> Good
+            }
+        }
+    }
+}
+
+/** One finished take's numbers. */
+data class VideoTakeSummary(val seconds: Long, val targetFps: Int, val timing: VideoTimingState) {
+    /** Dropped frames or a frame rate clearly below the target. */
+    val hadProblems: Boolean get() = timing.dropped > 0 || timing.actualFps < targetFps * 0.95
+}
 
 data class VideoTimingState(
     val actualFps: Double,

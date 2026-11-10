@@ -86,6 +86,17 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         .distinctUntilChanged()
         .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly,
             com.rawr.camera.video.VideoAudioInput.of(latestSettings.videoEncoder.sanitized()))
+    /** X14U: Settings → Video → Show diagnostics. */
+    val videoDiagnostics: StateFlow<Boolean> = settingsEditor.state
+        .map { it.videoEncoder.showDiagnostics }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, latestSettings.videoEncoder.showDiagnostics)
+
+    /** X14U: the AUDIO button (tap: mute / unmute). */
+    fun toggleAudioMuted() {
+        settingsEditor.update { it.copy(videoEncoder = it.videoEncoder.copy(audioMuted = !it.videoEncoder.audioMuted)) }
+    }
+
     /** Startup diagnostics use the same optimistic owner, including when preferences are still loading. */
     fun applyStartupVideoOverrides(resolution: VideoResolutionMode?, fps: Int?) {
         if (resolution == null && fps == null) return
@@ -101,8 +112,22 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     val renderProfiles: StateFlow<RenderProfileQuickState> = mutableRenderProfiles.asStateFlow()
     private val mutableFilmSimQuick = MutableStateFlow(settingsDefaults.toFilmSimQuickState())
     val filmSimQuick: StateFlow<FilmSimQuickState> = mutableFilmSimQuick.asStateFlow()
+    /** X14U: a lens's fixed f-number from its camera, cached by camera id. */
+    private val apertureCache = java.util.concurrent.ConcurrentHashMap<String, Float>()
+    private fun nativeApertures(values: SettingsValues): Map<String, Float> =
+        values.effectiveLensProfiles(DeviceLensDefaults.lenses).mapNotNull { lens ->
+            val id = lens.camera.physical.ifEmpty { lens.camera.id }
+            val f = apertureCache[id] ?: runCatching {
+                val manager = getApplication<Application>().getSystemService(android.hardware.camera2.CameraManager::class.java)
+                manager.getCameraCharacteristics(id)
+                    .get(android.hardware.camera2.CameraCharacteristics.LENS_INFO_AVAILABLE_APERTURES)
+                    ?.firstOrNull()
+            }.getOrNull()?.also { apertureCache[id] = it }
+            f?.let { lens.name to it }
+        }.toMap()
+
     val viewfinderQuick: StateFlow<ViewfinderQuickState> = settingsEditor.state
-        .map { it.withLensOverrides().toViewfinderQuickState(DeviceLensDefaults.lenses) }
+        .map { it.withLensOverrides().toViewfinderQuickState(DeviceLensDefaults.lenses).copy(nativeApertures = nativeApertures(it)) }
         .distinctUntilChanged()
         .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly,
             latestSettings.toViewfinderQuickState(DeviceLensDefaults.lenses))

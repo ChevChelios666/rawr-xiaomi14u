@@ -37,7 +37,8 @@ fun CaptureRoute(
     quick: ViewfinderQuickState = ViewfinderQuickState(),
     onQuickEvent: (CaptureQuickEvent) -> Unit = {},
     videoControls: VideoControlState = VideoControlState(),
-    onToggleVideoRecording: () -> Unit
+    onToggleVideoRecording: () -> Unit,
+    extras: CaptureExtras = CaptureExtras()
 ) {
     val controlFlow = androidx.compose.runtime.remember(controller) {
         controller.state.map { it.controlProjection() }.distinctUntilChanged()
@@ -97,6 +98,7 @@ fun CaptureRoute(
             deviceRotationDegrees = it
         }
     )
+    androidx.compose.runtime.CompositionLocalProvider(LocalCaptureExtras provides extras) {
     CaptureScreen(
         state = state,
         dispatch = controller::dispatch,
@@ -118,4 +120,5 @@ fun CaptureRoute(
         videoControls = videoControls,
         onToggleVideoRecording = onToggleVideoRecording
     )
+    }
 }

@@ -21,6 +21,9 @@ import com.rawr.camera.model.RenderProfileQuickState
 import com.rawr.camera.model.monitorProjection
 import com.rawr.camera.video.VideoResolutionMode
 
+/** X14U: the new capture screen (X14uCaptureLayout); false brings back the previous layout. */
+internal const val X14U_NEW_CAPTURE_SCREEN = true
+
 /**
  * Single physical capture hierarchy for every device posture. The Activity remains
  * portrait-locked; orientation changes only content rotation, gesture interpretation,
@@ -49,6 +52,14 @@ internal fun PhysicalCaptureLayout(
     videoControls: VideoControlState = VideoControlState(),
     onToggleVideoRecording: () -> Unit = {}
 ) {
+    if (X14U_NEW_CAPTURE_SCREEN) {
+        X14uCaptureLayout(
+            state, dispatch, preview, renderProfiles, onSelectRenderProfile, onOpenSettings, latestImageUri,
+            onOpenLatestImage, onOpenRenderer, onOpenFilmSimSettings, onOpenMultiframeSettings, onOpenLensSettings,
+            modifier, filmQuick, onFilmEvent, quick, onQuickEvent, videoControls, onToggleVideoRecording
+        )
+        return
+    }
     val videoLocked = videoControls.busy || videoControls.recording
     val isVideo = state.captureMode == CaptureMode.Video
     val compactControls = isVideo || state.captureLayout == CaptureControlLayout.Compact

@@ -13,8 +13,13 @@ data class VideoAudioInput(
     val preset: Int = 5,
     val route: VideoAudioRoute = VideoAudioRoute.Auto,
     val gainDb: Int = 0,
-    val lowCutHz: Int = 0
+    val lowCutHz: Int = 0,
+    /** X14U: the AUDIO button's mute (silent track; the meter goes quiet too). */
+    val muted: Boolean = false
 ) {
+    /** Gain the native input applies; mute is a gain far below the range (native treats it as silence). */
+    val nativeGainDb: Float get() = if (muted) MUTE_GAIN_DB else gainDb.toFloat()
+
     /** AudioDeviceInfo id for [route]; 0 lets Android route. External falls back to Auto when none is attached. */
     fun deviceId(context: Context): Int {
         val types = when (route) {
@@ -33,8 +38,11 @@ data class VideoAudioInput(
 
         fun of(encoder: VideoEncoderConfig) = VideoAudioInput(
             channels = encoder.audioChannels, preset = encoder.audioSource.wireValue,
-            route = encoder.audioRoute, gainDb = encoder.audioGainDb, lowCutHz = encoder.audioLowCutHz
+            route = encoder.audioRoute, gainDb = encoder.audioGainDb, lowCutHz = encoder.audioLowCutHz,
+            muted = encoder.audioMuted
         )
+
+        const val MUTE_GAIN_DB = -1000f
 
         /** Whether the device advertises a real UNPROCESSED source (no AGC/NS). */
         fun supportsUnprocessed(context: Context): Boolean =

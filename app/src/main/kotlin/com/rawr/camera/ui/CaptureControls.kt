@@ -211,7 +211,7 @@ internal fun CaptureControls(
 }
 
 @Composable
-private fun PhotoLookToggles(
+internal fun PhotoLookToggles(
     state: CaptureUiState,
     dispatch: CaptureDispatch,
     onOpenFilmSimSettings: () -> Unit,

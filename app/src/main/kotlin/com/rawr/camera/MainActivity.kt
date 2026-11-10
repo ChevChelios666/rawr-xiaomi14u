@@ -191,6 +191,7 @@ class MainActivity : ComponentActivity() {
             val selectedVideo by videoSelection.collectAsStateWithLifecycle(initialVideoSelection)
             val recording by captureViewModel.recording.state.collectAsStateWithLifecycle()
             val videoAudioInput by captureViewModel.videoAudioInput.collectAsStateWithLifecycle()
+            val videoDiagnostics by captureViewModel.videoDiagnostics.collectAsStateWithLifecycle()
             androidx.compose.runtime.LaunchedEffect(Unit) {
                 captureViewModel.recording.errors.collect { message ->
                     Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
@@ -236,7 +237,28 @@ class MainActivity : ComponentActivity() {
                         busy = recording.busy,
                         status = recording.status,
                         timing = recording.timing,
-                        audio = videoAudioInput
+                        audio = videoAudioInput,
+                        diagnostics = videoDiagnostics,
+                        lastTake = recording.lastTake
+                    ),
+                    extras = com.rawr.camera.ui.CaptureExtras(
+                    onToggleAudioMuted = captureViewModel::toggleAudioMuted,
+                    onOpenVideoSettings = {
+                        startActivity(
+                            SettingsActivity.openIntent(
+                                this@MainActivity,
+                                com.rawr.camera.settings.model.SettingsSection.VideoEncoder
+                            )
+                        )
+                    },
+                    onOpenExposureSettings = {
+                        startActivity(
+                            SettingsActivity.openIntent(
+                                this@MainActivity,
+                                com.rawr.camera.settings.model.SettingsSection.Exposure
+                            )
+                        )
+                    }
                     ),
                     onToggleVideoRecording = ::toggleVideoRecording
                 )

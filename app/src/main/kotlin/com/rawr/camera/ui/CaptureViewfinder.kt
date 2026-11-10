@@ -50,9 +50,14 @@ internal fun CaptureViewfinder(
     filmQuick: FilmSimQuickState? = null,
     onFilmEvent: (CaptureFilmEvent) -> Unit = {},
     quick: ViewfinderQuickState = ViewfinderQuickState(),
-    onQuickEvent: (CaptureQuickEvent) -> Unit = {}
+    onQuickEvent: (CaptureQuickEvent) -> Unit = {},
+    /** X14U: a clean viewfinder (no strips or rail; the controls live below it). */
+    x14uClean: Boolean = false,
+    /** X14U: a tap first closes an open control or panel; true when it did (no focus then). */
+    onViewfinderTap: () -> Boolean = { false }
 ) {
     val haptics = LocalCaptureHaptics.current
+    val latestViewfinderTap by rememberUpdatedState(onViewfinderTap)
     Box(
         modifier
             .background(Color(0xFF263039))
@@ -93,6 +98,7 @@ internal fun CaptureViewfinder(
                         Modifier.pointerInput(state.orientation, state.exposureControl.mode) {
                             detectTapGestures(
                                 onTap = { offset ->
+                                    if (latestViewfinderTap()) return@detectTapGestures
                                     if (viewfinderSize.width > 0 && viewfinderSize.height > 0) {
                                         haptics.selection()
                                         dispatch(FocusAt(offset.toNormalized(viewfinderSize)))
@@ -149,7 +155,8 @@ internal fun CaptureViewfinder(
                 onFilmEvent = onFilmEvent,
                 quick = quick,
                 onQuickEvent = onQuickEvent,
-                railTopLimit = railTopLimit
+                railTopLimit = railTopLimit,
+                x14uClean = x14uClean
             )
         }
 
@@ -248,7 +255,8 @@ internal fun ViewfinderBottomSlot(
     onFilmEvent: (CaptureFilmEvent) -> Unit = {},
     quick: ViewfinderQuickState = ViewfinderQuickState(),
     onQuickEvent: (CaptureQuickEvent) -> Unit = {},
-    railTopLimit: Dp = 0.dp
+    railTopLimit: Dp = 0.dp,
+    x14uClean: Boolean = false
 ) {
     Column(
         modifier,
@@ -259,6 +267,8 @@ internal fun ViewfinderBottomSlot(
             // rails + AMSI/SHD-HL are hidden and replaced by focus mode
             // buttons + MF rail. Same slot, same heights, no overlay.
             FocusBottomControls(state, dispatch, Modifier.fillMaxWidth())
+        } else if (x14uClean) {
+            // X14U: the exposure row, Look and Exposure panels live below the viewfinder.
         } else if (forceCompact || state.captureLayout == CaptureControlLayout.Compact) {
             // V2: bare WB/SS/ISO/EV strip floats over the preview bottom
             // (scrimmed for legibility). Focus selector still swaps in

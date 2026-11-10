@@ -46,7 +46,11 @@ internal fun CaptureTopBar(
     state: CaptureUiState,
     dispatch: CaptureDispatch,
     onOpenSettings: () -> Unit,
-    videoLocked: Boolean = false
+    videoLocked: Boolean = false,
+    /** X14U: LOG lives in the shutter row of the new capture screen. */
+    showLog: Boolean = true,
+    /** X14U: lens option toggles (DCG, 50 MP), before Settings. */
+    toggles: @Composable RowScope.() -> Unit = {}
 ) {
     val haptics = LocalCaptureHaptics.current
     Row(
@@ -86,7 +90,7 @@ internal fun CaptureTopBar(
                     }
                 )
             }
-            TopBarSlot {
+            if (showLog) TopBarSlot {
                 TextButton(
                     onClick = { haptics.selection(); dispatch(com.rawr.camera.architecture.ToggleVideoLog) },
                     enabled = !videoLocked,
@@ -199,6 +203,7 @@ internal fun CaptureTopBar(
                 )
             }
         }
+        toggles()
         TopBarSlot {
             IconButton(
                 enabled = !videoLocked,
@@ -327,7 +332,7 @@ private fun SelfTimerTopBarChoice(
 }
 
 @Composable
-private fun RowScope.TopBarSlot(content: @Composable () -> Unit) {    Box(
+internal fun RowScope.TopBarSlot(content: @Composable () -> Unit) {    Box(
         Modifier.weight(1f).fillMaxHeight(),
         contentAlignment = Alignment.Center
     ) {

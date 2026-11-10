@@ -111,7 +111,8 @@ AudioInput::~AudioInput() {
 }
 
 void AudioInput::setProcessing(float gainDb, int lowCutHz) noexcept {
-    gainDb_.store(std::clamp(gainDb, -24.0f, 36.0f));
+    // X14U: -1000 dB or lower mutes (the AUDIO button); otherwise the usual range.
+    gainDb_.store(gainDb <= -999.0f ? -1000.0f : std::clamp(gainDb, -24.0f, 36.0f));
     lowCutHz_.store(std::clamp(lowCutHz, 0, 300));
 }
 
@@ -155,7 +156,8 @@ void AudioInput::run() noexcept {
                                  : anchorNs + std::clamp<int64_t>(measuredAnchor - anchorNs, -1'000'000, 1'000'000);
 
         if (filter.cornerHz != lowCutHz_.load()) filter.design(lowCutHz_.load());
-        const float gain = std::pow(10.0f, gainDb_.load() / 20.0f);
+        const float gainDb = gainDb_.load();
+        const float gain = gainDb <= -999.0f ? 0.0f : std::pow(10.0f, gainDb / 20.0f);
         float squares[kMaxChannels] = {};
         float peaks[kMaxChannels] = {};
         bool inputClipped = false, outputClipped = false;

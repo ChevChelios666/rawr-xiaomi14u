@@ -26,7 +26,9 @@ enum class RecordingPhase { Idle, Starting, Recording, Finalizing, Failed }
 data class RecordingState(
     val phase: RecordingPhase = RecordingPhase.Idle,
     val status: String = "REC",
-    val timing: VideoTimingState? = null
+    val timing: VideoTimingState? = null,
+    /** X14U: the last take's numbers, for the summary after it. */
+    val lastTake: com.rawr.camera.model.VideoTakeSummary? = null
 ) {
     val recording: Boolean get() = phase == RecordingPhase.Recording || phase == RecordingPhase.Finalizing
     val busy: Boolean get() = phase == RecordingPhase.Starting || phase == RecordingPhase.Finalizing
@@ -203,11 +205,20 @@ class RecordingCoordinator(
             statsJob?.cancel()
             statsJob = null
             val active = recorder ?: return@launch
+            val take = state.value.timing?.let { timing ->
+                com.rawr.camera.model.VideoTakeSummary(
+                    seconds = state.value.status.removePrefix("REC ").split(':').let { p ->
+                        (p.getOrNull(0)?.toLongOrNull() ?: 0L) * 60 + (p.getOrNull(1)?.toLongOrNull() ?: 0L)
+                    },
+                    targetFps = controller.state.value.videoFps,
+                    timing = timing
+                )
+            }
             mutableState.value = RecordingState(RecordingPhase.Finalizing, "Saving…")
             try {
                 withContext(ioDispatcher) { active.close() }
                 onSaved(active)
-                mutableState.value = RecordingState()
+                mutableState.value = RecordingState(lastTake = take)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {

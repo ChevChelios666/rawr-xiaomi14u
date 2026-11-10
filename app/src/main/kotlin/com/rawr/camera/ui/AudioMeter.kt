@@ -78,7 +78,7 @@ internal fun AudioMeter(input: VideoAudioInput, recording: Boolean, modifier: Mo
         }
     }
     val active = monitor ?: return
-    LaunchedEffect(active, input.gainDb, input.lowCutHz) { active.setProcessing(input.gainDb, input.lowCutHz) }
+    LaunchedEffect(active, input.nativeGainDb, input.lowCutHz) { active.setProcessing(input.nativeGainDb, input.lowCutHz) }
     val channels = remember { arrayOf(ChannelBallistics(), ChannelBallistics()) }
     var frame by remember { mutableLongStateOf(0L) }
     var channelCount by remember { mutableStateOf(2) }

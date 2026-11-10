@@ -694,7 +694,9 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
                 audioSource = p[Keys.videoAudioSource]?.let(VideoAudioSource::of) ?: d.videoEncoder.audioSource,
                 audioRoute = p[Keys.videoAudioRoute]?.let(VideoAudioRoute::of) ?: d.videoEncoder.audioRoute,
                 audioGainDb = p[Keys.videoAudioGainDb] ?: d.videoEncoder.audioGainDb,
-                audioLowCutHz = p[Keys.videoAudioLowCutHz] ?: d.videoEncoder.audioLowCutHz
+                audioLowCutHz = p[Keys.videoAudioLowCutHz] ?: d.videoEncoder.audioLowCutHz,
+                audioMuted = p[Keys.videoAudioMuted] ?: d.videoEncoder.audioMuted,
+                showDiagnostics = p[Keys.videoShowDiagnostics] ?: d.videoEncoder.showDiagnostics
             ).sanitized(),
             photoLensShadingEnabled = p[Keys.photoLensShading] ?: p[Keys.lensShadingCorrection] ?: d.photoLensShadingEnabled,
             videoLensShadingEnabled = p[Keys.videoLensShading] ?: d.videoLensShadingEnabled,
@@ -940,6 +942,8 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
         p[Keys.videoAudioRoute] = encoder.audioRoute.wireValue
         p[Keys.videoAudioGainDb] = encoder.audioGainDb
         p[Keys.videoAudioLowCutHz] = encoder.audioLowCutHz
+        p[Keys.videoAudioMuted] = encoder.audioMuted
+        p[Keys.videoShowDiagnostics] = encoder.showDiagnostics
         p[Keys.photoLensShading] = v.photoLensShadingEnabled
         p[Keys.videoLensShading] = v.videoLensShadingEnabled
         p[Keys.distortionCorrection] = v.distortionCorrectionEnabled
@@ -1236,6 +1240,8 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
         val videoAudioLowCutHz = intPreferencesKey("video_audio_low_cut_hz")
         val photoLensShading = booleanPreferencesKey("photo_lens_shading")
         val videoLensShading = booleanPreferencesKey("video_lens_shading")
+        val videoAudioMuted = booleanPreferencesKey("x14u_video_audio_muted")
+        val videoShowDiagnostics = booleanPreferencesKey("x14u_video_show_diagnostics")
         val distortionCorrection = booleanPreferencesKey("distortion_correction")
         val videoDistortionCorrection = booleanPreferencesKey("video_distortion_correction")
         val photoHighlightEnabled = booleanPreferencesKey("photo_highlight_enabled")

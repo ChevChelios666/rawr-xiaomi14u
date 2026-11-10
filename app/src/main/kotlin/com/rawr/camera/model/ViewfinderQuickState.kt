@@ -57,7 +57,9 @@ data class ViewfinderQuickState(
     /** X14U: the lens whose overrides apply now ("50MP" while 1x runs at 50 MP). */
     val overrideLens: String? = null,
     /** X14U: true in video mode (the DCP pill then edits the video DCP). */
-    val video: Boolean = false
+    val video: Boolean = false,
+    /** X14U: each lens's fixed f-number (LENS_INFO_AVAILABLE_APERTURES), for lenses without an Aperture row. */
+    val nativeApertures: Map<String, Float> = emptyMap()
 )
 
 internal const val HIGHLIGHT_THRESHOLD_DEFAULT = 1f

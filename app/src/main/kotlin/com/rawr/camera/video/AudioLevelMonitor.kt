@@ -27,8 +27,8 @@ internal class AudioLevelMonitor private constructor(private var handle: Long) :
     }
 
     /** Live gain and low-cut; applies to the recording too, since the stream is shared. */
-    fun setProcessing(gainDb: Int, lowCutHz: Int) {
-        if (handle != 0L) nativeSetProcessing(handle, gainDb.toFloat(), lowCutHz)
+    fun setProcessing(gainDb: Float, lowCutHz: Int) {
+        if (handle != 0L) nativeSetProcessing(handle, gainDb, lowCutHz)
     }
 
     override fun close() {
@@ -48,7 +48,7 @@ internal class AudioLevelMonitor private constructor(private var handle: Long) :
         @androidx.annotation.RequiresPermission(android.Manifest.permission.RECORD_AUDIO)
         fun open(context: android.content.Context, input: VideoAudioInput): AudioLevelMonitor? =
             nativeOpen(input.channels, input.preset, input.deviceId(context)).takeIf { it != 0L }
-                ?.let(::AudioLevelMonitor)?.also { it.setProcessing(input.gainDb, input.lowCutHz) }
+                ?.let(::AudioLevelMonitor)?.also { it.setProcessing(input.nativeGainDb, input.lowCutHz) }
 
         @JvmStatic private external fun nativeOpen(channels: Int, preset: Int, deviceId: Int): Long
     }

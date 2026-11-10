@@ -196,7 +196,7 @@ class NativeVideoRecorder(private val context: Context, private val preview: Raw
             handle = engine.nativeStart(fd, request.width, request.height, request.fps,
                 request.bitrate, request.intraFrames, rotation, request.bitrateMode, request.maxBFrames,
                 request.audioChannels, request.audioBitrate, request.audio.preset, request.audio.deviceId(context),
-                request.audio.gainDb.toFloat(), request.audio.lowCutHz, request.audioPcmBits, request.bitDepth,
+                request.audio.nativeGainDb, request.audio.lowCutHz, request.audioPcmBits, request.bitDepth,
                 request.timestampPolicy.nativeId, Build.MANUFACTURER.orEmpty(), Build.MODEL.orEmpty(),
                 "RAWR ${BuildConfig.VERSION_NAME}", request.renderProfile,
                 metadataGamut, metadataTransfer, request.logProfile != null, requireNotNull(index).path,

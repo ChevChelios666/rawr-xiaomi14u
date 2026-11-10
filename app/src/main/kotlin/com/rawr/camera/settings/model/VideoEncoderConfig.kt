@@ -96,7 +96,11 @@ data class VideoEncoderConfig(
     /** Digital gain after capture; Android exposes no analog mic gain. */
     val audioGainDb: Int = 0,
     /** High-pass corner in Hz; 0 = off. */
-    val audioLowCutHz: Int = 0
+    val audioLowCutHz: Int = 0,
+    /** X14U: the capture screen's AUDIO button (records a silent track). */
+    val audioMuted: Boolean = false,
+    /** X14U: Settings → Video → Show diagnostics: tap the recording timer for numbers, a summary after every take. */
+    val showDiagnostics: Boolean = false
 ) {
     fun sanitized(): VideoEncoderConfig = copy(
         bitDepth = if (bitDepth == 8) 8 else 10,

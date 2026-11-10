@@ -25,6 +25,24 @@ internal fun VideoEncoderSettings(state: SettingsUiState, dispatch: SettingsDisp
     val bFramesProduced = remember { com.rawr.camera.video.EncoderObservations.bFramesProduced(context) }
     SettingsPageContainer(testTag = SettingsTestTags.sectionRoot("VideoEncoder")) {
         SettingsGroup(
+            title = "Recording",
+            description = "The recording timer always shows a health dot (green: keeping up, amber: near the frame " +
+                "budget, red: frames dropped) and a summary after a take that had problems."
+        ) {
+            SettingsSwitchRow(
+                title = "Show diagnostics",
+                checked = encoder.showDiagnostics,
+                supportingText = "Tap the recording timer for FPS, drops, GPU time and encoder delay; " +
+                    "a summary after every take"
+            ) { set(encoder.copy(showDiagnostics = it)) }
+            SettingDivider()
+            SettingsSwitchRow(
+                title = "Mute audio",
+                checked = encoder.audioMuted,
+                supportingText = "Records a silent audio track (also the AUDIO button on the capture screen)"
+            ) { set(encoder.copy(audioMuted = it)) }
+        }
+        SettingsGroup(
             title = "Video",
             description = "HEVC settings apply to the next recording. Some encoders ignore B-frame limits; the recording monitor shows the actual GOP."
         ) {
