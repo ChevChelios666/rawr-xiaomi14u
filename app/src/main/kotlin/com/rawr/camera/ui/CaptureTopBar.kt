@@ -312,8 +312,9 @@ private fun SelfTimerTopBarChoice(
     ) {
         // X14U: the icon alone, centred and the same size in both states; the seconds are a badge when armed.
         Box(Modifier.size(48.dp).uprightInLandscape(orientation), contentAlignment = Alignment.Center) {
+            // Off is just greyed (the plain timer, no slash).
             Icon(
-                if (armed) Icons.Outlined.Timer else Icons.Outlined.TimerOff,
+                Icons.Outlined.Timer,
                 contentDescription = null,
                 tint = if (armed) CaptureColors.Accent else CaptureColors.Muted,
                 modifier = Modifier.size(22.dp)

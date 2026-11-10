@@ -472,17 +472,8 @@ private fun RowScope.X14uOptionToggles(
                     }
                     .semantics { contentDescription = "$name ${if (on) "on" else "off"}" }
                     .padding(horizontal = 6.dp, vertical = 10.dp)
+                    // Off is just greyed (no strike line).
                     .uprightInLandscape(orientation)
-                    // Off: one diagonal slash, top left to bottom right, like the timer-off icon.
-                    .drawWithContent {
-                        drawContent()
-                        if (!on) drawLine(
-                            color,
-                            Offset(-2.dp.toPx(), 0f),
-                            Offset(size.width + 2.dp.toPx(), size.height),
-                            strokeWidth = 1.5.dp.toPx()
-                        )
-                    }
             )
         }
     }
