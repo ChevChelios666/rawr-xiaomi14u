@@ -27,6 +27,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Compile app and unit tests (Kotlin)
         run: ./gradlew :app:compileDebugUnitTestKotlin --continue 2>&1 | tee compile.log; exit ${PIPESTATUS[0]}
+      - name: Compile native code (C++)
+        if: success()
+        run: ./gradlew :app:externalNativeBuildDebug 2>&1 | tee native.log | grep -E "error:|FAILED|BUILD" ; exit ${PIPESTATUS[0]}
       - name: Unit tests
         if: success()
         run: ./gradlew :app:testDebugUnitTest --continue
@@ -37,5 +40,6 @@ jobs:
           name: reports-${{ github.sha }}
           path: |
             compile.log
+            native.log
             app/build/reports/tests/
           retention-days: 3

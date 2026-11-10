@@ -411,6 +411,14 @@ struct NativeCameraController::Impl final : CameraEventSink {
             const auto iso = int32_t(std::clamp<double>(std::llround(product / double(shutter)), isoMin, isoMax));
             return NativeCameraController::LongExposure{shutter, iso};
         }
+        // X14U: device-AE shutter priority. The viewfinder runs the camera's AE at the capped shutter; the capture
+        // keeps that exposure (shutter x ISO) at the user's shutter, like rawr S.
+        if (control.exposureMode == ExposureControlMode::ShutterPriority && !control.rawrAeActive &&
+            control.appliedExposureTimeNs.value_or(0) > 0 && control.appliedSensitivity.value_or(0) > 0) {
+            const double product = double(*control.appliedExposureTimeNs) * double(*control.appliedSensitivity);
+            const auto iso = int32_t(std::clamp<double>(std::llround(product / double(shutter)), isoMin, isoMax));
+            return NativeCameraController::LongExposure{shutter, iso};
+        }
         return std::nullopt;
     }
     std::optional<NativeCameraController::LongExposure> deferredCaptureExposure() const {
