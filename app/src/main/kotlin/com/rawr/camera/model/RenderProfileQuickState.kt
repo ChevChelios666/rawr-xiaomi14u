@@ -42,5 +42,7 @@ data class RenderProfileQuickState(
     val selectedId: RenderProfileSelection = RenderProfileSelection.BuiltIn(ColorRenderProfile.RawrBase),
     val log: Boolean = false,
     val locked: Boolean = false,
-    val agx: AgxQuickState? = null
+    val agx: AgxQuickState? = null,
+    /** X14U video: the regular profiles and the LOG profiles, shown together (picking one switches LOG on/off). */
+    val videoOptions: List<RenderProfileQuickOption> = emptyList()
 )

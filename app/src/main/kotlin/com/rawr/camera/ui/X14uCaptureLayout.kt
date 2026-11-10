@@ -233,6 +233,15 @@ internal fun X14uCaptureLayout(
     var lookTab by remember { mutableStateOf("TONE") }
     var panelKey by remember { mutableStateOf<String?>(null) }
     var showNumbers by remember { mutableStateOf(false) }
+    // A video profile on the other side of the LOG switch: switch LOG first, then select it.
+    var pendingProfile by remember { mutableStateOf<com.rawr.camera.model.RenderProfileSelection?>(null) }
+    LaunchedEffect(renderProfiles.log, pendingProfile) {
+        val pending = pendingProfile ?: return@LaunchedEffect
+        if ((pending is com.rawr.camera.model.RenderProfileSelection.Log) == renderProfiles.log) {
+            pendingProfile = null
+            onSelectRenderProfile(pending)
+        }
+    }
     LaunchedEffect(state.captureMode, state.selectedLensId) {
         selected = null
         panel = null
@@ -264,13 +273,24 @@ internal fun X14uCaptureLayout(
             when (tab) {
                 "PROFILE" -> {
                     val label = renderProfiles.options.firstOrNull { it.id == renderProfiles.selectedId }?.label ?: "RAWR NTRL"
-                    cells = listOf(X14uCell("profile", label, "PROFILE"))
+                    cells = listOf(X14uCell("profile", label, if (renderProfiles.log) "LOG PROFILE" else "PROFILE"))
+                    // Video lists the regular and the LOG profiles together; picking across switches LOG.
+                    val options = if (isVideo && renderProfiles.videoOptions.isNotEmpty()) renderProfiles.videoOptions else renderProfiles.options
                     editorFor = {
                         X14uEditor.Chips(
-                            renderProfiles.options.map { it.label },
-                            renderProfiles.options.indexOfFirst { it.id == renderProfiles.selectedId },
-                            enabled = !renderProfiles.locked && !renderProfiles.log
-                        ) { i -> onSelectRenderProfile(renderProfiles.options[i].id) }
+                            options.map { it.label },
+                            options.indexOfFirst { it.id == renderProfiles.selectedId },
+                            enabled = !renderProfiles.locked
+                        ) { i ->
+                            val pick = options[i].id
+                            val wantsLog = pick is com.rawr.camera.model.RenderProfileSelection.Log
+                            if (isVideo && wantsLog != renderProfiles.log) {
+                                pendingProfile = pick
+                                dispatch(ToggleVideoLog)
+                            } else {
+                                onSelectRenderProfile(pick)
+                            }
+                        }
                     }
                 }
                 "HL" -> {
@@ -301,7 +321,8 @@ internal fun X14uCaptureLayout(
                     val agx = renderProfiles.agx
                     val profileLabel = renderProfiles.options.firstOrNull { it.id == renderProfiles.selectedId }?.label ?: "AgX"
                     val q = if (agx != null) agxStripState(agx, state.renderExposureTenths, profileLabel) else toneStripState(state)
-                    cells = if (renderProfiles.log) emptyList() else configCells(q)
+                    cells = if (renderProfiles.log) listOf(X14uCell("tone.log", "—", "NO TONE IN LOG", enabled = false))
+                    else configCells(q)
                     val actions = if (agx != null) agxActions(dispatch) else toneActions(state, dispatch)
                     editorFor = { key -> configEditor(key, q, actions) }
                 }
