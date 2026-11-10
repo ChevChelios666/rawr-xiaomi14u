@@ -41,26 +41,17 @@ internal object X14uIcons {
         }
     }
 
-    /** Front / back camera: two curved arrows around a lens. */
+    /** Front / back camera: a single loop arrow (clockwise, arrowhead at the top left). */
     val CameraSwitch: ImageVector by lazy {
         icon("X14u.CameraSwitch") {
-            stroke {
-                moveTo(4.5f, 10.5f)
-                arcTo(8f, 8f, 0f, false, true, 19.5f, 10.5f)
-                moveTo(19.5f, 10.5f)
-                lineTo(21.6f, 7.9f)
-                moveTo(19.5f, 10.5f)
-                lineTo(16.6f, 9.6f)
+            stroke(2f) {
+                moveTo(15.75f, 5.5f)
+                arcTo(7.5f, 7.5f, 0f, true, true, 8.25f, 5.5f)
+                moveTo(8.25f, 5.5f)
+                lineTo(6.98f, 8.22f)
+                moveTo(8.25f, 5.5f)
+                lineTo(5.26f, 5.24f)
             }
-            stroke {
-                moveTo(19.5f, 13.5f)
-                arcTo(8f, 8f, 0f, false, true, 4.5f, 13.5f)
-                moveTo(4.5f, 13.5f)
-                lineTo(2.4f, 16.1f)
-                moveTo(4.5f, 13.5f)
-                lineTo(7.4f, 14.4f)
-            }
-            stroke(1.6f) { circle(12f, 12f, 2.4f) }
         }
     }
 

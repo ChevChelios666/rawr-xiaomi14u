@@ -137,7 +137,7 @@ private val X14uFont = FontFamily.Default
 private fun dpText(value: Float): TextUnit = with(LocalDensity.current) { value.dp.toSp() }
 
 /** The mode selector: Pro (new screen, photos), Photo (classic Rawr screen), Video (new screen). */
-internal enum class X14uMode(val label: String) { Pro("Pro"), Photo("Photo"), Video("Video") }
+internal enum class X14uMode(val label: String) { Photo("Photo"), Pro("Pro"), Video("Video") }
 
 internal fun currentX14uMode(state: CaptureUiState, proUi: Boolean): X14uMode = when {
     state.captureMode == CaptureMode.Video -> X14uMode.Video
@@ -489,6 +489,7 @@ private fun X14uRoundButton(
     highlighted: Boolean = false,
     enabled: Boolean = true,
     size: Dp = 36.dp,
+    iconScale: Float = .55f,
     onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
@@ -519,7 +520,7 @@ private fun X14uRoundButton(
                 highlighted -> CaptureColors.Accent
                 else -> Color.White.copy(alpha = .9f)
             },
-            modifier = Modifier.size(size * .55f).uprightInLandscape(orientation)
+            modifier = Modifier.size(size * iconScale).uprightInLandscape(orientation)
         )
     }
 }
@@ -1601,7 +1602,8 @@ private fun X14uShutterRow(
                 if (onFront) "Switch to the back camera" else "Switch to the front camera",
                 orientation,
                 enabled = enabled && front != null,
-                size = 44.dp
+                size = 48.dp,
+                iconScale = .64f
             ) {
                 val target = if (onFront) lastBack ?: state.capabilities.lenses.firstOrNull { !isFrontLens(it.id, it.displayName) }?.id
                 else front?.id
