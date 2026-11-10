@@ -249,6 +249,10 @@ internal fun X14uCaptureLayout(
     val film = state.filmSimEnabled && !isVideo && filmQuick != null
     // Photo (not Pro): the AMSI row instead of the full exposure row.
     val simplePhoto = !isVideo && !LocalCaptureExtras.current.proUi
+    // Photo has no focus control: entering it returns focus to continuous AF.
+    LaunchedEffect(simplePhoto) {
+        if (simplePhoto && state.focus.mode != FocusMode.Af) dispatch(SetFocusMode(FocusMode.Af))
+    }
 
     // Cells and editors for what is showing.
     val cells: List<X14uCell>
