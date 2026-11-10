@@ -249,6 +249,26 @@ internal fun X14uCaptureLayout(
     val film = state.filmSimEnabled && !isVideo && filmQuick != null
     // Photo (not Pro): the AMSI row instead of the full exposure row.
     val simplePhoto = !isVideo && !LocalCaptureExtras.current.proUi
+    // Photo and Pro (and Video) each remember their own exposure mode (A·M·S·I): switching restores the other's.
+    var photoExposure by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(ExposureMode.Auto.name) }
+    var proExposure by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
+    var lastSimple by remember { mutableStateOf(simplePhoto) }
+    val exposureMode = state.exposureControl.mode
+    androidx.compose.runtime.SideEffect {
+        if (lastSimple == simplePhoto) {
+            if (simplePhoto) photoExposure = exposureMode.name else proExposure = exposureMode.name
+        }
+    }
+    LaunchedEffect(simplePhoto) {
+        if (lastSimple != simplePhoto) {
+            val target = (if (simplePhoto) photoExposure else proExposure)
+                ?.let { name -> ExposureMode.entries.firstOrNull { it.name == name } }
+            lastSimple = simplePhoto
+            if (target != null && target != exposureMode && target in state.capabilities.supportedExposureModes) {
+                dispatch(SetExposureMode(target))
+            }
+        }
+    }
     // Photo has no focus control: entering it returns focus to continuous AF.
     LaunchedEffect(simplePhoto) {
         if (simplePhoto && state.focus.mode != FocusMode.Af) dispatch(SetFocusMode(FocusMode.Af))
