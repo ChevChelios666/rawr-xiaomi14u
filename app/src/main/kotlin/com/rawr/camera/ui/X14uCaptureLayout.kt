@@ -136,6 +136,25 @@ private val X14uFont = FontFamily.Default
 @Composable
 private fun dpText(value: Float): TextUnit = with(LocalDensity.current) { value.dp.toSp() }
 
+/** The mode selector: Pro (new screen, photos), Photo (classic Rawr screen), Video (new screen). */
+internal enum class X14uMode(val label: String) { Pro("Pro"), Photo("Photo"), Video("Video") }
+
+internal fun currentX14uMode(state: CaptureUiState, proUi: Boolean): X14uMode = when {
+    state.captureMode == CaptureMode.Video -> X14uMode.Video
+    proUi -> X14uMode.Pro
+    else -> X14uMode.Photo
+}
+
+internal fun selectX14uMode(target: X14uMode, state: CaptureUiState, dispatch: CaptureDispatch, extras: CaptureExtras) {
+    when (target) {
+        X14uMode.Video -> if (state.captureMode != CaptureMode.Video) dispatch(SetCaptureMode(CaptureMode.Video))
+        else -> {
+            extras.onSetProUi(target == X14uMode.Pro)
+            if (state.captureMode != CaptureMode.Photo) dispatch(SetCaptureMode(CaptureMode.Photo))
+        }
+    }
+}
+
 /** Front-facing lenses leave the lens row; the front-camera button switches to them. */
 internal fun isFrontLens(id: String, name: String): Boolean =
     listOf(id, name).any { it.contains("front", ignoreCase = true) || it.contains("selfie", ignoreCase = true) }
@@ -1382,6 +1401,8 @@ private fun X14uIdleControlArea(
     enabled: Boolean
 ) {
     val haptics = LocalCaptureHaptics.current
+    val extras = LocalCaptureExtras.current
+    val current = currentX14uMode(state, extras.proUi)
     var dismissed by remember { mutableStateOf<VideoTakeSummary?>(null) }
     val take = video.lastTake
     LaunchedEffect(take) {
@@ -1400,20 +1421,21 @@ private fun X14uIdleControlArea(
             Column(
                 Modifier
                     .fillMaxSize()
-                    .pointerInput(enabled, state.captureMode) {
+                    .pointerInput(enabled, current) {
                         if (!enabled) return@pointerInput
                         detectHorizontalDragGestures(
                             onDragStart = { travel = 0f },
                             onDragEnd = {
                                 val threshold = 40.dp.toPx()
+                                val modes = X14uMode.entries
                                 val target = when {
-                                    travel < -threshold -> CaptureMode.Video
-                                    travel > threshold -> CaptureMode.Photo
+                                    travel < -threshold -> modes.getOrNull(current.ordinal + 1)
+                                    travel > threshold -> modes.getOrNull(current.ordinal - 1)
                                     else -> null
                                 }
-                                if (target != null && target != state.captureMode) {
+                                if (target != null && target != current) {
                                     haptics.selection()
-                                    dispatch(SetCaptureMode(target))
+                                    selectX14uMode(target, state, dispatch, extras)
                                 }
                                 travel = 0f
                             }
@@ -1428,10 +1450,10 @@ private fun X14uIdleControlArea(
                 Box(Modifier.size(20.dp, 3.dp).background(Color.White.copy(alpha = .3f), RoundedCornerShape(2.dp)))
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(30.dp), verticalAlignment = Alignment.CenterVertically) {
-                    CaptureMode.entries.forEach { mode ->
-                        val isSelected = state.captureMode == mode
+                    X14uMode.entries.forEach { mode ->
+                        val isSelected = current == mode
                         Text(
-                            if (mode == CaptureMode.Photo) "Photo" else "Video",
+                            mode.label,
                             fontFamily = X14uFont,
                             fontSize = dpText(15f),
                             color = when {
@@ -1442,7 +1464,7 @@ private fun X14uIdleControlArea(
                                 .captureClickable(shape = CaptureTextRippleShape, enabled = enabled) {
                                     if (!isSelected) {
                                         haptics.selection()
-                                        dispatch(SetCaptureMode(mode))
+                                        selectX14uMode(mode, state, dispatch, extras)
                                     }
                                 }
                                 .semantics {

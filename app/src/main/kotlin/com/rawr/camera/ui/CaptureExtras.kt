@@ -6,7 +6,10 @@ import androidx.compose.runtime.staticCompositionLocalOf
 data class CaptureExtras(
     val onToggleAudioMuted: () -> Unit = {},
     val onOpenVideoSettings: () -> Unit = {},
-    val onOpenExposureSettings: () -> Unit = {}
+    val onOpenExposureSettings: () -> Unit = {},
+    /** Photo mode on the new (Pro) screen rather than the classic Photo screen. */
+    val proUi: Boolean = true,
+    val onSetProUi: (Boolean) -> Unit = {}
 )
 
 val LocalCaptureExtras = staticCompositionLocalOf { CaptureExtras() }

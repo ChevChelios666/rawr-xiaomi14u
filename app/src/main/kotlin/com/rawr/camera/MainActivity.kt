@@ -192,6 +192,7 @@ class MainActivity : ComponentActivity() {
             val recording by captureViewModel.recording.state.collectAsStateWithLifecycle()
             val videoAudioInput by captureViewModel.videoAudioInput.collectAsStateWithLifecycle()
             val videoDiagnostics by captureViewModel.videoDiagnostics.collectAsStateWithLifecycle()
+            val proUi by captureViewModel.proUi.collectAsStateWithLifecycle()
             androidx.compose.runtime.LaunchedEffect(Unit) {
                 captureViewModel.recording.errors.collect { message ->
                     Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
@@ -242,6 +243,8 @@ class MainActivity : ComponentActivity() {
                         lastTake = recording.lastTake
                     ),
                     extras = com.rawr.camera.ui.CaptureExtras(
+                    proUi = proUi,
+                    onSetProUi = captureViewModel::setProUi,
                     onToggleAudioMuted = captureViewModel::toggleAudioMuted,
                     onOpenVideoSettings = {
                         startActivity(

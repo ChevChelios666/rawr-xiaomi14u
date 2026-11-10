@@ -522,6 +522,7 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
             autoMinFpsId = p[Keys.autoMinFpsId] ?: d.autoMinFpsId,
             controlSurfaceStyle = enumOrDefault(p[Keys.controlSurfaceStyle], d.controlSurfaceStyle),
             captureControlLayout = enumOrDefault(p[Keys.captureControlLayout], d.captureControlLayout),
+            x14uProUi = p[Keys.x14uProUi] ?: d.x14uProUi,
             jpegEnabled = p[Keys.jpegEnabled] ?: d.jpegEnabled,
             dngEnabled = (p[Keys.dngEnabled] ?: true) || p[Keys.jpegEnabled] == false,
             dngCompressionId =
@@ -766,6 +767,7 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
         p[Keys.autoMinFpsId] = v.autoMinFpsId
         p[Keys.controlSurfaceStyle] = v.controlSurfaceStyle.name
         p[Keys.captureControlLayout] = v.captureControlLayout.name
+        p[Keys.x14uProUi] = v.x14uProUi
         p[Keys.jpegEnabled] = v.jpegEnabled
         p[Keys.dngEnabled] = v.dngEnabled || !v.jpegEnabled
         p[Keys.dngCompressionId] = v.dngCompressionId
@@ -1072,6 +1074,7 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
         val autoMinFpsId = stringPreferencesKey("auto_min_fps_id")
         val controlSurfaceStyle = stringPreferencesKey("control_surface_style")
         val captureControlLayout = stringPreferencesKey("capture_control_layout")
+        val x14uProUi = booleanPreferencesKey("x14u_pro_ui")
         val jpegEnabled = booleanPreferencesKey("capture_jpeg_enabled")
         val dngEnabled = booleanPreferencesKey("capture_dng_enabled")
         val dngCompressionId = stringPreferencesKey("capture_dng_compression_id")

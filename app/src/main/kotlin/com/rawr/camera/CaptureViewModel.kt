@@ -92,6 +92,16 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         .distinctUntilChanged()
         .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, latestSettings.videoEncoder.showDiagnostics)
 
+    /** X14U: Pro (new screen) or Photo (classic screen) for photos. */
+    val proUi: StateFlow<Boolean> = settingsEditor.state
+        .map { it.x14uProUi }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, latestSettings.x14uProUi)
+
+    fun setProUi(pro: Boolean) {
+        settingsEditor.update { it.copy(x14uProUi = pro) }
+    }
+
     /** X14U: the AUDIO button (tap: mute / unmute). */
     fun toggleAudioMuted() {
         settingsEditor.update { it.copy(videoEncoder = it.videoEncoder.copy(audioMuted = !it.videoEncoder.audioMuted)) }

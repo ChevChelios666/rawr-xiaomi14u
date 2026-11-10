@@ -361,6 +361,8 @@ internal fun ModeSelectorStrip(
     enabled: Boolean = true
 ) {
     val haptics = LocalCaptureHaptics.current
+    val extras = LocalCaptureExtras.current
+    val current = currentX14uMode(state, extras.proUi)
     Row(
         modifier
             .testTag(CaptureTestTags.MODE_SELECTOR)
@@ -368,9 +370,10 @@ internal fun ModeSelectorStrip(
         horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        CaptureMode.entries.forEach { mode ->
-            val isSelected = state.captureMode == mode
-            val label = if (mode == CaptureMode.Photo) "PHOTO" else "VIDEO"
+        // X14U: PRO (new screen) · PHOTO (this classic screen) · VIDEO (new screen).
+        X14uMode.entries.forEach { mode ->
+            val isSelected = current == mode
+            val label = mode.label.uppercase()
             Box(
                 Modifier
                     .height(28.dp)
@@ -380,7 +383,7 @@ internal fun ModeSelectorStrip(
                             Modifier.captureClickable(shape = CaptureTextRippleShape) {
                                 if (!isSelected) {
                                     haptics.selection()
-                                    dispatch(SetCaptureMode(mode))
+                                    selectX14uMode(mode, state, dispatch, extras)
                                 }
                             }
                         } else {

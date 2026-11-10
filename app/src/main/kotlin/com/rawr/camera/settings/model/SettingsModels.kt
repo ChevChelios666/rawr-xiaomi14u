@@ -1179,7 +1179,9 @@ data class SettingsValues(
     val captureModeId: String = "photo",
     val videoResolutionId: String = "1080p",
     val videoFps: Int = 30,
-    val videoEncoder: VideoEncoderConfig = VideoEncoderConfig()
+    val videoEncoder: VideoEncoderConfig = VideoEncoderConfig(),
+    /** X14U: photo mode on the new (Pro) capture screen; false = the classic Rawr Photo screen. */
+    val x14uProUi: Boolean = true
 ) {
     val isVideo: Boolean get() = captureModeId == "video"
     val isLogActive: Boolean get() = isVideo && videoLogEnabled

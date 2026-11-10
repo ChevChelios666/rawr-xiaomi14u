@@ -63,7 +63,8 @@ internal fun ControlStyleSettings(state: SettingsUiState, dispatch: SettingsDisp
     SettingsPageContainer {
         SettingsGroup(
             title = "Capture Layout",
-            description = "Classic keeps SS/ISO/EV sliders in the viewfinder. Compact moves WB/SS/ISO/EV to scrubbable buttons by the shutter, with multiframe and film sim pills."
+            description = "For the Photo mode (the classic Rawr screen). Pro and Video use the X14U screen. " +
+                "Classic keeps SS/ISO/EV sliders in the viewfinder. Compact moves WB/SS/ISO/EV to scrubbable buttons by the shutter, with multiframe and film sim pills."
         ) {
             SettingsSelectionRow(
                 title = "Classic",
