@@ -217,7 +217,9 @@ internal fun PhotoLookToggles(
     onOpenFilmSimSettings: () -> Unit,
     onOpenMultiframeSettings: () -> Unit,
     /** X14U build: the DCP button, after FILM. */
-    trailing: @Composable () -> Unit = {}
+    trailing: @Composable () -> Unit = {},
+    /** X14U: each pill turns in place in landscape. */
+    pillModifier: Modifier = Modifier
 ) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(0.dp),
@@ -241,7 +243,7 @@ internal fun PhotoLookToggles(
             onClick = { dispatch(ToggleMultiframe) },
             onLongClick = onOpenMultiframeSettings,
             onLongClickLabel = "Multiframe settings",
-            modifier = Modifier,
+            modifier = pillModifier,
             minWidth = SidePillWidth
         )
         CompactSidePill(
@@ -257,7 +259,7 @@ internal fun PhotoLookToggles(
             onClick = { dispatch(ToggleFilmSim) },
             onLongClick = onOpenFilmSimSettings,
             onLongClickLabel = "Film simulation settings",
-            modifier = Modifier,
+            modifier = pillModifier,
             minWidth = SidePillWidth
         )
         trailing()

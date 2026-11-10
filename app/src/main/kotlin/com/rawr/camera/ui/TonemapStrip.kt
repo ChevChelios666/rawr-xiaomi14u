@@ -426,7 +426,7 @@ private fun RenderExposureParamItem(
 }
 
 /** AgX strip edits: the RANGE exposure cell is render exposure, every other key an AgX control. */
-private fun dispatchAgx(dispatch: CaptureDispatch, key: String, value: Float?) {
+internal fun dispatchAgx(dispatch: CaptureDispatch, key: String, value: Float?) {
     if (key == AGX_STRIP_EXPOSURE_KEY) {
         dispatch(SetRenderExposureTenths(value?.let { renderExposureTenthsOf(it) } ?: 0))
         return

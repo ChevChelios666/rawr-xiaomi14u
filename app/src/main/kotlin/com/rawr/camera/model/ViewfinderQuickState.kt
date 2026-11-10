@@ -54,6 +54,8 @@ data class ViewfinderQuickState(
     val rawrAe: com.rawr.camera.settings.model.RawrAeSettings = com.rawr.camera.settings.model.RawrAeSettings(),
     /** X14U: lenses with per-lens overrides (their own or their run-as lens's): a dot under the lens name. */
     val overrideLenses: Set<String> = emptySet(),
+    /** X14U: override groups of the lens whose overrides apply now (LensOverrides.GROUP_*), HDR+ on/off left out. */
+    val overrideGroups: Set<String> = emptySet(),
     /** X14U: the lens whose overrides apply now ("50MP" while 1x runs at 50 MP). */
     val overrideLens: String? = null,
     /** X14U: true in video mode (the DCP pill then edits the video DCP). */
@@ -88,6 +90,9 @@ internal fun SettingsValues.toViewfinderQuickState(
             }.map { it.name }.toSet()
         },
         overrideLens = overrideLens()?.name,
+        overrideGroups = overrideLens()?.overrides?.keys.orEmpty()
+            .filter { it != com.rawr.camera.settings.model.LensOverrides.HDR_PLUS }
+            .mapNotNull { com.rawr.camera.settings.model.LensOverrides.spec(it)?.group }.toSet(),
         video = isVideo,
         rawrAe = rawrAe,
         lensOptions = (lensProfiles ?: deviceDefaults).let { lenses ->

@@ -290,7 +290,8 @@ internal fun shortDcpName(name: String): String =
 internal fun DcpSidePill(
     dcp: DcpQuickState?,
     onSelect: (String?) -> Unit,
-    onOpenLensSettings: () -> Unit
+    onOpenLensSettings: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val profiles = dcp?.profiles.orEmpty()
     val selected = profiles.firstOrNull { it.file == dcp?.selectedFile }
@@ -311,7 +312,8 @@ internal fun DcpSidePill(
             onClick = { if (profiles.isNotEmpty()) open = true },
             onLongClick = onOpenLensSettings,
             onLongClickLabel = "Lens settings",
-            minWidth = SidePillWidth
+            minWidth = SidePillWidth,
+            modifier = modifier
         )
         DropdownMenu(expanded = open && dcp != null, onDismissRequest = { open = false }) {
             ChoiceGrid(

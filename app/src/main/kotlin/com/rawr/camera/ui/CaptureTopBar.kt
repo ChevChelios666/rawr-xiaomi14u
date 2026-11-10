@@ -310,23 +310,25 @@ private fun SelfTimerTopBarChoice(
             .semantics { contentDescription = description },
         contentPadding = PaddingValues(0.dp)
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // X14U: the icon alone, centred and the same size in both states; the seconds are a badge when armed.
+        Box(Modifier.size(48.dp).uprightInLandscape(orientation), contentAlignment = Alignment.Center) {
             Icon(
                 if (armed) Icons.Outlined.Timer else Icons.Outlined.TimerOff,
                 contentDescription = null,
                 tint = if (armed) CaptureColors.Accent else CaptureColors.Muted,
-                modifier = Modifier.size(20.dp).uprightInLandscape(orientation)
+                modifier = Modifier.size(22.dp)
             )
-            Text(
-                label,
-                color = if (armed) CaptureColors.Accent else CaptureColors.Muted,
-                fontFamily = CaptureMono,
-                fontSize = 8.sp,
-                lineHeight = 8.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                modifier = Modifier.uprightInLandscape(orientation)
-            )
+            if (armed) {
+                Text(
+                    label.removeSuffix("s"),
+                    color = CaptureColors.Accent,
+                    fontSize = 9.sp,
+                    lineHeight = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    modifier = Modifier.align(Alignment.Center).offset(x = 12.dp, y = 10.dp)
+                )
+            }
         }
     }
 }

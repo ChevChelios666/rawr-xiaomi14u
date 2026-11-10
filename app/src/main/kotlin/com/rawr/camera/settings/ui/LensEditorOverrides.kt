@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -139,11 +140,15 @@ private fun AddOverrideDialog(
                             Modifier.fillMaxWidth().clickable { onPick(spec) }.padding(vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            // The title gets the room; a long value wraps under itself, never squeezing the title.
                             Text(spec.title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                             Text(
                                 spec.labelOf(global),
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(start = 12.dp).widthIn(max = 120.dp)
                             )
                         }
                     }
