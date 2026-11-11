@@ -355,7 +355,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             }
         }
         // Option A, once: in-sensor-zoom lenses (the 2x) go off so zooming crops the main camera without a switch.
-        // They can be turned back on in Settings → Lenses and then show as their own button again.
+        // Turned back on in Settings → Lenses, the 2x is a button again and a zoom step (1x -> 2x -> 3.2x).
         viewModelScope.launch {
             settingsEditor.values.first().let { v ->
                 if (!v.inSensorZoomLensesOffOnce) {

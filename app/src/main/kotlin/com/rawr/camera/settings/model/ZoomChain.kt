@@ -1,9 +1,9 @@
 package com.rawr.camera.settings.model
 
 /**
- * X14U digital zoom: the lenses pinch and the zoom ruler move between (a separate sensor each), by zoom factor.
- * A lens on the same sensor as a wider one (in-sensor zoom like the 2x, or 50 MP) is not part of the chain: it stays
- * a button of its own when enabled, and zooming crops the wider lens instead.
+ * X14U digital zoom: the lenses pinch and the zoom ruler move between, by zoom factor. Every enabled rear lens whose
+ * name states a factor is a step: with the 2x (in-sensor zoom) on, 1x -> 2x -> 3.2x; with it off, the 1x is cropped
+ * up to 3.2x. Lenses without a factor (50MP, Front, 1xV) are not steps.
  */
 object ZoomChain {
     const val MAX_ZOOM = 10f
@@ -14,13 +14,11 @@ object ZoomChain {
 
     private fun sensorOf(lens: LensProfile): String = lens.camera.physical.ifEmpty { lens.camera.id }
 
-    /** Enabled rear lenses with a factor, one per sensor (the widest), sorted by factor. */
+    /** Enabled lenses with a factor, sorted by factor (one per factor). */
     fun of(lenses: List<LensProfile>): List<Pair<String, Float>> =
         lenses.filter { it.enabled }
-            .mapNotNull { lens -> factorOf(lens.name)?.let { Triple(lens.name, it, sensorOf(lens)) } }
-            .groupBy { it.third }
-            .map { (_, onSensor) -> onSensor.minBy { it.second } }
-            .map { it.first to it.second }
+            .mapNotNull { lens -> factorOf(lens.name)?.let { lens.name to it } }
+            .distinctBy { it.second }
             .sortedBy { it.second }
 
     /** Lenses that crop a wider lens's sensor (left out of the chain). */

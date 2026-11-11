@@ -319,7 +319,8 @@ internal fun X14uCaptureLayout(
         }
     }
     LaunchedEffect(state.captureMode, state.selectedLensId) {
-        selected = null
+        // The zoom ruler stays open through the lens switches zooming makes.
+        if (!(selected == ZOOM_KEY && zoomOn)) selected = null
         panel = null
     }
     LaunchedEffect(selected) { if (selected != "wb") wbTint = false }
