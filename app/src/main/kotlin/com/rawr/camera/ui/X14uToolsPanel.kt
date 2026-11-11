@@ -77,7 +77,7 @@ internal val X14uGridFamilies: List<Pair<String, List<GridMode>>> = listOf(
     "Off" to listOf(GridMode.Off),
     "Thirds" to listOf(GridMode.Thirds),
     "Points" to listOf(GridMode.ThirdsPoints),
-    "Phi" to listOf(GridMode.GoldenRatio),
+    "Golden ratio" to listOf(GridMode.GoldenRatio),
     "Spiral" to listOf(GridMode.SpiralBottomLeft, GridMode.SpiralBottomRight, GridMode.SpiralTopRight, GridMode.SpiralTopLeft),
     "Triangles" to listOf(GridMode.GoldenTriangles, GridMode.GoldenTrianglesMirrored),
     "Diagonals" to listOf(GridMode.Diagonals),
