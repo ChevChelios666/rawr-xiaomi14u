@@ -109,7 +109,7 @@ internal class PanoSet {
         ghosts.add(null)
         refs.add(reference)
         lastShotAt = System.currentTimeMillis()
-        CaptureFileNames.stillSuffix = frameTag()
+        CaptureFileNames.setNextStillSuffix(frameTag())
         dispatch(TriggerCapture)
         return frames
     }
@@ -143,7 +143,7 @@ internal class PanoSet {
         frames = 0
         ghosts.clear()
         refs.clear()
-        CaptureFileNames.stillSuffix = ""
+        CaptureFileNames.setNextStillSuffix("")
     }
 }
 

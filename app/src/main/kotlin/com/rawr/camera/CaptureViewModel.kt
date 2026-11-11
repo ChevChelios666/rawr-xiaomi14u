@@ -105,7 +105,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     val pano: StateFlow<Boolean> = panoFlow
     fun setPano(on: Boolean) {
         panoFlow.value = on
-        if (!on) com.rawr.camera.storage.CaptureFileNames.stillSuffix = ""
+        if (!on) com.rawr.camera.storage.CaptureFileNames.setNextStillSuffix("")
     }
 
     /**
