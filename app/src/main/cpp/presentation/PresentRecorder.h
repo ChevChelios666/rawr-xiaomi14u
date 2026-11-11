@@ -14,6 +14,14 @@ struct ScopeDraw {
     uint32_t quarterTurns = 0;
     bool enabled = false;
 };
+// X14U focus loupe: the live view's [wx0, wx1] x [wy0, wy1] (viewfinder fractions) magnified into the viewfinder
+// rectangle (x, y, width, height fractions), rounded by cornerRadius (fraction of its height).
+struct LoupeDraw {
+    bool enabled = false;
+    float x = 0, y = 0, width = 0, height = 0;
+    float wx0 = 0, wy0 = 0, wx1 = 1, wy1 = 1;
+    float cornerRadius = 0.0f;
+};
 struct RecordInfo {
     VkCommandBuffer command = VK_NULL_HANDLE;
     VkImage swapImage = VK_NULL_HANDLE;
@@ -38,6 +46,7 @@ struct RecordInfo {
     // Lens profile mirror (geometry::kLensMirror* bits), live viewfinder only.
     uint32_t lensMirror = 0;
     std::array<ScopeDraw, 3> scopes{};
+    LoupeDraw loupe{};
 };
 class PresentRecorder final {
    public:

@@ -206,6 +206,10 @@ void setMonitoringOverlay(EngineHandle h, uint32_t mode, float sensitivity) noex
 void setScopePresentationState(EngineHandle h, const rawrcam::monitoring::ScopePresentationState& state) noexcept {
     if (h) engine(h)->setScopePresentationState(state);
 }
+void setFocusLoupe(EngineHandle h, const rawrcam::presentation::LoupeDraw& loupe, bool meter) noexcept {
+    if (h) engine(h)->setFocusLoupe(loupe, meter);
+}
+float focusMeterValue(EngineHandle h) noexcept { return h ? engine(h)->focusMeterValue() : -1.0f; }
 uint64_t requestRawStillCapture(EngineHandle h, rawrcam::encoding::dng::DngCaptureContext dngContext,
                                 rawrcam::capture::JpegCaptureRequest jpegContext) noexcept {
     // As above: the contexts close their own destinations on rejection.

@@ -16,7 +16,7 @@ namespace image_scopes {
 namespace {
 using detail::DisplayWaveformStd430;
 using detail::VectorscopeStd430;
-constexpr std::uint32_t kSetKinds = 10;
+constexpr std::uint32_t kSetKinds = 11;
 constexpr std::uint32_t kDescriptorInvocationsPerKind = 16;
 enum SetKind : std::uint32_t {
     ExposureMeasure,
@@ -28,7 +28,8 @@ enum SetKind : std::uint32_t {
     VecRender,
     RawWaveRender,
     SceneMeasure,
-    SceneReduce
+    SceneReduce,
+    FocusMeasure
 };
 constexpr VkDeviceSize kExposureScratchBytes = 16ull * 260ull * 4ull;
 constexpr VkDeviceSize kSceneScratchBytes = 16ull * (3ull * kSceneExposureBins + 8ull) * 4ull;
@@ -190,6 +191,10 @@ struct ExposureMeasurePush {
     std::uint32_t width, height, sampleBlockSize, p1, p2, p3, p4, p5;
 };
 static_assert(sizeof(ExposureMeasurePush) == 32);
+struct FocusMeasurePush {
+    std::uint32_t x0, y0, x1, y1, width, height, p0, p1;
+};
+static_assert(sizeof(FocusMeasurePush) == 32);
 struct ExposureReducePush {
     std::uint32_t width, height, p0, p1, p2, p3, p4, p5;
 };
@@ -241,11 +246,11 @@ struct ImageScopes::Impl {
     VkPipelineLayout measurePl{}, reducePl{}, renderPl{};
     VkDescriptorPool pool{};
     VkPipeline exposureMeasure{}, exposureReduce{}, waveMeasure{}, vecMeasure{}, vecReduce{}, waveRender{},
-        vecRender{}, rawWaveRender{}, sceneMeasure{}, sceneReduce{};
+        vecRender{}, rawWaveRender{}, sceneMeasure{}, sceneReduce{}, focusMeasure{};
     std::vector<std::array<VkDescriptorSet, kSetKinds>> sets;
     std::vector<std::array<std::array<VkDescriptorSet, kDescriptorInvocationsPerKind>, kSetKinds>> invocationSets;
     std::vector<std::array<std::uint32_t, kSetKinds>> invocationCursor;
-    std::vector<Buffer> exposure, exposureScratch, scene, sceneScratch, wave, vec, vecScratch;
+    std::vector<Buffer> exposure, exposureScratch, scene, sceneScratch, wave, vec, vecScratch, focus;
     std::vector<SamplingMetadata> waveMeta, vecMeta;
     std::vector<SamplingMetadata> pendingWaveMeta, pendingVecMeta;
     std::vector<WaveformMode> pendingWaveMode, validWaveMode;
@@ -325,13 +330,14 @@ struct ImageScopes::Impl {
             waveRender = mkpipe(generated::render_waveform, generated::render_waveform_bytes, renderPl);
             vecRender = mkpipe(generated::render_vectorscope, generated::render_vectorscope_bytes, renderPl);
             rawWaveRender = mkpipe(generated::render_raw_waveform, generated::render_raw_waveform_bytes, renderPl);
+            focusMeasure = mkpipe(generated::focus_measure, generated::focus_measure_bytes, measurePl);
             // Every recorded descriptor invocation gets a descriptor set that is
             // immutable until the owning frame slot is retired/discarded. This is
             // deliberately cumulative across measure/reduce/render and RAW paths:
             // Vulkan descriptor contents are consumed at execution, not recording.
             const std::uint32_t perSlotSets = kSetKinds * kDescriptorInvocationsPerKind;
             // Per kind each set has exactly two descriptors. Count by its DSL.
-            const std::uint32_t measureKinds = 4u, reduceKinds = 3u, renderKinds = 3u;
+            const std::uint32_t measureKinds = 5u, reduceKinds = 3u, renderKinds = 3u;
             std::array<VkDescriptorPoolSize, 2> ps{
                 {{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
                   (measureKinds + renderKinds) * kDescriptorInvocationsPerKind * slots},
@@ -349,7 +355,7 @@ struct ImageScopes::Impl {
             std::vector<VkDescriptorSetLayout> layouts;
             layouts.reserve(perSlotSets * slots);
             auto layoutFor = [&](std::uint32_t k) {
-                if (k == ExposureMeasure || k == WaveMeasure || k == VecMeasure || k == SceneMeasure)
+                if (k == ExposureMeasure || k == WaveMeasure || k == VecMeasure || k == SceneMeasure || k == FocusMeasure)
                     return measureDsl;
                 if (k == ExposureReduce || k == VecReduce || k == SceneReduce) return reduceDsl;
                 return renderDsl;
@@ -398,6 +404,7 @@ struct ImageScopes::Impl {
                 wave.push_back(makeBuffer(pd, d, sizeof(DisplayWaveformStd430), alloc));
                 vec.push_back(makeBuffer(pd, d, sizeof(VectorscopeStd430), alloc));
                 vecScratch.push_back(makeBuffer(pd, d, kVecScratchBytes, alloc));
+                focus.push_back(makeBuffer(pd, d, sizeof(FocusMeasureData), alloc));
             }
         } catch (...) {
             cleanup();
@@ -418,9 +425,10 @@ struct ImageScopes::Impl {
         for (auto& b : wave) destroyBuffer(d, b, alloc);
         for (auto& b : vec) destroyBuffer(d, b, alloc);
         for (auto& b : vecScratch) destroyBuffer(d, b, alloc);
+        for (auto& b : focus) destroyBuffer(d, b, alloc);
         if (pool) vkDestroyDescriptorPool(d, pool, alloc);
         for (VkPipeline p : {exposureMeasure, exposureReduce, waveMeasure, vecMeasure, vecReduce, waveRender,
-                             vecRender, rawWaveRender, sceneMeasure, sceneReduce})
+                             vecRender, rawWaveRender, sceneMeasure, sceneReduce, focusMeasure})
             if (p) vkDestroyPipeline(d, p, alloc);
         if (measurePl) vkDestroyPipelineLayout(d, measurePl, alloc);
         if (reducePl) vkDestroyPipelineLayout(d, reducePl, alloc);
@@ -638,6 +646,31 @@ void ImageScopes::recordDisplayExposureStats(const DisplayExposureStatsRecordInf
     vkCmdBindDescriptorSets(i.commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, impl_->reducePl, 0, 1, &rs, 0, nullptr);
     vkCmdPushConstants(i.commandBuffer, impl_->reducePl, VK_SHADER_STAGE_COMPUTE_BIT, 0, 32, &rp);
     vkCmdDispatch(i.commandBuffer, 1u, 1u, 1u);
+}
+void ImageScopes::recordFocusMeasure(const FocusMeasureRecordInfo& i) {
+    if (!impl_ || !i.commandBuffer) throw std::invalid_argument("image_scopes: invalid focus measure record");
+    impl_->slot(i.frameSlot);
+    validateImage(i.input);
+    const std::uint32_t x0 = std::min(i.x0, i.input.width), y0 = std::min(i.y0, i.input.height);
+    const std::uint32_t x1 = std::clamp(i.x1, x0, i.input.width), y1 = std::clamp(i.y1, y0, i.input.height);
+    auto& out = impl_->focus[i.frameSlot];
+    // Zero the totals, then sum into them.
+    Impl::computeToTransferWrite(i.commandBuffer, out.b, out.size);
+    vkCmdFillBuffer(i.commandBuffer, out.b, 0, out.size, 0u);
+    Impl::transferBarrier(i.commandBuffer, out.b, out.size);
+    if (x1 <= x0 || y1 <= y0) return;
+    auto ms = impl_->bindMeasure(i.frameSlot, FocusMeasure, i.input.view, i.input.layout, out);
+    FocusMeasurePush mp{x0, y0, x1, y1, i.input.width, i.input.height, 0, 0};
+    vkCmdBindPipeline(i.commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, impl_->focusMeasure);
+    vkCmdBindDescriptorSets(i.commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, impl_->measurePl, 0, 1, &ms, 0, nullptr);
+    vkCmdPushConstants(i.commandBuffer, impl_->measurePl, VK_SHADER_STAGE_COMPUTE_BIT, 0, 32, &mp);
+    vkCmdDispatch(i.commandBuffer, (x1 - x0 + 15u) / 16u, (y1 - y0 + 15u) / 16u, 1u);
+}
+void ImageScopes::recordCopyFocusMeasure(VkCommandBuffer c, std::uint32_t s, VkBuffer dst, VkDeviceSize off) const {
+    impl_->slot(s);
+    Impl::computeToTransfer(c, impl_->focus[s].b, impl_->focus[s].size);
+    VkBufferCopy r{0, off, sizeof(FocusMeasureData)};
+    vkCmdCopyBuffer(c, impl_->focus[s].b, dst, 1, &r);
 }
 void ImageScopes::recordSceneExposureStats(const SceneExposureStatsRecordInfo& i) {
     if (!impl_ || !i.commandBuffer) throw std::invalid_argument("image_scopes: invalid scene stats record");

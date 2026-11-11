@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -58,6 +59,12 @@ class ImageScopesProcessor final {
         return frameSlot < sceneClipLuma_.size() ? sceneClipLuma_[frameSlot] : 0.0f;
     }
     void retireFrameSlot(uint32_t frameSlot);
+    // X14U focus meter: the window [x0, x1] x [y0, y1] of the viewfinder (displayed fractions) to measure; off when
+    // disabled. recordFocus measures it on the display image; focusValue() is the latest result (< 0: none).
+    void setFocusMeter(bool enabled, float x0, float y0, float x1, float y1) noexcept;
+    void recordFocus(VkCommandBuffer command, uint32_t frameSlot, VkImageView displayView, VkImage displayImage,
+                     uint32_t presentationQuarterTurns, uint32_t lensMirror);
+    [[nodiscard]] float focusValue() const noexcept { return focusValue_.load(std::memory_order_relaxed); }
     [[nodiscard]] std::optional<RenderedExposureFeedback> consumeExposureFeedback(uint32_t frameSlot);
     void discardFrameSlot(uint32_t frameSlot) noexcept;
 
@@ -99,6 +106,10 @@ class ImageScopesProcessor final {
     std::array<ExposureStatsReadback, rawrcam::imaging::kRealtimeFramesInFlight> exposureStatsReadback_{};
     std::array<ExposureStatsReadback, rawrcam::imaging::kRealtimeFramesInFlight> sceneStatsReadback_{};
     std::array<float, rawrcam::imaging::kRealtimeFramesInFlight> sceneClipLuma_{};
+    std::array<ExposureStatsReadback, rawrcam::imaging::kRealtimeFramesInFlight> focusReadback_{};
+    std::atomic<bool> focusEnabled_{false};
+    std::array<std::atomic<float>, 4> focusWindow_{};
+    std::atomic<float> focusValue_{-1.0f};
     void createReadback(ExposureStatsReadback& rb, VkDeviceSize bytes);
     void destroyReadback(ExposureStatsReadback& rb) noexcept;
     bool readReadback(ExposureStatsReadback& rb, void* out, size_t bytes);

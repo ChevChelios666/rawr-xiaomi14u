@@ -1,0 +1,51 @@
+#version 450
+// Focus meter: gradient energy (Tenengrad-style, central differences of luma) over one rectangle of the display
+// image. A higher value means more fine detail, so it peaks at best focus. Relative only: comparable within one
+// subject and one focus sweep. Each 16x16 group sums its pixels, then adds the total (scaled) to the buffer.
+layout(local_size_x = 16, local_size_y = 16) in;
+layout(binding = 0, rgba8) uniform readonly image2D src;
+layout(std430, binding = 1) buffer Out { uint energy; uint samples; uint pad0; uint pad1; }
+outv;
+layout(push_constant) uniform PC {
+    uint x0;
+    uint y0;
+    uint x1;
+    uint y1;
+    uint width;
+    uint height;
+    uint p0;
+    uint p1;
+}
+pc;
+
+shared float sums[256];
+
+float luma(ivec2 p) {
+    p = clamp(p, ivec2(0), ivec2(int(pc.width) - 1, int(pc.height) - 1));
+    vec3 c = imageLoad(src, p).rgb;
+    return dot(c, vec3(.2126, .7152, .0722)) * 255.0;
+}
+
+void main() {
+    ivec2 p = ivec2(pc.x0, pc.y0) + ivec2(gl_GlobalInvocationID.xy);
+    uint li = gl_LocalInvocationIndex;
+    float e = 0.0;
+    if (p.x < int(pc.x1) && p.y < int(pc.y1)) {
+        float gx = luma(p + ivec2(1, 0)) - luma(p - ivec2(1, 0));
+        float gy = luma(p + ivec2(0, 1)) - luma(p - ivec2(0, 1));
+        e = gx * gx + gy * gy;
+    }
+    sums[li] = e;
+    barrier();
+    for (uint s = 128u; s > 0u; s >>= 1u) {
+        if (li < s) sums[li] += sums[li + s];
+        barrier();
+    }
+    if (li == 0u) {
+        // /64 keeps the 32-bit total in range for loupe-sized rectangles.
+        atomicAdd(outv.energy, uint(sums[0] / 64.0));
+        uint w = uint(clamp(int(pc.x1) - int(pc.x0) - int(gl_WorkGroupID.x * 16u), 0, 16));
+        uint h = uint(clamp(int(pc.y1) - int(pc.y0) - int(gl_WorkGroupID.y * 16u), 0, 16));
+        atomicAdd(outv.samples, w * h);
+    }
+}

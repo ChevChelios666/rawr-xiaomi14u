@@ -53,6 +53,38 @@ internal fun MonitoringSettings(state: SettingsUiState, dispatch: SettingsDispat
                 testTag = SettingsTestTags.row("Monitoring", "peaking_sensitivity")
             )
         }
+        val loupe = state.values.focusLoupe
+        val set: (FocusLoupeSettings) -> Unit = { dispatch.invoke(SetFocusLoupe(it)) }
+        SettingsGroup(
+            title = "Focus loupe",
+            description = "A magnified window over the focus point, for checking focus. It never changes the photo."
+        ) {
+            DropdownChoiceRow(
+                title = "Loupe zoom",
+                selected = loupe.zoom.toString(),
+                values = FocusLoupeSettings.ZOOMS.map { it.toString() },
+                label = { "${it}×" },
+                onSelect = { v -> set(loupe.copy(zoom = v.toInt())) }
+            )
+            SettingDivider()
+            SettingsSwitchRow(
+                title = "Open while focusing manually",
+                checked = loupe.onManualFocus,
+                supportingText = "Shows while you drag the MF ruler"
+            ) { set(loupe.copy(onManualFocus = it)) }
+            SettingDivider()
+            SettingsSwitchRow(
+                title = "Double-tap the viewfinder",
+                checked = loupe.doubleTap,
+                supportingText = "Opens or closes the loupe. Tap-to-focus then waits a moment for a second tap."
+            ) { set(loupe.copy(doubleTap = it)) }
+            SettingDivider()
+            SettingsSwitchRow(
+                title = "Focus meter",
+                checked = loupe.meter,
+                supportingText = "Sharpness bar with a peak-hold mark: sweep through focus, return to the mark"
+            ) { set(loupe.copy(meter = it)) }
+        }
     }
 }
 

@@ -140,7 +140,8 @@ internal val X14uFont = FontFamily.Default
 internal fun dpText(value: Float): TextUnit = with(LocalDensity.current) { value.dp.toSp() }
 
 /** The mode selector: Pro (new screen, photos), Photo (classic Rawr screen), Video (new screen). */
-internal enum class X14uMode(val label: String) { Photo("Photo"), Pro("Pro"), Video("Video") }
+/** Photo+ (enum Pro) sits behind Photo: swipe up on the viewfinder, or tap the lit Photo label, to switch. */
+internal enum class X14uMode(val label: String) { Photo("Photo"), Pro("Photo+"), Video("Video") }
 
 internal fun currentX14uMode(state: CaptureUiState, proUi: Boolean): X14uMode = when {
     state.captureMode == CaptureMode.Video -> X14uMode.Video
@@ -245,12 +246,41 @@ internal fun X14uCaptureLayout(
     var showNumbers by remember { mutableStateOf(false) }
     // WB editor: Kelvin ruler, or tint after TINT.
     var wbTint by remember { mutableStateOf(false) }
+    // Focus loupe: opened by MF ruler use (closes ~1 s after) or a double-tap (stays; at that point).
+    val loupeSettings = LocalCaptureExtras.current.tools.focusLoupe
+    var loupeOpen by remember { mutableStateOf(false) }
+    var loupeAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+    var mfTouch by remember { mutableStateOf(0L) }
+    val onMfTouch: () -> Unit = {
+        if (loupeSettings.onManualFocus) {
+            if (!loupeOpen) loupeAt = null
+            loupeOpen = true
+            mfTouch = System.nanoTime()
+        }
+    }
+    LaunchedEffect(mfTouch) {
+        if (mfTouch != 0L && loupeAt == null) {
+            kotlinx.coroutines.delay(1200L)
+            loupeOpen = false
+        }
+    }
     // Tools panel (swipe down on the viewfinder / top-bar arrow) and its open choice row.
     var toolsOpen by remember { mutableStateOf(false) }
     var toolsChoice by remember { mutableStateOf<String?>(null) }
     val extrasNow = LocalCaptureExtras.current
     // Swipe-up mode change: the new mode's name shows briefly on the viewfinder.
     var modeFlash by remember { mutableStateOf<String?>(null) }
+    // One-time hint in Photo: "Swipe up for Photo+" for 3 s (counted; gone for good once switched).
+    var stillsHintVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(simplePhotoForHint(state, extrasNow.proUi), extrasNow.stillsHint) {
+        if (simplePhotoForHint(state, extrasNow.proUi) && extrasNow.stillsHint) {
+            kotlinx.coroutines.delay(600L)
+            stillsHintVisible = true
+            extrasNow.onStillsHintShown()
+            kotlinx.coroutines.delay(3000L)
+        }
+        stillsHintVisible = false
+    }
     LaunchedEffect(modeFlash) {
         if (modeFlash != null) {
             kotlinx.coroutines.delay(900L)
@@ -378,8 +408,8 @@ internal fun X14uCaptureLayout(
                 owners.mapNotNull { k -> all.firstOrNull { it.key == k } } + all.filter { it.key == "f" }
             } else all
             editorFor = { key ->
-                if (key == PHOTO_FOCUS_KEY) photoFocusEditor(state, dispatch)
-                else exposureEditor(key, state, dispatch, lensOptions, recordingLock, onQuickEvent, wbTint) { wbTint = !wbTint }
+                if (key == PHOTO_FOCUS_KEY) photoFocusEditor(state, dispatch, onMfTouch)
+                else exposureEditor(key, state, dispatch, lensOptions, recordingLock, onQuickEvent, wbTint, { wbTint = !wbTint }, onMfTouch)
             }
         }
         X14uPanel.Exposure -> {
@@ -469,6 +499,14 @@ internal fun X14uCaptureLayout(
                 onQuickEvent = onQuickEvent,
                 x14uClean = true,
                 onViewfinderTap = closeAll,
+                onViewfinderDoubleTap = if (!loupeSettings.doubleTap) null else { fx, fy ->
+                    if (loupeOpen) {
+                        loupeOpen = false
+                    } else {
+                        loupeAt = androidx.compose.ui.geometry.Offset(fx, fy)
+                        loupeOpen = true
+                    }
+                },
                 onViewfinderSwipe = { direction ->
                     when {
                         direction > 0 -> openTools(true)
@@ -477,7 +515,7 @@ internal fun X14uCaptureLayout(
                         !isVideo && !recordingLock -> {
                             closeAll()
                             extrasNow.onSetProUi(!extrasNow.proUi)
-                            modeFlash = if (extrasNow.proUi) "PHOTO" else "PRO"
+                            modeFlash = if (extrasNow.proUi) "PHOTO" else "PHOTO+"
                         }
                     }
                 }
@@ -494,6 +532,37 @@ internal fun X14uCaptureLayout(
                 val tools = LocalCaptureExtras.current.tools
                 if (!isVideo) X14uAspectMask(tools.photoAspect, Modifier.fillMaxSize())
                 if (tools.level) X14uLevel(Modifier.fillMaxSize())
+                // Photo / Photo+ only: in Video the viewfinder runs past this frame (16:9), so the loupe would sit off.
+                if (loupeOpen && !isVideo) {
+                    val target = state.focus.target
+                    X14uFocusLoupe(
+                        center = loupeAt ?: androidx.compose.ui.geometry.Offset(target.x, target.y),
+                        settings = loupeSettings,
+                        preview = preview,
+                        distanceLabel = if (state.focus.mode == FocusMode.Mf) state.focusDistanceLabel() else null,
+                        orientation = orientation,
+                        onClose = { loupeOpen = false },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = stillsHintVisible && !toolsOpen,
+                    enter = androidx.compose.animation.fadeIn(),
+                    exit = androidx.compose.animation.fadeOut(),
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 64.dp)
+                ) {
+                    Row(
+                        Modifier
+                            .background(Color.Black.copy(alpha = .6f), RoundedCornerShape(16.dp))
+                            .padding(horizontal = 12.dp, vertical = 7.dp)
+                            .uprightInLandscape(orientation),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(X14uIcons.ChevronUp, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Swipe up for Photo+", fontFamily = X14uFont, fontSize = dpText(13f), color = Color.White)
+                    }
+                }
                 androidx.compose.animation.AnimatedVisibility(
                     visible = modeFlash != null,
                     enter = androidx.compose.animation.fadeIn(),
@@ -620,6 +689,9 @@ internal fun X14uCaptureLayout(
         }
     }
 }
+
+private fun simplePhotoForHint(state: CaptureUiState, proUi: Boolean): Boolean =
+    state.captureMode != CaptureMode.Video && !proUi
 
 private fun lookTabs(film: Boolean): List<String> = buildList {
     add("PROFILE")
@@ -1189,7 +1261,8 @@ private fun exposureEditor(
     recordingLock: Boolean,
     onQuickEvent: (CaptureQuickEvent) -> Unit,
     wbTint: Boolean = false,
-    onToggleWbTint: () -> Unit = {}
+    onToggleWbTint: () -> Unit = {},
+    onMfTouch: () -> Unit = {}
 ): X14uEditor = when (key) {
     "ev" -> exposureRuler(ExposureParameter.Ev, state, dispatch)
     "ss" -> exposureRuler(ExposureParameter.Shutter, state, dispatch)
@@ -1207,7 +1280,7 @@ private fun exposureEditor(
         }
     }
     "wb" -> wbRuler(state, dispatch, wbTint, onToggleWbTint)
-    else -> focusRuler(state, dispatch)
+    else -> focusRuler(state, dispatch, onMfTouch)
 }
 
 private fun exposureRuler(parameter: ExposureParameter, state: CaptureUiState, dispatch: CaptureDispatch): X14uEditor {
@@ -1363,7 +1436,7 @@ private fun focusLabel(diopters: Float): String {
 private const val PHOTO_FOCUS_KEY = "photo.focus"
 
 /** Photo: AF · AF-L · MF, with the focus ruler under them in MF. */
-private fun photoFocusEditor(state: CaptureUiState, dispatch: CaptureDispatch): X14uEditor {
+private fun photoFocusEditor(state: CaptureUiState, dispatch: CaptureDispatch, onMfTouch: () -> Unit = {}): X14uEditor {
     val modes = buildList {
         add(FocusMode.Af)
         add(FocusMode.AfLock)
@@ -1373,10 +1446,10 @@ private fun photoFocusEditor(state: CaptureUiState, dispatch: CaptureDispatch): 
     val chips = X14uEditor.Chips(labels, modes.indexOf(state.focus.mode)) { i ->
         if (modes[i] != state.focus.mode) dispatch(SetFocusMode(modes[i]))
     }
-    return X14uEditor.Stacked(chips, if (state.focus.mode == FocusMode.Mf) focusRuler(state, dispatch) else null)
+    return X14uEditor.Stacked(chips, if (state.focus.mode == FocusMode.Mf) focusRuler(state, dispatch, onMfTouch) else null)
 }
 
-private fun focusRuler(state: CaptureUiState, dispatch: CaptureDispatch): X14uEditor {
+private fun focusRuler(state: CaptureUiState, dispatch: CaptureDispatch, onMfTouch: () -> Unit = {}): X14uEditor {
     val capability = state.capabilities.manualFocus
     val ladder = FocusLadder.forCapability(capability)
     val minimum = capability.minimumFocusDistance
@@ -1406,8 +1479,14 @@ private fun focusRuler(state: CaptureUiState, dispatch: CaptureDispatch): X14uEd
         onAuto = toAf,
         onReset = toAf,
         endIcons = true,
-        onDragStart = { if (mode != FocusMode.Mf) dispatch(SetManualFocus(seed.coerceIn(0f, 1f))) },
-        onIndex = { new, _ -> dispatch(SetManualFocus(new / FOCUS_STEPS.toFloat())) }
+        onDragStart = {
+            onMfTouch()
+            if (mode != FocusMode.Mf) dispatch(SetManualFocus(seed.coerceIn(0f, 1f)))
+        },
+        onIndex = { new, _ ->
+            onMfTouch()
+            dispatch(SetManualFocus(new / FOCUS_STEPS.toFloat()))
+        }
     )
 }
 
@@ -1919,6 +1998,8 @@ private fun X14uIdleControlArea(
                 Row(horizontalArrangement = Arrangement.spacedBy(30.dp), verticalAlignment = Alignment.CenterVertically) {
                     stripModes.forEach { mode ->
                         val isSelected = current == mode
+                        val stills = mode != X14uMode.Video
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             mode.label,
                             fontFamily = X14uFont,
@@ -1929,9 +2010,11 @@ private fun X14uIdleControlArea(
                             },
                             modifier = Modifier
                                 .captureClickable(shape = CaptureTextRippleShape, enabled = enabled) {
-                                    if (!isSelected) {
-                                        haptics.selection()
-                                        selectX14uMode(mode, state, dispatch, extras)
+                                    haptics.selection()
+                                    when {
+                                        !isSelected -> selectX14uMode(mode, state, dispatch, extras)
+                                        // Tapping the lit Photo / Photo+ label flips to the other.
+                                        stills -> extras.onSetProUi(!extras.proUi)
                                     }
                                 }
                                 .semantics {
@@ -1940,6 +2023,17 @@ private fun X14uIdleControlArea(
                                 }
                                 .padding(horizontal = 6.dp, vertical = 4.dp)
                         )
+                        // Two dots under the stills label: Photo · Photo+ (there is a second stills mode).
+                        if (stills) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            listOf(false, true).forEach { plus ->
+                                val lit = extras.proUi == plus
+                                Box(Modifier.size(4.dp).background(
+                                    if (lit && isSelected) CaptureColors.Accent else Color.White.copy(alpha = if (lit) .55f else .25f),
+                                    CircleShape
+                                ))
+                            }
+                        }
+                        }
                     }
                 }
             }

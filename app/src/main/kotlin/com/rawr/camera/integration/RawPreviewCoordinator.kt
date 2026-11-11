@@ -451,6 +451,9 @@ class RawPreviewCoordinator(application: Application) : AutoCloseable {
         postNative { native.setMonitoringOverlay(nativeHandle, mode, clamped) }
     }
 
+    fun setFocusLoupe(values: FloatArray?, meter: Boolean) = postNative { native.setFocusLoupe(nativeHandle, values?.copyOf(), meter) }
+    fun focusMeterValue(): Float = native.focusMeterValue(nativeHandle)
+
     fun setScopePresentationState(types: IntArray, modes: IntArray, rotations: IntArray, rects: FloatArray) =
         postNative {
             native.setScopePresentationState(

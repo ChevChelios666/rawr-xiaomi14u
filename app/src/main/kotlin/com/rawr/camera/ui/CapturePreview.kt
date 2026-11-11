@@ -10,5 +10,9 @@ data class CapturePreview(
     val deviceRotationDegrees: Int = 0,
     val content: @Composable (Modifier) -> Unit = { ViewfinderFixture(it) },
     val faceOverlay: @Composable () -> Unit = {},
-    val onScopePresentation: (List<ScopePresentation>) -> Unit = {}
+    val onScopePresentation: (List<ScopePresentation>) -> Unit = {},
+    /** X14U focus loupe: [x, y, w, h, wx0, wy0, wx1, wy1, corner] in viewfinder fractions; null = off. */
+    val onLoupe: (FloatArray?, Boolean) -> Unit = { _, _ -> },
+    /** Latest focus meter value (relative; < 0 = none). */
+    val focusMeter: () -> Float = { -1f }
 )

@@ -97,6 +97,7 @@ void ImageScopesProcessor::initialize(VkPhysicalDevice physicalDevice, VkDevice 
     backend_ = std::make_unique<image_scopes::ImageScopes>(ci);
     for (auto& rb : exposureStatsReadback_) createReadback(rb, sizeof(image_scopes::DisplayExposureStatsData));
     for (auto& rb : sceneStatsReadback_) createReadback(rb, sizeof(image_scopes::SceneExposureStatsData));
+    for (auto& rb : focusReadback_) createReadback(rb, sizeof(image_scopes::FocusMeasureData));
     for (auto& slot : targets_) {
         for (auto& target : slot) {
             target = rawrcam::vulkan::createOwnedImage(physicalDevice, device, kRenderWidth, kRenderHeight,
@@ -166,6 +167,7 @@ void ImageScopesProcessor::reset() noexcept {
     if (device_ != VK_NULL_HANDLE) {
         for (auto& rb : exposureStatsReadback_) destroyReadback(rb);
         for (auto& rb : sceneStatsReadback_) destroyReadback(rb);
+        for (auto& rb : focusReadback_) destroyReadback(rb);
     }
     if (device_ != VK_NULL_HANDLE) {
         for (auto& slot : targets_)
@@ -317,6 +319,66 @@ std::optional<SceneExposureStats> ImageScopesProcessor::consumeSceneExposure(uin
 
 void ImageScopesProcessor::retireFrameSlot(uint32_t frameSlot) {
     if (backend_) backend_->retireFrameSlot(frameSlot);
+    if (frameSlot < focusReadback_.size()) {
+        image_scopes::FocusMeasureData data{};
+        if (readReadback(focusReadback_[frameSlot], &data, sizeof(data)) && data.samples > 0)
+            focusValue_.store(static_cast<float>(data.energy) / static_cast<float>(data.samples), std::memory_order_relaxed);
+    }
+}
+
+void ImageScopesProcessor::setFocusMeter(bool enabled, float x0, float y0, float x1, float y1) noexcept {
+    const auto unit = [](float v) { return std::isfinite(v) ? std::clamp(v, 0.0f, 1.0f) : 0.0f; };
+    focusWindow_[0].store(unit(std::min(x0, x1)));
+    focusWindow_[1].store(unit(std::min(y0, y1)));
+    focusWindow_[2].store(unit(std::max(x0, x1)));
+    focusWindow_[3].store(unit(std::max(y0, y1)));
+    if (!enabled) focusValue_.store(-1.0f);
+    focusEnabled_.store(enabled);
+}
+
+void ImageScopesProcessor::recordFocus(VkCommandBuffer command, uint32_t frameSlot, VkImageView displayView,
+                                       VkImage displayImage, uint32_t presentationQuarterTurns, uint32_t lensMirror) {
+    if (!backend_ || frameSlot >= focusReadback_.size() || !focusEnabled_.load()) return;
+    focusReadback_[frameSlot].recorded = false;
+    // Displayed fractions -> display-image (sensor) fractions: the inverse of the presentation's rotation and
+    // mirror, as present.frag maps q to s. The window is axis-aligned under quarter turns.
+    const auto toSource = [&](float qx, float qy) {
+        float sx = qx, sy = qy;
+        switch (presentationQuarterTurns & 3u) {
+            case 1u: sx = qy; sy = 1.0f - qx; break;
+            case 2u: sx = 1.0f - qx; sy = 1.0f - qy; break;
+            case 3u: sx = 1.0f - qy; sy = qx; break;
+            default: break;
+        }
+        if (lensMirror & 1u) sx = 1.0f - sx;
+        if (lensMirror & 2u) sy = 1.0f - sy;
+        return std::array<float, 2>{sx, sy};
+    };
+    const auto a = toSource(focusWindow_[0].load(), focusWindow_[1].load());
+    const auto b = toSource(focusWindow_[2].load(), focusWindow_[3].load());
+    const auto px = [&](float f, uint32_t n) { return static_cast<uint32_t>(std::lround(std::clamp(f, 0.0f, 1.0f) * n)); };
+    image_scopes::FocusMeasureRecordInfo info{};
+    info.commandBuffer = command;
+    info.input = {displayView, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_GENERAL, inputWidth_, inputHeight_};
+    info.frameSlot = frameSlot;
+    info.x0 = px(std::min(a[0], b[0]), inputWidth_);
+    info.x1 = px(std::max(a[0], b[0]), inputWidth_);
+    info.y0 = px(std::min(a[1], b[1]), inputHeight_);
+    info.y1 = px(std::max(a[1], b[1]), inputHeight_);
+    computeWriteToComputeRead(command, displayImage);
+    backend_->recordFocusMeasure(info);
+    backend_->recordCopyFocusMeasure(command, frameSlot, focusReadback_[frameSlot].buffer, 0);
+    VkBufferMemoryBarrier host{};
+    host.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    host.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    host.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+    host.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    host.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    host.buffer = focusReadback_[frameSlot].buffer;
+    host.size = sizeof(image_scopes::FocusMeasureData);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 0, nullptr, 1, &host,
+                         0, nullptr);
+    focusReadback_[frameSlot].recorded = true;
 }
 std::optional<RenderedExposureFeedback> ImageScopesProcessor::consumeExposureFeedback(uint32_t frameSlot) {
     if (frameSlot >= exposureStatsReadback_.size()) return std::nullopt;

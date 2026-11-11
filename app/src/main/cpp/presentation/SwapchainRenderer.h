@@ -46,6 +46,11 @@ class SwapchainRenderer final {
         scopeState_ = state;
     }
     void clearFrameSources() noexcept;
+    /** X14U focus loupe (see PresentRecorder LoupeDraw); disabled = none. */
+    void setLoupe(const LoupeDraw& loupe) noexcept {
+        std::lock_guard<std::mutex> lock(loupeMutex_);
+        loupe_ = loupe;
+    }
 
     [[nodiscard]] bool ready() const noexcept { return swapchain_ != VK_NULL_HANDLE; }
     [[nodiscard]] VkExtent2D extent() const noexcept { return swapExtent_; }
@@ -140,6 +145,8 @@ class SwapchainRenderer final {
     std::array<VkImageView, rawrcam::imaging::kRealtimeFramesInFlight> overlayViews_{};
     std::array<std::array<VkImageView, 3>, rawrcam::imaging::kRealtimeFramesInFlight> scopeViews_{};
     rawrcam::monitoring::ScopePresentationState scopeState_{};
+    mutable std::mutex loupeMutex_;
+    LoupeDraw loupe_{};
     float scopeSourceAspect_ = 1.0f;
     bool hasFrameSources_ = false;
     bool hasVideoFrameSources_ = false;

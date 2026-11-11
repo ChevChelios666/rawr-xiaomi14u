@@ -91,6 +91,9 @@ class SessionEngine {
     void setColorRenderProfile(uint32_t profileId, std::string importedProfileId);
     void setMonitoringOverlay(uint32_t mode, float focusSensitivity);
     void setScopePresentationState(const rawrcam::monitoring::ScopePresentationState& state);
+    // X14U focus loupe: draws the magnified window and measures focus there; focusMeterValue() < 0 = none.
+    void setFocusLoupe(const rawrcam::presentation::LoupeDraw& loupe, bool meter);
+    [[nodiscard]] float focusMeterValue();
     void focusAtDisplay(float x, float y, uint64_t requestId);
     void clearTapAf(uint64_t requestId);
     // Face detections in display-normalized coordinates for the viewfinder

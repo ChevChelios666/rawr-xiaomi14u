@@ -526,6 +526,14 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
             x14uModeLooks = ModeLookCodec.decode(p[Keys.x14uModeLooks]) { decodeAgxValues(it) },
             photoAspect = enumOrDefault(p[Keys.photoAspect], d.photoAspect),
             viewfinderLevel = p[Keys.viewfinderLevel] ?: d.viewfinderLevel,
+            stillsHintCount = p[Keys.stillsHintCount] ?: d.stillsHintCount,
+            stillsSwitched = p[Keys.stillsSwitched] ?: d.stillsSwitched,
+            focusLoupe = FocusLoupeSettings(
+                zoom = (p[Keys.loupeZoom] ?: d.focusLoupe.zoom).takeIf { it in FocusLoupeSettings.ZOOMS } ?: d.focusLoupe.zoom,
+                onManualFocus = p[Keys.loupeOnMf] ?: d.focusLoupe.onManualFocus,
+                doubleTap = p[Keys.loupeDoubleTap] ?: d.focusLoupe.doubleTap,
+                meter = p[Keys.loupeMeter] ?: d.focusLoupe.meter
+            ),
             jpegEnabled = p[Keys.jpegEnabled] ?: d.jpegEnabled,
             dngEnabled = (p[Keys.dngEnabled] ?: true) || p[Keys.jpegEnabled] == false,
             dngCompressionId =
@@ -774,6 +782,12 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
         p[Keys.x14uModeLooks] = ModeLookCodec.encode(v.x14uModeLooks) { encodeAgxValues(it) }
         p[Keys.photoAspect] = v.photoAspect.name
         p[Keys.viewfinderLevel] = v.viewfinderLevel
+        p[Keys.stillsHintCount] = v.stillsHintCount
+        p[Keys.stillsSwitched] = v.stillsSwitched
+        p[Keys.loupeZoom] = v.focusLoupe.zoom
+        p[Keys.loupeOnMf] = v.focusLoupe.onManualFocus
+        p[Keys.loupeDoubleTap] = v.focusLoupe.doubleTap
+        p[Keys.loupeMeter] = v.focusLoupe.meter
         p[Keys.jpegEnabled] = v.jpegEnabled
         p[Keys.dngEnabled] = v.dngEnabled || !v.jpegEnabled
         p[Keys.dngCompressionId] = v.dngCompressionId
@@ -1084,6 +1098,12 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
         val x14uModeLooks = stringPreferencesKey("x14u_mode_looks")
         val photoAspect = stringPreferencesKey("x14u_photo_aspect")
         val viewfinderLevel = booleanPreferencesKey("x14u_viewfinder_level")
+        val stillsHintCount = intPreferencesKey("x14u_stills_hint_count")
+        val stillsSwitched = booleanPreferencesKey("x14u_stills_switched")
+        val loupeZoom = intPreferencesKey("x14u_loupe_zoom")
+        val loupeOnMf = booleanPreferencesKey("x14u_loupe_on_mf")
+        val loupeDoubleTap = booleanPreferencesKey("x14u_loupe_double_tap")
+        val loupeMeter = booleanPreferencesKey("x14u_loupe_meter")
         val jpegEnabled = booleanPreferencesKey("capture_jpeg_enabled")
         val dngEnabled = booleanPreferencesKey("capture_dng_enabled")
         val dngCompressionId = stringPreferencesKey("capture_dng_compression_id")

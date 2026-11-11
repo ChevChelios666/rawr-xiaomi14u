@@ -13,6 +13,21 @@ struct CreateInfo {
     std::uint32_t maxFramesInFlight = 3;
 };
 
+// Focus meter over a rectangle [x0, x1) x [y0, y1) of a display image (see FocusMeasureData).
+struct FocusMeasureRecordInfo {
+    VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+    DisplayImageView input{};
+    std::uint32_t frameSlot = 0;
+    std::uint32_t x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+};
+
+// energy / samples: mean squared luma gradient / 64 (relative focus quality).
+struct FocusMeasureData {
+    std::uint32_t energy = 0;
+    std::uint32_t samples = 0;
+    std::uint32_t pad0 = 0, pad1 = 0;
+};
+
 struct DisplayExposureStatsRecordInfo {
     VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
     DisplayImageView input{};
@@ -108,6 +123,9 @@ class ImageScopes {
     // Weighted log2-luma histogram of a scene-linear image (SceneExposureStatsData).
     void recordSceneExposureStats(const SceneExposureStatsRecordInfo& info);
     void recordDisplayWaveform(const DisplayWaveformRecordInfo& info);
+    // Focus meter over a rectangle; copy out with recordCopyFocusMeasure.
+    void recordFocusMeasure(const FocusMeasureRecordInfo& info);
+    void recordCopyFocusMeasure(VkCommandBuffer cmd, std::uint32_t frameSlot, VkBuffer dst, VkDeviceSize dstOffset) const;
     // Render the most recently measured display waveform for frameSlot without
     // rereading the source image or changing numerical density. The requested
     // WaveformMode must match the mode measured into that slot.

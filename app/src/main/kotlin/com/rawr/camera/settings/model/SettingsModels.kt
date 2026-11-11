@@ -1187,7 +1187,12 @@ data class SettingsValues(
     /** X14U: photo aspect ratio (tools panel). */
     val photoAspect: PhotoAspect = PhotoAspect.Native,
     /** X14U: horizon level / flat bubble on the viewfinder (tools panel). */
-    val viewfinderLevel: Boolean = false
+    val viewfinderLevel: Boolean = false,
+    /** X14U: times the "Swipe up for Photo+" hint showed, and whether Photo/Photo+ was ever switched (hint off). */
+    val stillsHintCount: Int = 0,
+    val stillsSwitched: Boolean = false,
+    /** X14U: focus loupe and focus meter. */
+    val focusLoupe: FocusLoupeSettings = FocusLoupeSettings()
 ) {
     val isVideo: Boolean get() = captureModeId == "video"
     val isLogActive: Boolean get() = isVideo && videoLogEnabled

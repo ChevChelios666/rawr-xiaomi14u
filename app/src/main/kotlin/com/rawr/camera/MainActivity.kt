@@ -194,6 +194,7 @@ class MainActivity : ComponentActivity() {
             val videoDiagnostics by captureViewModel.videoDiagnostics.collectAsStateWithLifecycle()
             val proUi by captureViewModel.proUi.collectAsStateWithLifecycle()
             val tools by captureViewModel.tools.collectAsStateWithLifecycle()
+            val stillsHint by captureViewModel.stillsHint.collectAsStateWithLifecycle()
             androidx.compose.runtime.LaunchedEffect(Unit) {
                 captureViewModel.recording.errors.collect { message ->
                     Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
@@ -250,6 +251,8 @@ class MainActivity : ComponentActivity() {
                     onToggleLevel = captureViewModel::toggleLevel,
                     onSetLocationTagging = captureViewModel::setLocationTagging,
                     onToggleLensMirror = captureViewModel::toggleLensMirror,
+                    stillsHint = stillsHint,
+                    onStillsHintShown = captureViewModel::stillsHintShown,
                     onSetProUi = captureViewModel::setProUi,
                     onToggleAudioMuted = captureViewModel::toggleAudioMuted,
                     onOpenVideoSettings = {

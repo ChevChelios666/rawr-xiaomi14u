@@ -109,6 +109,11 @@ void MonitorRecorder::recordOverlays(const MonitorFrame& in) const {
             rawrcam::geometry::presentationQuarterTurns(in.sensorOrientationDegrees, in.scopeDeviceRotationDegrees);
         imageScopes_.record(in.command, in.slotIndex, in.tonemappedView, in.tonemappedImage, sourceQuarterTurns,
                             in.renderedExposureFeedbackEnabled);
+        // X14U focus meter: measured where the loupe looks (presentation rotation, not the scopes' device rotation).
+        imageScopes_.recordFocus(in.command, in.slotIndex, in.tonemappedView, in.tonemappedImage,
+                                 rawrcam::geometry::presentationQuarterTurns(in.sensorOrientationDegrees,
+                                                                              in.displayRotationDegrees),
+                                 in.lensMirror);
         performance_.markScopesDone(in.command, in.slotIndex);
         monitoringOverlay_.record(in.command, in.slotIndex, in.linearView, in.linearImage, in.tonemappedView,
                                   in.tonemappedImage, in.shadowLiftEv, in.blackPointEv);

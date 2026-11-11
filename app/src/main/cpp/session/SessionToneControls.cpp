@@ -51,6 +51,13 @@ void SessionEngine::setScopePresentationState(const rawrcam::monitoring::ScopePr
     swapchainRenderer_.setScopePresentationState(state);
 }
 
+void SessionEngine::setFocusLoupe(const rawrcam::presentation::LoupeDraw& loupe, bool meter) {
+    std::lock_guard<std::mutex> lock(mu_);
+    swapchainRenderer_.setLoupe(loupe);
+    monitoringCoordinator_.scopes().setFocusMeter(loupe.enabled && meter, loupe.wx0, loupe.wy0, loupe.wx1, loupe.wy1);
+}
+float SessionEngine::focusMeterValue() { return monitoringCoordinator_.scopes().focusValue(); }
+
 void SessionEngine::setColorMode(const std::string& mode) {
     std::lock_guard<std::mutex> lock(mu_);
     colorMode_ = mode.empty() ? "auto" : mode;

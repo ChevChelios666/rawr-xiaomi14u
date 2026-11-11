@@ -45,6 +45,15 @@ void main(){
         return;
     }
 
+    // X14U focus loupe: the live view drawn again into a small rounded window (cornerRadius as for scopes).
+    if(pc.diagnosticMode == 0u && pc.cornerRadius > 0.0){
+        float r = clamp(pc.cornerRadius, 0.0, 0.5);
+        vec2 scale = vec2(pc.dstAspect, 1.0);
+        vec2 halfSize = 0.5 * scale;
+        vec2 d = abs((uv - vec2(0.5)) * scale) - (halfSize - vec2(r));
+        if (length(max(d, vec2(0.0))) + min(max(d.x, d.y), 0.0) - r > 0.0) discard;
+    }
+
     vec2 q=uv;
     if(pc.dstAspect > pc.srcAspect){
         float w=pc.srcAspect/pc.dstAspect;

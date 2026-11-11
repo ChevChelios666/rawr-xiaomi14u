@@ -12,6 +12,7 @@
 #include "encoding/dng/DngCaptureContext.h"
 #include "encoding/jpeg/JpegCaptureContext.h"
 #include "monitoring/MonitoringState.h"
+#include "presentation/PresentRecorder.h"
 #include "video_pipeline/VideoProcessingConfig.h"
 
 namespace rawrcam::session {
@@ -80,6 +81,8 @@ void setShutterAngleDegrees(EngineHandle handle, double degrees) noexcept;
 void setCpuRawCopyProbeFrames(EngineHandle handle, uint32_t frames) noexcept;
 void setMonitoringOverlay(EngineHandle handle, uint32_t mode, float focusSensitivity) noexcept;
 void setScopePresentationState(EngineHandle handle, const rawrcam::monitoring::ScopePresentationState& state) noexcept;
+void setFocusLoupe(EngineHandle handle, const rawrcam::presentation::LoupeDraw& loupe, bool meter) noexcept;
+float focusMeterValue(EngineHandle handle) noexcept;
 uint64_t requestRawStillCapture(EngineHandle handle, rawrcam::encoding::dng::DngCaptureContext dngContext,
                                 rawrcam::capture::JpegCaptureRequest jpegContext) noexcept;
 std::string pollDngWriteCompletion(EngineHandle handle);

@@ -92,7 +92,9 @@ fun CaptureRoute(
                     rects[index * 5 + 4] = scope.cornerFraction
                 }
                 previewCoordinator.setScopePresentationState(types, modes, rotations, rects)
-            }
+            },
+            onLoupe = { values, meter -> previewCoordinator.setFocusLoupe(values, meter) },
+            focusMeter = { previewCoordinator.focusMeterValue() }
         )
     }
     DeviceOrientationEffect(

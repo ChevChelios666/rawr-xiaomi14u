@@ -158,6 +158,47 @@ void PresentRecorder::record(const RecordInfo& i) {
         vkCmdPushConstants(i.command, i.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sp), &sp);
         vkCmdDraw(i.command, 3, 1, 0, 0);
     }
+    // Focus loupe: the same live view (and overlay), sampling only the magnified window.
+    if (i.loupe.enabled && i.diagnosticMode == 0u && i.exifOrientation == 0u && i.loupe.width > 0 && i.loupe.height > 0) {
+        const auto& l = i.loupe;
+        const float W = static_cast<float>(i.swapExtent.width), H = static_cast<float>(i.swapExtent.height);
+        const int32_t sx = std::clamp(static_cast<int32_t>(l.x * W), 0, static_cast<int32_t>(i.swapExtent.width) - 1),
+                      sy = std::clamp(static_cast<int32_t>(l.y * H), 0, static_cast<int32_t>(i.swapExtent.height) - 1);
+        const int32_t ex = std::clamp(static_cast<int32_t>((l.x + l.width) * W), sx + 1, static_cast<int32_t>(i.swapExtent.width)),
+                      ey = std::clamp(static_cast<int32_t>((l.y + l.height) * H), sy + 1, static_cast<int32_t>(i.swapExtent.height));
+        // Viewfinder fraction -> the main draw's source fraction (its aspect fit, then the idle video crop).
+        const auto toSource = [&](float u, float v) {
+            float qx = u, qy = v;
+            if (pc.dstAspect > pc.srcAspect) qx = (u - 0.5f) / (pc.srcAspect / pc.dstAspect) + 0.5f;
+            else qy = (v - 0.5f) / (pc.dstAspect / pc.srcAspect) + 0.5f;
+            qx = std::clamp(qx, 0.0f, 1.0f);
+            qy = std::clamp(qy, 0.0f, 1.0f);
+            if (cropOn) {
+                qx = cropX0 + (cropX1 - cropX0) * qx;
+                qy = cropY0 + (cropY1 - cropY0) * qy;
+            }
+            return std::pair<float, float>{qx, qy};
+        };
+        const auto [c0x, c0y] = toSource(l.wx0, l.wy0);
+        const auto [c1x, c1y] = toSource(l.wx1, l.wy1);
+        VkViewport vp{static_cast<float>(sx), static_cast<float>(sy), static_cast<float>(ex - sx),
+                      static_cast<float>(ey - sy), 0, 1};
+        VkRect2D sc{{sx, sy}, {static_cast<uint32_t>(ex - sx), static_cast<uint32_t>(ey - sy)}};
+        vkCmdSetViewport(i.command, 0, 1, &vp);
+        vkCmdSetScissor(i.command, 0, 1, &sc);
+        vkCmdBindDescriptorSets(i.command, VK_PIPELINE_BIND_POINT_GRAPHICS, i.layout, 0, 1, &selected, 0, nullptr);
+        PresentPush lp = pcWarp;
+        lp.dstAspect = static_cast<float>(ex - sx) / static_cast<float>(ey - sy);
+        lp.srcAspect = lp.dstAspect;  // the window is cut to the loupe's shape: no bars
+        lp.cornerRadius = std::clamp(l.cornerRadius, 0.0f, 0.5f);
+        lp.cropEnabled = 1u;
+        lp.cropX0 = c0x;
+        lp.cropY0 = c0y;
+        lp.cropX1 = c1x;
+        lp.cropY1 = c1y;
+        vkCmdPushConstants(i.command, i.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(lp), &lp);
+        vkCmdDraw(i.command, 3, 1, 0, 0);
+    }
     vkCmdEndRenderPass(i.command);
 }
 }  // namespace rawrcam::presentation

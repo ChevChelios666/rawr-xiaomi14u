@@ -100,7 +100,9 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, latestSettings.x14uProUi)
 
     fun setProUi(pro: Boolean) {
-        settingsEditor.update { prev -> prev.copy(x14uProUi = pro).withModeLookSwitch(prev) }
+        settingsEditor.update { prev ->
+            prev.copy(x14uProUi = pro, stillsSwitched = prev.stillsSwitched || pro != prev.x14uProUi).withModeLookSwitch(prev)
+        }
     }
 
     /** X14U tools panel: what its tiles show (lens names whose image is mirrored, for the front camera's tile). */
@@ -108,14 +110,16 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         val photoAspect: com.rawr.camera.settings.model.PhotoAspect = com.rawr.camera.settings.model.PhotoAspect.Native,
         val level: Boolean = false,
         val location: Boolean = false,
-        val mirroredLenses: Set<String> = emptySet()
+        val mirroredLenses: Set<String> = emptySet(),
+        val focusLoupe: com.rawr.camera.settings.model.FocusLoupeSettings = com.rawr.camera.settings.model.FocusLoupeSettings()
     )
     val tools: StateFlow<ToolsState> = settingsEditor.state
         .map { v ->
             ToolsState(
                 v.photoAspect, v.viewfinderLevel, v.locationTagging,
                 v.effectiveLensProfiles(DeviceLensDefaults.lenses)
-                    .filter { it.image.mirror != com.rawr.camera.settings.model.LensMirror.None }.map { it.name }.toSet()
+                    .filter { it.image.mirror != com.rawr.camera.settings.model.LensMirror.None }.map { it.name }.toSet(),
+                v.focusLoupe
             )
         }
         .distinctUntilChanged()
@@ -124,6 +128,15 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     fun setPhotoAspect(aspect: com.rawr.camera.settings.model.PhotoAspect) {
         settingsEditor.update { it.copy(photoAspect = aspect) }
     }
+    /** One-time "Swipe up for Photo+" hint: shows until Photo/Photo+ is switched once, at most twice. */
+    val stillsHint: StateFlow<Boolean> = settingsEditor.state
+        .map { !it.stillsSwitched && it.stillsHintCount < 2 }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, false)
+    fun stillsHintShown() {
+        settingsEditor.update { it.copy(stillsHintCount = it.stillsHintCount + 1) }
+    }
+
     fun toggleLevel() {
         settingsEditor.update { it.copy(viewfinderLevel = !it.viewfinderLevel) }
     }

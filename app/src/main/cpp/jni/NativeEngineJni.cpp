@@ -501,6 +501,31 @@ extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreview
     }
     rawrcam::session::setScopePresentationState(handle(h), state);
 }
+// X14U focus loupe: rect = x, y, width, height (viewfinder fractions), window = x0, y0, x1, y1; null = off.
+extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setFocusLoupe(
+    JNIEnv* env, jobject, jlong h, jfloatArray values, jboolean meter) {
+    rawrcam::presentation::LoupeDraw loupe{};
+    if (values && env->GetArrayLength(values) >= 9) {
+        jfloat v[9]{};
+        env->GetFloatArrayRegion(values, 0, 9, v);
+        const auto unit = [](float x) { return std::isfinite(x) ? std::clamp(x, 0.0f, 1.0f) : 0.0f; };
+        loupe.enabled = true;
+        loupe.x = unit(v[0]);
+        loupe.y = unit(v[1]);
+        loupe.width = unit(v[2]);
+        loupe.height = unit(v[3]);
+        loupe.wx0 = unit(v[4]);
+        loupe.wy0 = unit(v[5]);
+        loupe.wx1 = unit(v[6]);
+        loupe.wy1 = unit(v[7]);
+        loupe.cornerRadius = std::clamp(unit(v[8]), 0.0f, 0.5f);
+    }
+    rawrcam::session::setFocusLoupe(handle(h), loupe, meter == JNI_TRUE);
+}
+extern "C" JNIEXPORT jfloat JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_focusMeterValue(JNIEnv*, jobject,
+                                                                                                        jlong h) {
+    return rawrcam::session::focusMeterValue(handle(h));
+}
 static std::optional<spektrafilm_native::FilmLook> decodeFilmLook(JNIEnv* env, jfloatArray values, jintArray enums) {
     constexpr jsize kFloatCount = 98;
     constexpr jsize kIntCount = 27;

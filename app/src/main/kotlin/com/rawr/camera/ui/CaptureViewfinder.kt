@@ -57,11 +57,15 @@ internal fun CaptureViewfinder(
     /** X14U: a tap first closes an open control or panel; true when it did (no focus then). */
     onViewfinderTap: () -> Boolean = { false },
     /** X14U: a vertical swipe on the viewfinder (+1 down, -1 up). */
-    onViewfinderSwipe: ((Int) -> Unit)? = null
+    onViewfinderSwipe: ((Int) -> Unit)? = null,
+    /** X14U: double-tap at a viewfinder point (fractions); null = no double-tap (single taps act at once). */
+    onViewfinderDoubleTap: ((Float, Float) -> Unit)? = null
 ) {
     val haptics = LocalCaptureHaptics.current
     val latestViewfinderTap by rememberUpdatedState(onViewfinderTap)
     val latestSwipe by rememberUpdatedState(onViewfinderSwipe)
+    val latestDoubleTap by rememberUpdatedState(onViewfinderDoubleTap)
+    val doubleTapOn = onViewfinderDoubleTap != null
     Box(
         modifier
             .background(Color(0xFF263039))
@@ -99,8 +103,15 @@ internal fun CaptureViewfinder(
                 .onSizeChanged { viewfinderSize = it }
                 .then(
                     if (!popupOpen) {
-                        Modifier.pointerInput(state.orientation, state.exposureControl.mode) {
+                        Modifier.pointerInput(state.orientation, state.exposureControl.mode, doubleTapOn) {
                             detectTapGestures(
+                                onDoubleTap = if (!doubleTapOn) null else { offset ->
+                                    if (viewfinderSize.width > 0 && viewfinderSize.height > 0) {
+                                        latestDoubleTap?.invoke(
+                                            offset.x / viewfinderSize.width, offset.y / viewfinderSize.height
+                                        )
+                                    }
+                                },
                                 onTap = { offset ->
                                     if (latestViewfinderTap()) return@detectTapGestures
                                     if (viewfinderSize.width > 0 && viewfinderSize.height > 0) {

@@ -198,6 +198,12 @@ class NativePreviewEngine {
 
     external fun setMonitoringOverlay(handle: Long, mode: Int, focusSensitivity: Float)
 
+    /** X14U focus loupe: [x, y, w, h, wx0, wy0, wx1, wy1, corner] (viewfinder fractions); null = off. */
+    external fun setFocusLoupe(handle: Long, values: FloatArray?, meter: Boolean)
+
+    /** X14U focus meter in the loupe window (relative; < 0 = none yet). */
+    external fun focusMeterValue(handle: Long): Float
+
     external fun setScopePresentationState(
         handle: Long,
         types: IntArray,

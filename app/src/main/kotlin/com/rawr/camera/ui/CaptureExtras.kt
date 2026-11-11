@@ -7,7 +7,7 @@ data class CaptureExtras(
     val onToggleAudioMuted: () -> Unit = {},
     val onOpenVideoSettings: () -> Unit = {},
     val onOpenExposureSettings: () -> Unit = {},
-    /** Photo mode on the new (Pro) screen rather than the classic Photo screen. */
+    /** Photo+ (the full-control stills mode) rather than Photo. */
     val proUi: Boolean = true,
     val onSetProUi: (Boolean) -> Unit = {},
     /** X14U tools panel (swipe down on the viewfinder). */
@@ -15,7 +15,10 @@ data class CaptureExtras(
     val onSetPhotoAspect: (com.rawr.camera.settings.model.PhotoAspect) -> Unit = {},
     val onToggleLevel: () -> Unit = {},
     val onSetLocationTagging: (Boolean) -> Unit = {},
-    val onToggleLensMirror: (String) -> Unit = {}
+    val onToggleLensMirror: (String) -> Unit = {},
+    /** Show the one-time "Swipe up for Photo+" hint (until switched once, at most twice). */
+    val stillsHint: Boolean = false,
+    val onStillsHintShown: () -> Unit = {}
 )
 
 val LocalCaptureExtras = staticCompositionLocalOf { CaptureExtras() }

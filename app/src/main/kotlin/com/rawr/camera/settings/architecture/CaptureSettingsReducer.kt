@@ -71,6 +71,10 @@ internal fun reduceCaptureSettings(
         state.withValues(state.values.copy(gridMode = action.value))
     }
 
+    is SetFocusLoupe -> {
+        state.withValues(state.values.copy(focusLoupe = action.value))
+    }
+
     is SetViewfinderDivisor -> {
         state.withValues(state.values.copy(viewfinderDivisor = action.divisor.coerceIn(1, 4)))
     }

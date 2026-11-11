@@ -102,7 +102,7 @@ class PersistentSettingsController(
             is SetSelfTimer, is SetLocationTagging, is SetOisPreference,
             is SetAntiFlicker, is SetExposureStep,
             is SetHighlightProtection, is SetAutoKeyExposure, is SetLocalTone, is SetControlSurfaceStyle, is SetCaptureControlLayout,
-            is SetGridMode, is SetViewfinderDivisor, is SetLensProfiles -> reduceCaptureSettings(state, action)
+            is SetGridMode, is SetFocusLoupe, is SetViewfinderDivisor, is SetLensProfiles -> reduceCaptureSettings(state, action)
 
         }
 }

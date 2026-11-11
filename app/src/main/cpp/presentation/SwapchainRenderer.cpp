@@ -209,6 +209,10 @@ void SwapchainRenderer::record(VkCommandBuffer command, uint32_t frameSlot, uint
         info.scopes[i].cornerRadius = placement.cornerRadius;
         info.scopes[i].enabled = placement.type != rawrcam::monitoring::ScopeType::None && diagnosticMode == 0u;
     }
+    {
+        std::lock_guard<std::mutex> lock(loupeMutex_);
+        info.loupe = videoSource ? LoupeDraw{} : loupe_;
+    }
     recorder_.record(info);
     swapInitialized_[imageIndex] = true;
 }
