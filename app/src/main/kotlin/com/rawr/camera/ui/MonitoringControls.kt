@@ -61,11 +61,12 @@ internal fun ScopeLayer(state: CaptureUiState, dispatch: CaptureDispatch, previe
                     when (scope) {
                         ScopeType.Waveform -> when (state.waveformMode) {
                             WaveformMode.RgbOverlay -> "RGB"
-                            WaveformMode.Histogram -> "HIST"
+                            WaveformMode.Histogram -> null
                             WaveformMode.Luma -> "LUMA"
                         }
                         ScopeType.Vectorscope -> null
                     },
+                title = if (scope == ScopeType.Waveform && state.waveformMode == WaveformMode.Histogram) "HISTOGRAM" else null,
                 orientation = state.orientation,
                 logicalWidth = g.logicalWidth,
                 logicalHeight = g.logicalHeight,
@@ -87,6 +88,8 @@ private fun ScopeCard(
     expanded: Boolean,
     nativeContent: Boolean,
     variantLabel: String?,
+    /** Heading instead of the scope type's name (the luma histogram is drawn from the waveform measurement). */
+    title: String? = null,
     orientation: Orientation,
     logicalWidth: androidx.compose.ui.unit.Dp,
     logicalHeight: androidx.compose.ui.unit.Dp,
@@ -124,7 +127,7 @@ private fun ScopeCard(
                     .padding(if (expanded) 10.dp else 7.dp)
             ) {
                 Text(
-                    if (variantLabel == null) type.name.uppercase() else "${type.name.uppercase()} · $variantLabel",
+                    (title ?: type.name.uppercase()).let { if (variantLabel == null) it else "$it · $variantLabel" },
                     color = Color.White.copy(alpha = .62f),
                     fontFamily = CaptureMono,
                     fontWeight = FontWeight.Bold,
