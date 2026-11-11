@@ -17,6 +17,12 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_NOHASHDIR: 'true'
+      CCACHE_COMPILERCHECK: content
     steps:
       - uses: actions/checkout@v7
 
@@ -38,8 +44,15 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
+      # Native compile cache: only changed C++ files rebuild between runs.
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: x14u-native
+          max-size: 600M
+
+      # Robolectric fetches its Android jars on first use; a network blip there gets one retry.
       - name: Unit tests
-        run: ./gradlew :app:testDebugUnitTest
+        run: ./gradlew :app:testDebugUnitTest || ./gradlew :app:testDebugUnitTest
 
       - name: Assemble debug APK
         run: ./gradlew :app:assembleDebug

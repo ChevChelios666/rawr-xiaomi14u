@@ -1,7 +1,7 @@
 name: X14U compile check
 
-# Work branches only: compile Kotlin (app + unit tests) and run the given tests.
-# Never publishes an APK.
+# Work branches only: compile Kotlin (app + unit tests) and the native code. Unit tests run in the build
+# (main) only, to save Actions minutes. Never publishes an APK.
 on:
   push:
     branches: ['wip/**']
@@ -15,6 +15,12 @@ jobs:
   check:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_NOHASHDIR: 'true'
+      CCACHE_COMPILERCHECK: content
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
@@ -29,14 +35,16 @@ jobs:
         with:
           enable-cache: false
       - uses: gradle/actions/setup-gradle@v6
+      # Native compile cache: only changed C++ files rebuild between runs.
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: x14u-native
+          max-size: 600M
       - name: Compile app and unit tests (Kotlin)
         run: ./gradlew :app:compileDebugUnitTestKotlin --continue 2>&1 | tee compile.log; exit ${PIPESTATUS[0]}
       - name: Compile native code (C++)
         if: success()
         run: ./gradlew :app:externalNativeBuildDebug 2>&1 | tee native.log | grep -E "error:|FAILED|BUILD" ; exit ${PIPESTATUS[0]}
-      - name: Unit tests
-        if: success()
-        run: ./gradlew :app:testDebugUnitTest --continue
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v7
@@ -45,5 +53,4 @@ jobs:
           path: |
             compile.log
             native.log
-            app/build/reports/tests/
           retention-days: 3
