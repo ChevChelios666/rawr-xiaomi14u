@@ -57,6 +57,8 @@ internal fun X14uFocusLoupe(
     orientation: Orientation,
     onClose: () -> Unit,
     onMoveCenter: (Offset) -> Unit,
+    /** The dashed box was let go at this spot (viewfinder fractions). */
+    onMoveEnd: (Offset) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val haptics = LocalCaptureHaptics.current
@@ -110,6 +112,7 @@ internal fun X14uFocusLoupe(
         // Drag handle over the dashed box, padded to a comfortable touch target.
         val latestCenter by rememberUpdatedState(Offset(cx, cy))
         val latestMove by rememberUpdatedState(onMoveCenter)
+        val latestMoveEnd by rememberUpdatedState(onMoveEnd)
         val boxW = fw * (window[2] - window[0])
         val boxH = fh * (window[3] - window[1])
         val padX = ((48.dp - boxW) / 2f).coerceAtLeast(10.dp)
@@ -121,13 +124,20 @@ internal fun X14uFocusLoupe(
                 .pointerInput(ww, wh) {
                     val fwPx = fw.toPx()
                     val fhPx = fh.toPx()
-                    detectDragGestures(onDragEnd = { haptics.selection() }) { change, delta ->
+                    var last = latestCenter
+                    detectDragGestures(
+                        onDragStart = { last = latestCenter },
+                        onDragEnd = {
+                            haptics.selection()
+                            latestMoveEnd(last)
+                        }
+                    ) { change, delta ->
                         change.consume()
-                        val c = latestCenter
-                        latestMove(Offset(
-                            (c.x + delta.x / fwPx).coerceIn(ww / 2f, 1f - ww / 2f),
-                            (c.y + delta.y / fhPx).coerceIn(wh / 2f, 1f - wh / 2f)
-                        ))
+                        last = Offset(
+                            (last.x + delta.x / fwPx).coerceIn(ww / 2f, 1f - ww / 2f),
+                            (last.y + delta.y / fhPx).coerceIn(wh / 2f, 1f - wh / 2f)
+                        )
+                        latestMove(last)
                     }
                 }
                 .testTag("x14u_focus_loupe_spot")

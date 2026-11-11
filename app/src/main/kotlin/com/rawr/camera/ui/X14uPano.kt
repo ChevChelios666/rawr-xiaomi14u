@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -313,7 +314,8 @@ internal fun X14uPanoOverlay(
                 )
             }
         } else {
-            Box(Modifier.align(Alignment.Center)) {
+            // Above the centre, clear of the level line.
+            Box(Modifier.align(Alignment.Center).offset(y = (-56).dp)) {
                 PanoBadge("Set exposure, then shoot frame 1", Color.White, orientation)
             }
         }
@@ -367,23 +369,37 @@ internal fun X14uPanoControls(set: PanoSet, enabled: Boolean, onDone: () -> Unit
 @Composable
 private fun PanoChip(text: String, active: Boolean, enabled: Boolean, onClick: () -> Unit) {
     val haptics = LocalCaptureHaptics.current
-    Text(
-        text,
-        fontFamily = X14uFont,
-        fontSize = dpText(12.5f),
-        fontWeight = if (active) FontWeight.Medium else FontWeight.Normal,
-        color = if (active) Color(0xFF2B2000) else Color.White,
-        maxLines = 1,
-        modifier = Modifier
+    // Fixed-height pill with the label centred both ways (no font padding).
+    Box(
+        Modifier
+            .height(30.dp)
             .alpha(if (enabled) 1f else .45f)
-            .background(if (active) CaptureColors.Accent else Color.White.copy(alpha = .12f), RoundedCornerShape(14.dp))
-            .captureClickable(shape = RoundedCornerShape(14.dp), enabled = enabled) {
+            .background(if (active) CaptureColors.Accent else Color.White.copy(alpha = .12f), RoundedCornerShape(15.dp))
+            .captureClickable(shape = RoundedCornerShape(15.dp), enabled = enabled) {
                 haptics.selection()
                 onClick()
             }
             .semantics { contentDescription = text }
-            .padding(horizontal = 11.dp, vertical = 5.dp)
-    )
+            .padding(horizontal = 13.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text,
+            fontFamily = X14uFont,
+            fontSize = dpText(12.5f),
+            fontWeight = if (active) FontWeight.Medium else FontWeight.Normal,
+            color = if (active) Color(0xFF2B2000) else Color.White,
+            maxLines = 1,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            style = androidx.compose.ui.text.TextStyle(
+                platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
+                lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+                    androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+                    androidx.compose.ui.text.style.LineHeightStyle.Trim.Both
+                )
+            )
+        )
+    }
 }
 
 /** The shutter row in Pano: the shutter runs the set; undo (during a set) takes the front-camera button's place. */

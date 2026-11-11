@@ -625,6 +625,13 @@ internal fun X14uCaptureLayout(
                         orientation = orientation,
                         onClose = { loupeOpen = false },
                         onMoveCenter = { loupeAt = it },
+                        // Let go: focus there (AF / AF-L; MF keeps its distance, peaking shows in the loupe). Not
+                        // during a pano set, whose focus is locked.
+                        onMoveEnd = { spot ->
+                            if (state.focus.mode != FocusMode.Mf && !panoLocked) {
+                                dispatch(com.rawr.camera.architecture.FocusAt(com.rawr.camera.model.NormalizedPoint(spot.x, spot.y)))
+                            }
+                        },
                         modifier = Modifier.fillMaxSize()
                     )
                 }

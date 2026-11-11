@@ -1,6 +1,7 @@
 #include "encoding/jpeg/JpegExif.h"
 #include "encoding/SoftwareName.h"
 #include "encoding/jpeg/JpegLensMetadata.h"
+#include "encoding/OutputAspect.h"
 
 #include <algorithm>
 #include <array>
@@ -191,8 +192,9 @@ std::vector<unsigned char> buildExif(const JpegCaptureContext& c, std::uint32_t 
         exif.push_back({0x920A, 5, 1, rationalData(*c.focalLengthMm, 10000u)});
     LensMetadata generatedLens;
     const auto lens = lensMetadataForJpeg(c, generatedLens);
+    // X14U digital zoom: the 35 mm equivalent is the framing's (lens x crop); FocalLength stays the lens's own.
     if (lens.focalLength35mm && *lens.focalLength35mm > 0)
-        exif.push_back({0xA405, 3, 1, shortData(*lens.focalLength35mm)});
+        exif.push_back({0xA405, 3, 1, shortData(zoomedFocalLength35mm(*lens.focalLength35mm, c.cropZoom))});
     if (c.digitalZoomRatio && (*c.digitalZoomRatio)[1] != 0) {
         std::vector<unsigned char> ratio;
         put32(ratio, (*c.digitalZoomRatio)[0]);

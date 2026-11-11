@@ -1,6 +1,7 @@
 #include "encoding/SoftwareName.h"
 #include "encoding/dng/DngExif.h"
 #include "encoding/LensMetadata.h"
+#include "encoding/OutputAspect.h"
 
 #include <algorithm>
 #include <cmath>
@@ -295,7 +296,8 @@ void fillDngExif(TinyDngWriteParams& p, const rawrcam::imaging::RawSnapshot& fra
         ex.has_focal_length = 1;
     }
     if (lens.focalLength35mm) {
-        ex.focal_length_35mm = *lens.focalLength35mm;
+        // X14U digital zoom: the default crop's framing (lens x crop); FocalLength stays the lens's own.
+        ex.focal_length_35mm = zoomedFocalLength35mm(*lens.focalLength35mm, captureContext.cropZoom);
         ex.has_focal_length_35mm = 1;
     }
     if (frame.metadata.focusDistanceDiopters && *frame.metadata.focusDistanceDiopters > 0.000001f) {
@@ -318,6 +320,13 @@ void fillDngExif(TinyDngWriteParams& p, const rawrcam::imaging::RawSnapshot& fra
             quantizeURational(float(fullW / cropW), ex.digital_zoom_rational[0], ex.digital_zoom_rational[1]);
             ex.has_digital_zoom = 1;
         }
+    }
+    // X14U digital zoom: the DNG's default crop is the zoomed framing; the ratio grows by its factor.
+    if (captureContext.cropZoom > 1.001f) {
+        const float camera = ex.has_digital_zoom && ex.digital_zoom_rational[1]
+            ? float(ex.digital_zoom_rational[0]) / float(ex.digital_zoom_rational[1]) : 1.0f;
+        quantizeURational(camera * captureContext.cropZoom, ex.digital_zoom_rational[0], ex.digital_zoom_rational[1]);
+        ex.has_digital_zoom = 1;
     }
     if (captureContext.wallClockUnixMillis > 0) {
         const time_t localSeconds = static_cast<time_t>(captureContext.wallClockUnixMillis / 1000 +

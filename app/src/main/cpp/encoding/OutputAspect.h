@@ -67,4 +67,10 @@ inline CropRect stillCrop(std::uint32_t width, std::uint32_t height, float zoom,
     return a;
 }
 
+// 35 mm equivalent of a digitally zoomed still: the lens's times the crop factor (EXIF FocalLengthIn35mmFilm).
+inline std::uint16_t zoomedFocalLength35mm(std::uint16_t lens35mm, float zoom) noexcept {
+    if (!(zoom > 1.001f) || !std::isfinite(zoom)) return lens35mm;
+    return static_cast<std::uint16_t>(std::clamp(std::lround(double(lens35mm) * zoom), 1L, 65535L));
+}
+
 }  // namespace rawrcam::encoding
