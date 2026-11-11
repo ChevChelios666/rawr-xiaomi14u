@@ -7,7 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ModeLooksTest {
-    private val base = SettingsValues(x14uProUi = false)
+    private val base = SettingsCatalog.initialState().values.copy(x14uProUi = false)
 
     @Test
     fun aModeNotVisitedYetStartsAsACopy() {
