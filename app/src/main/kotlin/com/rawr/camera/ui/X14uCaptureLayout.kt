@@ -248,6 +248,15 @@ internal fun X14uCaptureLayout(
     // Tools panel (swipe down on the viewfinder / top-bar arrow) and its open choice row.
     var toolsOpen by remember { mutableStateOf(false) }
     var toolsChoice by remember { mutableStateOf<String?>(null) }
+    val extrasNow = LocalCaptureExtras.current
+    // Swipe-up mode change: the new mode's name shows briefly on the viewfinder.
+    var modeFlash by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(modeFlash) {
+        if (modeFlash != null) {
+            kotlinx.coroutines.delay(900L)
+            modeFlash = null
+        }
+    }
     LaunchedEffect(state.captureMode, state.selectedLensId) {
         selected = null
         panel = null
@@ -460,7 +469,18 @@ internal fun X14uCaptureLayout(
                 onQuickEvent = onQuickEvent,
                 x14uClean = true,
                 onViewfinderTap = closeAll,
-                onViewfinderSwipe = { direction -> openTools(direction > 0) }
+                onViewfinderSwipe = { direction ->
+                    when {
+                        direction > 0 -> openTools(true)
+                        toolsOpen -> openTools(false)
+                        // Swipe up: Photo <-> Pro (stills only, not while recording).
+                        !isVideo && !recordingLock -> {
+                            closeAll()
+                            extrasNow.onSetProUi(!extrasNow.proUi)
+                            modeFlash = if (extrasNow.proUi) "PHOTO" else "PRO"
+                        }
+                    }
+                }
             )
             // Controls float over a 16:9 preview that runs past the photo frame.
             if (videoBleed) {
@@ -474,6 +494,24 @@ internal fun X14uCaptureLayout(
                 val tools = LocalCaptureExtras.current.tools
                 if (!isVideo) X14uAspectMask(tools.photoAspect, Modifier.fillMaxSize())
                 if (tools.level) X14uLevel(Modifier.fillMaxSize())
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = modeFlash != null,
+                    enter = androidx.compose.animation.fadeIn(),
+                    exit = androidx.compose.animation.fadeOut(),
+                    modifier = Modifier.align(Alignment.Center)
+                ) {
+                    Text(
+                        modeFlash ?: "",
+                        fontFamily = X14uFont,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = dpText(20f),
+                        color = Color.White,
+                        modifier = Modifier
+                            .background(Color.Black.copy(alpha = .45f), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .uprightInLandscape(orientation)
+                    )
+                }
                 if (isVideo && videoControls.recording) {
                     X14uRecordTimer(
                         video = videoControls,
@@ -1822,6 +1860,8 @@ private fun X14uIdleControlArea(
     val haptics = LocalCaptureHaptics.current
     val extras = LocalCaptureExtras.current
     val current = currentX14uMode(state, extras.proUi)
+    // The strip shows the stills mode in use (Photo or Pro; swipe up on the viewfinder switches) and Video.
+    val stripModes = listOf(if (extras.proUi) X14uMode.Pro else X14uMode.Photo, X14uMode.Video)
     var dismissed by remember { mutableStateOf<VideoTakeSummary?>(null) }
     val take = video.lastTake
     LaunchedEffect(take) {
@@ -1846,10 +1886,10 @@ private fun X14uIdleControlArea(
                             onDragStart = { travel = 0f },
                             onDragEnd = {
                                 val threshold = 40.dp.toPx()
-                                val modes = X14uMode.entries
+                                val index = stripModes.indexOf(current)
                                 val target = when {
-                                    travel < -threshold -> modes.getOrNull(current.ordinal + 1)
-                                    travel > threshold -> modes.getOrNull(current.ordinal - 1)
+                                    travel < -threshold -> stripModes.getOrNull(index + 1)
+                                    travel > threshold -> stripModes.getOrNull(index - 1)
                                     else -> null
                                 }
                                 if (target != null && target != current) {
@@ -1869,7 +1909,7 @@ private fun X14uIdleControlArea(
                 Box(Modifier.size(20.dp, 3.dp).background(Color.White.copy(alpha = .3f), RoundedCornerShape(2.dp)))
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(30.dp), verticalAlignment = Alignment.CenterVertically) {
-                    X14uMode.entries.forEach { mode ->
+                    stripModes.forEach { mode ->
                         val isSelected = current == mode
                         Text(
                             mode.label,

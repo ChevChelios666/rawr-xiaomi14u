@@ -92,13 +92,19 @@ private val WbPresets = listOf(
     WhiteBalanceMode.Incandescent, WhiteBalanceMode.Fluorescent, WhiteBalanceMode.WarmFluorescent, WhiteBalanceMode.Twilight
 )
 
-private enum class HistogramChoice(val label: String) { Off("Off"), Luma("Luma"), Waveform("Waveform"), Vector("Vectorscope") }
+private enum class HistogramChoice(val label: String, val short: String, val scope: ScopeType?, val mode: WaveformMode?) {
+    Off("Off", "Off", null, null),
+    Histogram("Histogram", "Luma", ScopeType.Waveform, WaveformMode.Histogram),
+    HistogramRgb("RGB histogram", "RGB", ScopeType.Waveform, WaveformMode.HistogramRgb),
+    Waveform("Waveform", "Wave", ScopeType.Waveform, WaveformMode.Luma),
+    WaveformRgb("RGB waveform", "RGB wave", ScopeType.Waveform, WaveformMode.RgbOverlay),
+    Vector("Vectorscope", "Vector", ScopeType.Vectorscope, null)
+}
 
 private fun CaptureUiState.histogramChoice(): HistogramChoice = when {
     activeScopes.isEmpty() -> HistogramChoice.Off
     activeScopes.first() == ScopeType.Vectorscope -> HistogramChoice.Vector
-    waveformMode == WaveformMode.Histogram -> HistogramChoice.Luma
-    else -> HistogramChoice.Waveform
+    else -> HistogramChoice.entries.firstOrNull { it.mode == waveformMode } ?: HistogramChoice.Waveform
 }
 
 private class X14uTile(
@@ -150,7 +156,7 @@ internal fun X14uToolsPanel(
         add(X14uTile("level", "Level", tools.level, X14uIcons.Level) { extras.onToggleLevel() })
         val histogram = state.histogramChoice()
         add(X14uTile("hist", "Histogram", histogram != HistogramChoice.Off, X14uIcons.Histogram,
-            value = if (histogram == HistogramChoice.Vector) "Vector" else histogram.label) { toggleChoice("hist") })
+            value = histogram.short) { toggleChoice("hist") })
         add(X14uTile("peaking", "Peaking", OverlayMode.Peaking in state.armedOverlays, Icons.Outlined.CenterFocusStrong) {
             dispatch(ToggleOverlayArmed(OverlayMode.Peaking))
         })
@@ -226,13 +232,8 @@ internal fun X14uToolsPanel(
                     extras.onSetPhotoAspect(PhotoAspect.entries[i])
                 }
                 "hist" -> Triple(HistogramChoice.entries.map { it.label }, state.histogramChoice().ordinal) { i: Int ->
-                    when (HistogramChoice.entries[i]) {
-                        HistogramChoice.Off -> dispatch(SetSingleScope(null, if (state.waveformMode == WaveformMode.Histogram) WaveformMode.Luma else state.waveformMode))
-                        HistogramChoice.Luma -> dispatch(SetSingleScope(ScopeType.Waveform, WaveformMode.Histogram))
-                        HistogramChoice.Waveform -> dispatch(SetSingleScope(ScopeType.Waveform,
-                            if (state.waveformMode == WaveformMode.RgbOverlay) WaveformMode.RgbOverlay else WaveformMode.Luma))
-                        HistogramChoice.Vector -> dispatch(SetSingleScope(ScopeType.Vectorscope, state.waveformMode))
-                    }
+                    val c = HistogramChoice.entries[i]
+                    dispatch(SetSingleScope(c.scope, c.mode ?: state.waveformMode))
                 }
                 else -> Triple(WbPresets.map { it.label }, WbPresets.indexOf(wb)) { i: Int -> dispatch(SetWhiteBalanceMode(WbPresets[i])) }
             }

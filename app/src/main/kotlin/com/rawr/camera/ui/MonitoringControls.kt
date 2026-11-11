@@ -62,11 +62,13 @@ internal fun ScopeLayer(state: CaptureUiState, dispatch: CaptureDispatch, previe
                         ScopeType.Waveform -> when (state.waveformMode) {
                             WaveformMode.RgbOverlay -> "RGB"
                             WaveformMode.Histogram -> null
+                            WaveformMode.HistogramRgb -> "RGB"
                             WaveformMode.Luma -> "LUMA"
                         }
                         ScopeType.Vectorscope -> null
                     },
-                title = if (scope == ScopeType.Waveform && state.waveformMode == WaveformMode.Histogram) "HISTOGRAM" else null,
+                title = if (scope == ScopeType.Waveform &&
+                    (state.waveformMode == WaveformMode.Histogram || state.waveformMode == WaveformMode.HistogramRgb)) "HISTOGRAM" else null,
                 orientation = state.orientation,
                 logicalWidth = g.logicalWidth,
                 logicalHeight = g.logicalHeight,

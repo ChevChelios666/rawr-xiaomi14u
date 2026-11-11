@@ -494,7 +494,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreview
             state.placements[i].width = finiteUnit(rv[i * 5 + 2]);
             state.placements[i].height = finiteUnit(rv[i * 5 + 3]);
             state.placements[i].cornerRadius = std::clamp(finiteUnit(rv[i * 5 + 4]), 0.0f, 0.5f);
-            state.placements[i].variant = static_cast<uint32_t>(std::clamp(static_cast<int>(mv[i]), 0, 2));
+            state.placements[i].variant = static_cast<uint32_t>(std::clamp(static_cast<int>(mv[i]), 0, 3));
             state.placements[i].presentationQuarterTurns =
                 static_cast<uint32_t>(((static_cast<int>(qv[i]) % 4) + 4) % 4);
         }

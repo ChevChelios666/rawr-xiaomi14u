@@ -124,15 +124,17 @@ float renderPlane(uint plane, vec2 q) {
     return clamp(pc.gain * (1.0 - exp(-light * 1.05)), 0.0, 1.0);
 }
 
-shared uint levelSums[32];
+shared uint levelSums[96];  // up to 32 levels x 3 planes
 
 void main() {
     ivec2 p = ivec2(gl_GlobalInvocationID.xy);
     ivec2 sz = imageSize(dst);
 
     if (pc.histogram != 0u) {
-        // X = luma level, Y = count (summed over every column of plane 0). The workgroup's 16 output columns
-        // touch only a few levels: sum those once into shared memory, then every pixel reads two of them.
+        // X = level, Y = count (summed over every column). Luma uses plane 0; RGB (mode 1) draws R, G and B
+        // over each other. The workgroup's 16 output columns touch only a few levels: sum those once into
+        // shared memory, then every pixel reads two of them per plane.
+        uint planes = pc.mode == 1u ? 3u : 1u;
         uint x0 = gl_WorkGroupID.x * 16u;
         uint x1 = min(x0 + 15u, uint(max(sz.x - 1, 0)));
         float scale = 256.0 / float(max(sz.x, 1));
@@ -140,11 +142,13 @@ void main() {
         uint last = min(uint(clamp(floor((float(x1) + .5) * scale - .5), 0.0, 255.0)) + 1u, 255u);
         uint count = min(last - first + 1u, 32u);
         uint lid = gl_LocalInvocationIndex;
-        if (lid < 32u) levelSums[lid] = 0u;
+        if (lid < 96u) levelSums[lid] = 0u;
         barrier();
-        for (uint k = lid; k < count * 512u; k += 256u) {
-            uint b = k / 512u;
-            atomicAdd(levelSums[b], w.density[(first + b) * 512u + (k % 512u)]);
+        for (uint k = lid; k < planes * count * 512u; k += 256u) {
+            uint plane = k / (count * 512u);
+            uint rem = k % (count * 512u);
+            uint b = rem / 512u;
+            atomicAdd(levelSums[plane * 32u + b], w.density[plane * PLANE_STRIDE + (first + b) * 512u + (rem % 512u)]);
         }
         barrier();
         if (any(greaterThanEqual(p, sz))) return;
@@ -152,14 +156,29 @@ void main() {
         uint b0 = uint(clamp(floor(fx), 0.0, 255.0));
         uint i0 = min(b0 - min(b0, first), count - 1u);
         uint i1 = min(i0 + 1u, count - 1u);
-        float n = mix(float(levelSums[i0]), float(levelSums[i1]), clamp(fx - floor(fx), 0.0, 1.0));
+        float t = clamp(fx - floor(fx), 0.0, 1.0);
         // Against the average level (sampled / 256) with a soft knee, so one dominant level doesn't flatten the rest.
         float average = max(float(pc.sampledPixels) / 256.0, 1.0);
-        float h = 1.0 - exp(-n / (average * 2.5));
         float yUp = 1.0 - (float(p.y) + .5) / float(sz.y);
+        float edge = 1.5 / float(sz.y);
         vec3 col = pc.showBg != 0u ? vec3(.015) : vec3(0.0);
-        if (yUp <= h) col = max(col, vec3(.78 * pc.gain) * pc.opacity);
-        else if (yUp <= h + 1.5 / float(sz.y)) col = max(col, vec3(.95) * pc.opacity);
+        if (planes == 1u) {
+            float n = mix(float(levelSums[i0]), float(levelSums[i1]), t);
+            float h = 1.0 - exp(-n / (average * 2.5));
+            if (yUp <= h) col = max(col, vec3(.78 * pc.gain) * pc.opacity);
+            else if (yUp <= h + edge) col = max(col, vec3(.95) * pc.opacity);
+        } else {
+            vec3 fill = vec3(0.0);
+            vec3 line = vec3(0.0);
+            for (uint c = 0u; c < 3u; ++c) {
+                float n = mix(float(levelSums[c * 32u + i0]), float(levelSums[c * 32u + i1]), t);
+                float h = 1.0 - exp(-n / (average * 2.5));
+                if (yUp <= h) fill[c] = .62 * pc.gain;
+                else if (yUp <= h + edge) line[c] = .95;
+            }
+            // Channels add: where all three overlap the fill reads grey-white, as on a camera.
+            col = max(col, clamp(fill + line, 0.0, 1.0) * pc.opacity);
+        }
         if (pc.showGrid != 0u) {
             int gx = max(sz.x / 4, 1), gy = max(sz.y / 4, 1);
             if ((p.x % gx) == 0 || (p.y % gy) == 0) col = max(col, vec3(.055));

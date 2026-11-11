@@ -81,6 +81,7 @@ fun CaptureRoute(
                     modes[index] = if (scope.type != com.rawr.camera.model.ScopeType.Waveform) 0 else when (scope.mode) {
                         com.rawr.camera.model.WaveformMode.RgbOverlay -> 1
                         com.rawr.camera.model.WaveformMode.Histogram -> 2
+                        com.rawr.camera.model.WaveformMode.HistogramRgb -> 3
                         com.rawr.camera.model.WaveformMode.Luma -> 0
                     }
                     rotations[index] = scope.quarterTurns
