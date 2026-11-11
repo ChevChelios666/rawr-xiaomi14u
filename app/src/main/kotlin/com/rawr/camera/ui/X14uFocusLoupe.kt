@@ -45,7 +45,8 @@ import com.rawr.camera.settings.model.FocusLoupeSettings
  * X14U focus loupe: the live view around [center] (viewfinder fractions) magnified into a small rounded window in
  * a corner of the viewfinder, drawn natively (with peaking when it's on); a dashed box marks the spot. The focus
  * meter under it rises toward best focus, with a tick at the highest level since the loupe opened.
- * Drag the window to move it; it settles in the nearest corner. It never affects the photo.
+ * Drag the window to move it; it settles in the nearest corner. Drag the dashed box to move the magnified spot.
+ * It never affects the photo.
  */
 @Composable
 internal fun X14uFocusLoupe(
@@ -55,6 +56,7 @@ internal fun X14uFocusLoupe(
     distanceLabel: String?,
     orientation: Orientation,
     onClose: () -> Unit,
+    onMoveCenter: (Offset) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val haptics = LocalCaptureHaptics.current
@@ -105,6 +107,32 @@ internal fun X14uFocusLoupe(
                 style = Stroke(1.2.dp.toPx(), pathEffect = dash)
             )
         }
+        // Drag handle over the dashed box, padded to a comfortable touch target.
+        val latestCenter by rememberUpdatedState(Offset(cx, cy))
+        val latestMove by rememberUpdatedState(onMoveCenter)
+        val boxW = fw * (window[2] - window[0])
+        val boxH = fh * (window[3] - window[1])
+        val padX = ((48.dp - boxW) / 2f).coerceAtLeast(10.dp)
+        val padY = ((48.dp - boxH) / 2f).coerceAtLeast(10.dp)
+        Box(
+            Modifier
+                .offset(fw * window[0] - padX, fh * window[1] - padY)
+                .size(boxW + padX * 2f, boxH + padY * 2f)
+                .pointerInput(ww, wh) {
+                    val fwPx = fw.toPx()
+                    val fhPx = fh.toPx()
+                    detectDragGestures(onDragEnd = { haptics.selection() }) { change, delta ->
+                        change.consume()
+                        val c = latestCenter
+                        latestMove(Offset(
+                            (c.x + delta.x / fwPx).coerceIn(ww / 2f, 1f - ww / 2f),
+                            (c.y + delta.y / fhPx).coerceIn(wh / 2f, 1f - wh / 2f)
+                        ))
+                    }
+                }
+                .testTag("x14u_focus_loupe_spot")
+                .semantics { contentDescription = "Magnified spot, drag to move" }
+        )
         // Frame, labels and meter over the natively drawn window.
         Box(
             Modifier
@@ -193,12 +221,12 @@ private fun X14uFocusMeter(preview: CapturePreview, distanceLabel: String?, modi
     Box(
         modifier
             .fillMaxWidth()
-            .height(26.dp)
+            .height(30.dp)
             .background(Color.Black.copy(alpha = .45f), RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp))
-            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .padding(start = 10.dp, end = 10.dp)
     ) {
         Canvas(Modifier.fillMaxSize()) {
-            val labelW = if (distanceLabel != null) 44.dp.toPx() else 0f
+            val labelW = if (distanceLabel != null) 58.dp.toPx() else 0f
             val barW = size.width - labelW
             val scale = (peak * 1.12f).coerceAtLeast(1e-3f)
             val fill = (level / scale).coerceIn(0f, 1f)
@@ -215,6 +243,7 @@ private fun X14uFocusMeter(preview: CapturePreview, distanceLabel: String?, modi
         }
         if (distanceLabel != null) {
             Text(distanceLabel, fontFamily = X14uFont, fontSize = dpText(10.5f), color = Color.White,
+                maxLines = 1, softWrap = false,
                 modifier = Modifier.align(Alignment.CenterEnd))
         }
     }

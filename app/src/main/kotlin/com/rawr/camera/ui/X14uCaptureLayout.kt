@@ -291,7 +291,8 @@ internal fun X14uCaptureLayout(
     LaunchedEffect(mfTouch) {
         if (mfTouch != 0L && loupeAt == null) {
             kotlinx.coroutines.delay(1200L)
-            loupeOpen = false
+            // Moved by hand meanwhile: it stays until closed.
+            if (loupeAt == null) loupeOpen = false
         }
     }
     // Tools panel (swipe down on the viewfinder / top-bar arrow) and its open choice row.
@@ -574,6 +575,7 @@ internal fun X14uCaptureLayout(
                         distanceLabel = if (state.focus.mode == FocusMode.Mf) state.focusDistanceLabel() else null,
                         orientation = orientation,
                         onClose = { loupeOpen = false },
+                        onMoveCenter = { loupeAt = it },
                         modifier = Modifier.fillMaxSize()
                     )
                 }
