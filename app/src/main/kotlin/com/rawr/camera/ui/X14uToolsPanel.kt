@@ -257,6 +257,9 @@ internal fun X14uToolsPanel(
                             .captureClickable(shape = RoundedCornerShape(14.dp), role = Role.RadioButton) {
                                 haptics.selection()
                                 pick(i)
+                                // Any pick (the current one too) closes the row, so the tiles under it come back.
+                                // Spiral / triangles: reopen Grid and tap them again to turn them.
+                                onChoice(null)
                             }
                             .semantics { selected = on }
                             .padding(horizontal = 10.dp, vertical = 10.dp)
