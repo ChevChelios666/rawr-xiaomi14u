@@ -342,7 +342,10 @@ void ImageScopesProcessor::recordFocus(VkCommandBuffer command, uint32_t frameSl
     focusReadback_[frameSlot].recorded = false;
     // Displayed fractions -> display-image (sensor) fractions: the inverse of the presentation's rotation and
     // mirror, as present.frag maps q to s. The window is axis-aligned under quarter turns.
+    const float zoom = focusZoom_.load();
     const auto toSource = [&](float qx, float qy) {
+        qx = 0.5f + (qx - 0.5f) / zoom;
+        qy = 0.5f + (qy - 0.5f) / zoom;
         float sx = qx, sy = qy;
         switch (presentationQuarterTurns & 3u) {
             case 1u: sx = qy; sy = 1.0f - qx; break;

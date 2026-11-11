@@ -1192,7 +1192,11 @@ data class SettingsValues(
     val stillsHintCount: Int = 0,
     val stillsSwitched: Boolean = false,
     /** X14U: focus loupe and focus meter. */
-    val focusLoupe: FocusLoupeSettings = FocusLoupeSettings()
+    val focusLoupe: FocusLoupeSettings = FocusLoupeSettings(),
+    /** X14U digital zoom: upscale zoomed JPEGs back to full size (false: keep the crop's own pixels). */
+    val zoomUpscale: Boolean = true,
+    /** X14U: the in-sensor-zoom lenses (2x) were turned off once, so zoom crops the main camera; they can be re-enabled. */
+    val inSensorZoomLensesOffOnce: Boolean = false
 ) {
     val isVideo: Boolean get() = captureModeId == "video"
     val isLogActive: Boolean get() = isVideo && videoLogEnabled

@@ -286,9 +286,9 @@ std::optional<TinyDngWriteParams> makeTinyDngWriteParams(const rawrcam::imaging:
     raw.has_crop = 1;
     {
         // X14U aspect ratio: every pixel stays; the default crop (which Lightroom applies) frames the ratio.
-        const auto crop = rawrcam::encoding::aspectCrop(uint32_t(gm->activeRight - gm->activeLeft),
-                                                        uint32_t(gm->activeBottom - gm->activeTop),
-                                                        captureContext.cropAspect);
+        const auto crop = rawrcam::encoding::stillCrop(uint32_t(gm->activeRight - gm->activeLeft),
+                                                       uint32_t(gm->activeBottom - gm->activeTop),
+                                                       captureContext.cropZoom, captureContext.cropAspect);
         raw.crop_origin[0] = double(crop.x);
         raw.crop_origin[1] = double(crop.y);
         raw.crop_size[0] = double(crop.width);

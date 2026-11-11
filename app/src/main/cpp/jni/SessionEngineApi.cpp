@@ -210,6 +210,9 @@ void setFocusLoupe(EngineHandle h, const rawrcam::presentation::LoupeDraw& loupe
     if (h) engine(h)->setFocusLoupe(loupe, meter);
 }
 float focusMeterValue(EngineHandle h) noexcept { return h ? engine(h)->focusMeterValue() : -1.0f; }
+void setViewfinderZoom(EngineHandle h, float crop) noexcept {
+    if (h) engine(h)->setViewfinderZoom(crop);
+}
 uint64_t requestRawStillCapture(EngineHandle h, rawrcam::encoding::dng::DngCaptureContext dngContext,
                                 rawrcam::capture::JpegCaptureRequest jpegContext) noexcept {
     // As above: the contexts close their own destinations on rejection.

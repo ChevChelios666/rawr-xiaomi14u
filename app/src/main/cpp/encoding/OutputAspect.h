@@ -14,6 +14,16 @@ inline std::atomic<float>& outputAspect() noexcept {
     return value;
 }
 
+// X14U digital zoom: crop factor on top of the lens (1 = none) and whether JPEGs are upscaled back to full size.
+inline std::atomic<float>& outputZoom() noexcept {
+    static std::atomic<float> value{1.0f};
+    return value;
+}
+inline std::atomic<bool>& outputUpscale() noexcept {
+    static std::atomic<bool> value{true};
+    return value;
+}
+
 struct CropRect {
     std::uint32_t x = 0, y = 0, width = 0, height = 0;
     [[nodiscard]] bool full(std::uint32_t w, std::uint32_t h) const noexcept { return width == w && height == h; }
@@ -40,6 +50,21 @@ inline CropRect aspectCrop(std::uint32_t width, std::uint32_t height, float aspe
     r.x = ((width - cw) / 2u) & ~1u;
     r.y = ((height - ch) / 2u) & ~1u;
     return r;
+}
+
+// The still's framing: the centred digital-zoom window (1 / zoom of each side), then the aspect ratio inside it.
+inline CropRect stillCrop(std::uint32_t width, std::uint32_t height, float zoom, float aspect) noexcept {
+    CropRect z{0, 0, width, height};
+    if (std::isfinite(zoom) && zoom > 1.001f && width >= 4 && height >= 4) {
+        z.width = std::max<std::uint32_t>(2u, std::uint32_t(double(width) / zoom / 2.0) * 2u);
+        z.height = std::max<std::uint32_t>(2u, std::uint32_t(double(height) / zoom / 2.0) * 2u);
+        z.x = ((width - z.width) / 2u) & ~1u;
+        z.y = ((height - z.height) / 2u) & ~1u;
+    }
+    CropRect a = aspectCrop(z.width, z.height, aspect);
+    a.x += z.x;
+    a.y += z.y;
+    return a;
 }
 
 }  // namespace rawrcam::encoding

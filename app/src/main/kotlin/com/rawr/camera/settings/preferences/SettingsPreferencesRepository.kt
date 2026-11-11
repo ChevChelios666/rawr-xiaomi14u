@@ -529,6 +529,8 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
             viewfinderLevel = p[Keys.viewfinderLevel] ?: d.viewfinderLevel,
             stillsHintCount = p[Keys.stillsHintCount] ?: d.stillsHintCount,
             stillsSwitched = p[Keys.stillsSwitched] ?: d.stillsSwitched,
+            zoomUpscale = p[Keys.zoomUpscale] ?: d.zoomUpscale,
+            inSensorZoomLensesOffOnce = p[Keys.inSensorZoomOff] ?: d.inSensorZoomLensesOffOnce,
             focusLoupe = FocusLoupeSettings(
                 zoom = (p[Keys.loupeZoom] ?: d.focusLoupe.zoom).takeIf { it in FocusLoupeSettings.ZOOMS } ?: d.focusLoupe.zoom,
                 onManualFocus = p[Keys.loupeOnMf] ?: d.focusLoupe.onManualFocus,
@@ -786,6 +788,8 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
         p[Keys.stillsHintCount] = v.stillsHintCount
         p[Keys.stillsSwitched] = v.stillsSwitched
         p[Keys.loupeZoom] = v.focusLoupe.zoom
+        p[Keys.zoomUpscale] = v.zoomUpscale
+        p[Keys.inSensorZoomOff] = v.inSensorZoomLensesOffOnce
         p[Keys.loupeOnMf] = v.focusLoupe.onManualFocus
         p[Keys.loupeDoubleTap] = v.focusLoupe.doubleTap
         p[Keys.loupeMeter] = v.focusLoupe.meter
@@ -1102,6 +1106,8 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
         val stillsHintCount = intPreferencesKey("x14u_stills_hint_count")
         val stillsSwitched = booleanPreferencesKey("x14u_stills_switched")
         val loupeZoom = intPreferencesKey("x14u_loupe_zoom")
+        val zoomUpscale = booleanPreferencesKey("x14u_zoom_upscale")
+        val inSensorZoomOff = booleanPreferencesKey("x14u_in_sensor_zoom_off_once")
         val loupeOnMf = booleanPreferencesKey("x14u_loupe_on_mf")
         val loupeDoubleTap = booleanPreferencesKey("x14u_loupe_double_tap")
         val loupeMeter = booleanPreferencesKey("x14u_loupe_meter")

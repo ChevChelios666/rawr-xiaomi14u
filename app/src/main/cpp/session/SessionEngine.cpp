@@ -264,6 +264,14 @@ void SessionEngine::setVideoPreviewCropOut(uint32_t width, uint32_t height) {
 
 rawrcam::geometry::SourceCropRect SessionEngine::previewVideoCropRectLocked() const {
     rawrcam::geometry::SourceCropRect crop{};
+    // X14U digital zoom (photo): the centred window the viewfinder shows, so taps and faces map through it.
+    const float zoom = viewfinderZoom_.load(std::memory_order_relaxed);
+    if ((videoCropOutWidth_ == 0 || videoCropOutHeight_ == 0) && zoom > 1.001f && realtime_.configured()) {
+        const uint32_t pw = realtime_.previewWidth(), ph = realtime_.previewHeight();
+        const auto w = static_cast<uint32_t>(pw / zoom) & ~1u, h = static_cast<uint32_t>(ph / zoom) & ~1u;
+        if (w >= 2 && h >= 2) crop = {((pw - w) / 2u) & ~1u, ((ph - h) / 2u) & ~1u, w, h, true};
+        return crop;
+    }
     if (videoCropOutWidth_ == 0 || videoCropOutHeight_ == 0 || !realtime_.configured()) {
         return crop;
     }

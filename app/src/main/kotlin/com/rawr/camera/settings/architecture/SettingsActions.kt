@@ -66,6 +66,9 @@ data class SetCaptureControlLayout(val layout: CaptureControlLayout) : SettingsA
 
 data class SetGridMode(val value: GridMode) : SettingsApplicationAction
 
+/** X14U digital zoom: upscale zoomed JPEGs. */
+data class SetZoomUpscale(val value: Boolean) : SettingsApplicationAction
+
 /** X14U focus loupe settings. */
 data class SetFocusLoupe(val value: com.rawr.camera.settings.model.FocusLoupeSettings) : SettingsApplicationAction
 

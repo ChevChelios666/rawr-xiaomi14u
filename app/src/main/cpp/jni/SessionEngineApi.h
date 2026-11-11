@@ -82,6 +82,7 @@ void setCpuRawCopyProbeFrames(EngineHandle handle, uint32_t frames) noexcept;
 void setMonitoringOverlay(EngineHandle handle, uint32_t mode, float focusSensitivity) noexcept;
 void setScopePresentationState(EngineHandle handle, const rawrcam::monitoring::ScopePresentationState& state) noexcept;
 void setFocusLoupe(EngineHandle handle, const rawrcam::presentation::LoupeDraw& loupe, bool meter) noexcept;
+void setViewfinderZoom(EngineHandle handle, float crop) noexcept;
 float focusMeterValue(EngineHandle handle) noexcept;
 uint64_t requestRawStillCapture(EngineHandle handle, rawrcam::encoding::dng::DngCaptureContext dngContext,
                                 rawrcam::capture::JpegCaptureRequest jpegContext) noexcept;

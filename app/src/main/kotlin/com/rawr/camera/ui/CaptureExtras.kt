@@ -18,7 +18,9 @@ data class CaptureExtras(
     val onToggleLensMirror: (String) -> Unit = {},
     /** Show the one-time "Swipe up for Photo+" hint (until switched once, at most twice). */
     val stillsHint: Boolean = false,
-    val onStillsHintShown: () -> Unit = {}
+    val onStillsHintShown: () -> Unit = {},
+    /** Digital zoom crop on top of the lens (1 = none). */
+    val onDigitalZoom: (Float) -> Unit = {}
 )
 
 val LocalCaptureExtras = staticCompositionLocalOf { CaptureExtras() }

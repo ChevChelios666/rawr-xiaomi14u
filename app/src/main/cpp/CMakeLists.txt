@@ -418,7 +418,7 @@ set_source_files_properties(renderer/LinearResample.cpp renderer/DngSource.cpp r
 # The UltraHDR writer runs the adaptive map fit over 12.5M full-res texels
 # (histogram + shoulder + knee) on the save path. At -O0 that is ~2.6s on
 # the test device; -O3 brings it to thumbnail time. Same rationale as above.
-set_source_files_properties(encoding/jpeg/JpegCaptureWriter.cpp PROPERTIES COMPILE_OPTIONS "-O3")
+set_source_files_properties(encoding/jpeg/JpegCaptureWriter.cpp encoding/jpeg/ImageResample.cpp PROPERTIES COMPILE_OPTIONS "-O3")
 
 # A burst journals ~650 MB of byte vectors. At -O0, libc++'s value construction
 # and trivial destruction walk every byte: ~5 seconds on the test device before

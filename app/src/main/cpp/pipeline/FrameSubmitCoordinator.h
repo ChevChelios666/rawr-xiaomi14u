@@ -130,6 +130,7 @@ class FrameSubmitCoordinator final {
     void setFilmSimLook(const spektrafilm_native::FilmLook& value) { filmLook_ = value; }
     // Idle video-mode preview crop: recording output size (0 = full frame).
     // Written on the camera worker, read on the submit thread.
+    void setViewfinderZoom(float crop) noexcept { viewfinderZoom_.store(crop, std::memory_order_relaxed); }
     void setVideoPreviewCropOut(uint32_t width, uint32_t height) noexcept {
         videoCropOutWidth_.store(width, std::memory_order_relaxed);
         videoCropOutHeight_.store(height, std::memory_order_relaxed);
@@ -321,6 +322,7 @@ class FrameSubmitCoordinator final {
     std::atomic<bool> filmSimEnabled_ = false;
     std::atomic<uint32_t> videoCropOutWidth_{0};
     std::atomic<uint32_t> videoCropOutHeight_{0};
+    std::atomic<float> viewfinderZoom_{1.0f};
     spektrafilm_native::FilmLook filmLook_{};
     uint32_t viewfinderDivisor_ = 2;
     std::string colorMode_ = "auto";

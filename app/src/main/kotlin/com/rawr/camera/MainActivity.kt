@@ -253,6 +253,7 @@ class MainActivity : ComponentActivity() {
                     onToggleLensMirror = captureViewModel::toggleLensMirror,
                     stillsHint = stillsHint,
                     onStillsHintShown = captureViewModel::stillsHintShown,
+                    onDigitalZoom = captureViewModel::setDigitalZoom,
                     onSetProUi = captureViewModel::setProUi,
                     onToggleAudioMuted = captureViewModel::toggleAudioMuted,
                     onOpenVideoSettings = {

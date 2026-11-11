@@ -94,6 +94,9 @@ class SessionEngine {
     // X14U focus loupe: draws the magnified window and measures focus there; focusMeterValue() < 0 = none.
     void setFocusLoupe(const rawrcam::presentation::LoupeDraw& loupe, bool meter);
     [[nodiscard]] float focusMeterValue();
+    // X14U digital zoom on the viewfinder (centred crop factor, 1 = none): presentation, tap mapping, metering.
+    void setViewfinderZoom(float crop);
+    [[nodiscard]] float viewfinderZoom() const noexcept { return viewfinderZoom_.load(std::memory_order_relaxed); }
     void focusAtDisplay(float x, float y, uint64_t requestId);
     void clearTapAf(uint64_t requestId);
     // Face detections in display-normalized coordinates for the viewfinder
@@ -296,6 +299,7 @@ class SessionEngine {
     // Armed idle-preview crop output size (mu_). Zero disables.
     uint32_t videoCropOutWidth_ = 0;
     uint32_t videoCropOutHeight_ = 0;
+    std::atomic<float> viewfinderZoom_{1.0f};
     rawrcam::diagnostics::PipelineDiagnostics pipelineDiagnostics_{
         [this](const std::string& line) { appendDiagnostic(line); }};
     capture::CaptureCoordinator capture_{

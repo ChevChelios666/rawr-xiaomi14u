@@ -773,6 +773,7 @@ FrameSubmitCoordinator::RecordedSubmit FrameSubmitCoordinator::recordSubmitComma
     recordInput.distortionCorrectionEnabled = distortionCorrectionEnabled_.load(std::memory_order_relaxed);
     recordInput.videoCropOutWidth = videoCropOutWidth_.load(std::memory_order_relaxed);
     recordInput.videoCropOutHeight = videoCropOutHeight_.load(std::memory_order_relaxed);
+    recordInput.viewfinderZoom = viewfinderZoom_.load(std::memory_order_relaxed);
     recordInput.filmEnabled = filmSimEnabled_;
     recordInput.filmLook = filmLook_;
     recordInput.viewfinderDivisor = viewfinderDivisor_;

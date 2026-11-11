@@ -310,6 +310,7 @@ class RawPreviewCoordinator(application: Application) : AutoCloseable {
     fun setAutoMinFps(fps: Int) = postNative { native.setAutoMinFps(nativeHandle, fps) }
     /** X14U: applies to captures from the next shutter press (process-wide, no session needed). */
     fun setOutputAspect(aspect: Float) = native.setOutputAspect(aspect)
+    fun setDigitalZoom(crop: Float, upscale: Boolean) = postNative { native.setDigitalZoom(nativeHandle, crop, upscale) }
     fun setAePriorityDisabled(disabled: Boolean) = postNative { native.setAePriorityDisabled(nativeHandle, disabled) }
     fun setRawrAutoExposure(s: com.rawr.camera.settings.model.RawrAeSettings) = postNative {
         native.setRawrAutoExposure(

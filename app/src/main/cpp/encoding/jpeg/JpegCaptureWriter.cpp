@@ -1,4 +1,5 @@
 #include "encoding/OutputAspect.h"
+#include "encoding/jpeg/ImageResample.h"
 #include "encoding/jpeg/JpegCaptureWriter.h"
 #include "encoding/jpeg/JpegExif.h"
 
@@ -162,6 +163,18 @@ bool writeUltraHdrFallback(int fd, const unsigned char* baseJpeg, std::size_t ba
                         (unsigned long long)requestId, originalError.c_str());
     return true;
 }
+// X14U digital zoom: EXIF DigitalZoomRatio grows by the crop factor.
+void noteDigitalZoom(JpegCaptureContext& context) {
+    if (!(context.cropZoom > 1.001f)) return;
+    if (context.digitalZoomRatio && (*context.digitalZoomRatio)[1] != 0) {
+        auto& r = *context.digitalZoomRatio;
+        r[0] = static_cast<std::uint32_t>(std::lround(double(r[0]) * context.cropZoom));
+    } else {
+        context.digitalZoomRatio = std::array<std::uint32_t, 2>{
+            static_cast<std::uint32_t>(std::lround(context.cropZoom * 100.0f)), 100u};
+    }
+}
+
 // The strip-parallel encoder (pixels identical to one tj3Compress8 with these settings); false = encode on one
 // thread as before. The output, like tj3Compress8's, is released with tj3Free.
 bool encodeParallel(const unsigned char* pixels, std::uint32_t width, std::uint32_t height, int quality, int subsamp,
@@ -225,15 +238,21 @@ bool JpegCaptureWriter::start(std::uint64_t requestId, const void* rgba8, std::s
         busy_ = true;
     }
     joinWorker();
-    // X14U aspect ratio: encode the centred crop in place (row pitch stays the full width).
-    const int pitch = static_cast<int>(width * 4u);
-    const auto crop = aspectCrop(width, height, context.cropAspect);
+    // X14U framing: the digital-zoom window then the aspect ratio, encoded in place (row pitch stays the full
+    // width). A zoomed crop may be upscaled back to the unzoomed size on the worker (see below).
+    int pitch = static_cast<int>(width * 4u);
+    const auto crop = stillCrop(width, height, context.cropZoom, context.cropAspect);
+    const auto unzoomed = aspectCrop(width, height, context.cropAspect);
+    const bool upscale = context.upscaleZoom && context.cropZoom > 1.001f && unzoomed.width > crop.width;
+    noteDigitalZoom(context);
     const auto* pixels = static_cast<const unsigned char*>(rgba8) +
                          (static_cast<std::size_t>(crop.y) * width + crop.x) * 4u;
     width = crop.width;
     height = crop.height;
+    const std::uint32_t outW = upscale ? unzoomed.width : width, outH = upscale ? unzoomed.height : height;
     try {
-        worker_ = std::thread([this, requestId, pixels, width, height, pitch, context = std::move(context)]() mutable {
+        worker_ = std::thread([this, requestId, pixels, width, height, pitch, upscale, outW, outH,
+                               context = std::move(context)]() mutable {
             // Background priority: file encoding must never preempt camera or
             // preview threads, especially on throttled silicon.
             ::setpriority(PRIO_PROCESS, 0, 10);
@@ -245,6 +264,17 @@ bool JpegCaptureWriter::start(std::uint64_t requestId, const void* rgba8, std::s
             diagnostics::RuntimeTraceRecorder::instance().record(diagnostics::RuntimeTraceStage::JpegEncodeBegin, 0,
                                                                  requestId);
             const auto t0 = std::chrono::steady_clock::now();
+            // Digital zoom upscale: Lanczos-3 in linear light back to the unzoomed size.
+            std::vector<unsigned char> upscaled;
+            if (upscale) {
+                upscaled = resizeRgba8Lanczos3(pixels, width, height, static_cast<std::size_t>(pitch), outW, outH, true);
+                if (upscaled.size() == static_cast<std::size_t>(outW) * outH * 4u) {
+                    pixels = upscaled.data();
+                    width = outW;
+                    height = outH;
+                    pitch = static_cast<int>(outW * 4u);
+                }
+            }
             tjhandle handle = tj3Init(TJINIT_COMPRESS);
             unsigned char* jpegBuf = nullptr;
             std::size_t jpegSize = 0;
@@ -412,7 +442,9 @@ bool JpegCaptureWriter::startUltraHdr(std::uint64_t requestId, const void* rgba8
             // contiguous copies (the map at its own scale, both planes when it carries capture colour).
             std::vector<unsigned char> croppedBase;
             std::vector<unsigned char> croppedMap;
-            if (const auto crop = aspectCrop(width, height, context.cropAspect); !crop.full(width, height)) {
+            const auto unzoomed = aspectCrop(width, height, context.cropAspect);
+            noteDigitalZoom(context);
+            if (const auto crop = stillCrop(width, height, context.cropZoom, context.cropAspect); !crop.full(width, height)) {
                 const auto copyRect = [](const unsigned char* src, std::uint32_t srcW, std::uint32_t x, std::uint32_t y,
                                          std::uint32_t w, std::uint32_t h, unsigned char* dst) {
                     for (std::uint32_t row = 0; row < h; ++row)
@@ -439,6 +471,31 @@ bool JpegCaptureWriter::startUltraHdr(std::uint64_t requestId, const void* rgba8
                 mapPixels = croppedMap.data();
                 mapWidth = mw;
                 mapHeight = mh;
+                // Digital zoom: back to the unzoomed size (base in linear light; the map in its own values).
+                if (context.upscaleZoom && context.cropZoom > 1.001f && unzoomed.width > width) {
+                    const double s = double(unzoomed.width) / double(width);
+                    const auto tw = std::max<std::uint32_t>(1u, std::uint32_t(std::lround(mapWidth * s)));
+                    const auto th = std::max<std::uint32_t>(1u, std::uint32_t(std::lround(mapHeight * s)));
+                    auto base = resizeRgba8Lanczos3(pixels, width, height, std::size_t(width) * 4u, unzoomed.width,
+                                                    unzoomed.height, true);
+                    std::vector<unsigned char> map = resizeRgba8Lanczos3(mapPixels, mapWidth, mapHeight,
+                                                                         std::size_t(mapWidth) * 4u, tw, th, false);
+                    if (hasCaptureColor) {
+                        auto colour = resizeRgba8Lanczos3(mapPixels + std::size_t(mapWidth) * mapHeight * 4u, mapWidth,
+                                                          mapHeight, std::size_t(mapWidth) * 4u, tw, th, false);
+                        map.insert(map.end(), colour.begin(), colour.end());
+                    }
+                    if (!base.empty() && !map.empty()) {
+                        croppedBase = std::move(base);
+                        croppedMap = std::move(map);
+                        pixels = croppedBase.data();
+                        width = unzoomed.width;
+                        height = unzoomed.height;
+                        mapPixels = croppedMap.data();
+                        mapWidth = tw;
+                        mapHeight = th;
+                    }
+                }
             }
             tjhandle baseHandle = tj3Init(TJINIT_COMPRESS);
             tjhandle mapHandle = tj3Init(TJINIT_COMPRESS);

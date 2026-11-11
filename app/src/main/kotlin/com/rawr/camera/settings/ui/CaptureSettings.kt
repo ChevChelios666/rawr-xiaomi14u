@@ -250,6 +250,14 @@ internal fun JpegSettings(state: SettingsUiState, dispatch: SettingsDispatch) {
                 checked = state.values.ultraHdrEnabled,
                 onCheckedChange = { dispatch.invoke(SetUltraHdrEnabled(it)) }
             )
+            SettingDivider()
+            SettingsSwitchRow(
+                title = "Upscale digital zoom",
+                checked = state.values.zoomUpscale,
+                supportingText = if (state.values.zoomUpscale) "Zoomed JPEGs are resized back to full size (Lanczos, linear light). Adds no detail."
+                else "Zoomed JPEGs keep the crop's own pixels (smaller files)",
+                onCheckedChange = { dispatch.invoke(SetZoomUpscale(it)) }
+            )
         }
     }
 }

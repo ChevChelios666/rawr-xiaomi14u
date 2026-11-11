@@ -246,6 +246,36 @@ internal fun X14uCaptureLayout(
     var showNumbers by remember { mutableStateOf(false) }
     // WB editor: Kelvin ruler, or tint after TINT.
     var wbTint by remember { mutableStateOf(false) }
+    // Digital zoom (Photo / Photo+, rear lenses): a total zoom across the lens chain; the longest lens not above it
+    // runs and the rest is a centred crop (viewfinder, metering, JPEG, DNG default crop).
+    val zoomChain = LocalCaptureExtras.current.tools.zoomChain
+    val chainLens = zoomChain.firstOrNull { it.first == state.selectedLensId }
+    val zoomOn = !isVideo && chainLens != null
+    var zoom by remember { mutableStateOf(1f) }
+    // A lens chosen some other way (mode, front/back, settings) starts at its own zoom.
+    LaunchedEffect(state.selectedLensId, zoomChain) {
+        val f = chainLens?.second ?: return@LaunchedEffect
+        val next = zoomChain.firstOrNull { it.second > f + 1e-3f }?.second ?: Float.MAX_VALUE
+        if (zoom < f * .97f || zoom >= next) zoom = f
+    }
+    val zoomCrop = if (zoomOn) (zoom / chainLens!!.second).coerceIn(1f, 8f) else 1f
+    val extrasForZoom = LocalCaptureExtras.current
+    LaunchedEffect(zoomCrop) { extrasForZoom.onDigitalZoom(zoomCrop) }
+    val zoomLabel = if (zoomOn && zoomCrop > 1.005f) zoomText(zoom) else null
+    // Pinch / ruler: switches up a lens at its zoom, back down a little below it (no flicker at the boundary).
+    val setZoom: (Float) -> Unit = setZoom@{ target ->
+        if (zoomChain.isEmpty()) return@setZoom
+        val z = target.coerceIn(zoomChain.first().second, com.rawr.camera.settings.model.ZoomChain.MAX_ZOOM)
+        val current = chainLens
+        val lens = when {
+            current != null && z >= current.second * .97f &&
+                zoomChain.none { it.second > current.second + 1e-3f && it.second <= z + 1e-3f } -> current.first
+            else -> com.rawr.camera.settings.model.ZoomChain.resolve(zoomChain, z)?.first
+        }
+        zoom = maxOf(z, zoomChain.firstOrNull { it.first == lens }?.second ?: z)
+        if (lens != null && lens != state.selectedLensId && !recordingLock) dispatch(SelectLens(lens))
+    }
+
     // Focus loupe: opened by MF ruler use (closes ~1 s after) or a double-tap (stays; at that point).
     val loupeSettings = LocalCaptureExtras.current.tools.focusLoupe
     var loupeOpen by remember { mutableStateOf(false) }
@@ -408,7 +438,8 @@ internal fun X14uCaptureLayout(
                 owners.mapNotNull { k -> all.firstOrNull { it.key == k } } + all.filter { it.key == "f" }
             } else all
             editorFor = { key ->
-                if (key == PHOTO_FOCUS_KEY) photoFocusEditor(state, dispatch, onMfTouch)
+                if (key == ZOOM_KEY) zoomRuler(zoom, zoomChain, setZoom)
+                else if (key == PHOTO_FOCUS_KEY) photoFocusEditor(state, dispatch, onMfTouch)
                 else exposureEditor(key, state, dispatch, lensOptions, recordingLock, onQuickEvent, wbTint, { wbTint = !wbTint }, onMfTouch)
             }
         }
@@ -469,7 +500,7 @@ internal fun X14uCaptureLayout(
             }
         }
     }
-    val currentKey = if (panel == null) selected?.takeIf { k -> (k == PHOTO_FOCUS_KEY && simplePhoto) || cells.any { it.key == k } } else (panelKey?.takeIf { k -> cells.any { it.key == k } } ?: cells.firstOrNull()?.key)
+    val currentKey = if (panel == null) selected?.takeIf { k -> (k == PHOTO_FOCUS_KEY && simplePhoto) || (k == ZOOM_KEY && zoomOn) || cells.any { it.key == k } } else (panelKey?.takeIf { k -> cells.any { it.key == k } } ?: cells.firstOrNull()?.key)
 
     BoxWithConstraints(modifier) {
         val s = (maxHeight / X14uGeometry.reference).coerceIn(.8f, 1.25f)
@@ -499,6 +530,7 @@ internal fun X14uCaptureLayout(
                 onQuickEvent = onQuickEvent,
                 x14uClean = true,
                 onViewfinderTap = closeAll,
+                onViewfinderPinch = if (!zoomOn) null else { factor -> setZoom(zoom * factor) },
                 onViewfinderDoubleTap = if (!loupeSettings.doubleTap) null else { fx, fy ->
                     if (loupeOpen) {
                         loupeOpen = false
@@ -612,6 +644,9 @@ internal fun X14uCaptureLayout(
                         panel = if (panel == target) null else target
                     },
                     onOpenLensSettings = onOpenLensSettings,
+                    zoomLabel = zoomLabel,
+                    onZoomRuler = if (zoomOn) ({ panel = null; selected = ZOOM_KEY }) else null,
+                    onLensTap = { id -> zoomChain.firstOrNull { it.first == id }?.let { zoom = it.second } },
                     modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                         .padding(bottom = (31.dp * s - 18.dp).coerceAtLeast(4.dp), start = 7.dp, end = 7.dp)
                 )
@@ -853,7 +888,13 @@ private fun X14uLensRow(
     enabled: Boolean,
     onTogglePanel: (X14uPanel) -> Unit,
     onOpenLensSettings: (String) -> Unit,
-    modifier: Modifier
+    modifier: Modifier,
+    /** Digital zoom: the live value shown on the lens in use (e.g. "2.6x"); null = its own name. */
+    zoomLabel: String? = null,
+    /** Long-press on the lens in use: the zoom ruler. */
+    onZoomRuler: (() -> Unit)? = null,
+    /** Tap on a lens: its own zoom (crop 1). */
+    onLensTap: (String) -> Unit = {}
 ) {
     val haptics = LocalCaptureHaptics.current
     val extras = LocalCaptureExtras.current
@@ -905,13 +946,15 @@ private fun X14uLensRow(
                             .captureCombinedClickable(
                                 shape = CircleShape,
                                 enabled = enabled,
-                                onLongClickLabel = "${lens.displayName} lens settings",
+                                onLongClickLabel = if (isSelected && onZoomRuler != null) "Zoom" else "${lens.displayName} lens settings",
                                 onLongClick = {
                                     haptics.selection()
-                                    onOpenLensSettings(lens.id)
+                                    // The lens in use opens the zoom ruler; another lens its settings.
+                                    if (isSelected && onZoomRuler != null) onZoomRuler() else onOpenLensSettings(lens.id)
                                 }
                             ) {
                                 haptics.selection()
+                                onLensTap(lens.id)
                                 if (!isSelected) dispatch(SelectLens(lens.id))
                             }
                             .semantics {
@@ -923,7 +966,7 @@ private fun X14uLensRow(
                     ) {
                         if (isSelected) Box(Modifier.size(32.dp).background(Color.Black.copy(alpha = .55f), CircleShape))
                         Text(
-                            lens.displayName,
+                            if (isSelected && zoomLabel != null) zoomLabel else lens.displayName,
                             fontFamily = X14uFont,
                             fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
                             fontSize = dpText(if (isSelected) 13f else 14f),
@@ -1434,6 +1477,36 @@ private fun focusLabel(diopters: Float): String {
 }
 
 private const val PHOTO_FOCUS_KEY = "photo.focus"
+private const val ZOOM_KEY = "zoom"
+
+/** "2.6x", "10x". */
+private fun zoomText(z: Float): String =
+    if (z >= 9.95f) "${z.roundToInt()}x" else "%.1f".format(z).removeSuffix(".0").let { "${it}x" }
+
+/** Zoom ruler: log scale from the widest lens to 10x, marks at each lens and 2x / 10x, 35 mm equivalent. */
+private fun zoomRuler(zoom: Float, chain: List<Pair<String, Float>>, onZoom: (Float) -> Unit): X14uEditor {
+    val lo = chain.firstOrNull()?.second ?: .5f
+    val hi = com.rawr.camera.settings.model.ZoomChain.MAX_ZOOM
+    val steps = 120
+    val zAt: (Int) -> Float = { i -> lo * Math.pow((hi / lo).toDouble(), i / (steps - 1.0)).toFloat() }
+    val indexOf: (Float) -> Int = { z ->
+        (kotlin.math.ln(z / lo) / kotlin.math.ln(hi / lo) * (steps - 1)).roundToInt().coerceIn(0, steps - 1)
+    }
+    val marks = (chain.map { it.second } + listOf(2f, hi)).distinct()
+    val markIndex = marks.associateBy { indexOf(it) }
+    val lens = chain.lastOrNull { it.second <= zoom + 1e-3f }?.second ?: lo
+    return X14uEditor.Ruler(
+        count = steps,
+        index = indexOf(zoom),
+        // 35 mm equivalent: the main camera (1x) is 23 mm.
+        valueText = "${zoomText(zoom)} · ${(23f * zoom).roundToInt()} mm",
+        label = { i -> markIndex[i]?.let { zoomText(it) } },
+        major = { i -> i in markIndex },
+        spacing = 6.dp,
+        onReset = { onZoom(lens) },
+        onIndex = { new, _ -> onZoom(zAt(new)) }
+    )
+}
 
 /** Photo: AF · AF-L · MF, with the focus ruler under them in MF. */
 private fun photoFocusEditor(state: CaptureUiState, dispatch: CaptureDispatch, onMfTouch: () -> Unit = {}): X14uEditor {

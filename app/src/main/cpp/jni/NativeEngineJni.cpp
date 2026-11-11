@@ -124,6 +124,7 @@ rawrcam::encoding::dng::DngCaptureContext makeDngContext(jint fd, jint rotation,
     out.outputFd = rawrcam::encoding::OutputFd(fd);
     out.deviceRotationDegrees = rotation;
     out.cropAspect = rawrcam::encoding::outputAspect().load(std::memory_order_relaxed);
+    out.cropZoom = rawrcam::encoding::outputZoom().load(std::memory_order_relaxed);
     out.wallClockUnixMillis = wallClockMillis;
     out.utcOffsetMinutes = utcOffsetMinutes;
     out.deviceMake = std::move(make);
@@ -161,6 +162,8 @@ void fillJpegContext(JNIEnv* env, rawrcam::capture::JpegCaptureRequest& jpeg, ji
     jpeg.output.displayName = jString(env, displayName);
     jpeg.output.quality = quality;
     jpeg.output.cropAspect = rawrcam::encoding::outputAspect().load(std::memory_order_relaxed);
+    jpeg.output.cropZoom = rawrcam::encoding::outputZoom().load(std::memory_order_relaxed);
+    jpeg.output.upscaleZoom = rawrcam::encoding::outputUpscale().load(std::memory_order_relaxed);
     jpeg.develop = rawrcam::jni::readCaptureDevelopSettings(
         {pipelineDiagnosticsEnabled, colorRenderProfile, jString(env, importedLutProfileId), dualAutoContrast,
          dualContrastPercent, fccSteps, defringeEnabled, defringeStrength, defringeEdgeThreshold, defringeLumaFloor,
@@ -175,6 +178,15 @@ void fillJpegContext(JNIEnv* env, rawrcam::capture::JpegCaptureRequest& jpeg, ji
     jpeg.output.ultraHdr.gainmapQuality = std::clamp(static_cast<int>(ultraHdrGainmapQuality), 1, 100);
 }
 }  // namespace
+
+// X14U digital zoom: crop factor (1 = none) for the viewfinder, metering and the next captures; upscale JPEGs.
+extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setDigitalZoom(
+    JNIEnv*, jobject, jlong h, jfloat crop, jboolean upscale) {
+    const float c = std::isfinite(crop) ? std::clamp(float(crop), 1.0f, 8.0f) : 1.0f;
+    rawrcam::encoding::outputZoom().store(c, std::memory_order_relaxed);
+    rawrcam::encoding::outputUpscale().store(upscale == JNI_TRUE, std::memory_order_relaxed);
+    rawrcam::session::setViewfinderZoom(handle(h), c);
+}
 
 // X14U: photo aspect ratio (long:short; 0 = native) for the next captures.
 extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setOutputAspect(JNIEnv*, jobject,

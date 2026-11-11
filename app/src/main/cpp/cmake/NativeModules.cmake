@@ -117,6 +117,7 @@ rawrcam_module(encoding
     encoding/jpeg/JpegCaptureWriter.cpp
     encoding/jpeg/JpegExif.cpp
     encoding/jpeg/StripJpegEncoder.cpp
+    encoding/jpeg/ImageResample.cpp
     encoding/rzsl/RzslBundleSink.cpp
 )
 

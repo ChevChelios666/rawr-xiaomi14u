@@ -98,6 +98,8 @@ struct RawDevelopRecordInput {
     // idle preview frames what the recorder will write.
     uint32_t videoCropOutWidth = 0;
     uint32_t videoCropOutHeight = 0;
+    // X14U digital zoom on the photo viewfinder: centred crop factor (1 = none) when no video crop applies.
+    float viewfinderZoom = 1.0f;
     // Auto key exposure: meter the scene-linear preview before render gain.
     bool sceneExposureEnabled = false;
     // Spot meter rectangle on the preview (normalized x0,y0,x1,y1; empty = none).

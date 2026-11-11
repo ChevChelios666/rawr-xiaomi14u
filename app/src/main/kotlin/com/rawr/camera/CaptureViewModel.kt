@@ -53,6 +53,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -111,7 +112,9 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         val level: Boolean = false,
         val location: Boolean = false,
         val mirroredLenses: Set<String> = emptySet(),
-        val focusLoupe: com.rawr.camera.settings.model.FocusLoupeSettings = com.rawr.camera.settings.model.FocusLoupeSettings()
+        val focusLoupe: com.rawr.camera.settings.model.FocusLoupeSettings = com.rawr.camera.settings.model.FocusLoupeSettings(),
+        /** Digital zoom chain: lens name to its zoom factor, widest first. */
+        val zoomChain: List<Pair<String, Float>> = emptyList()
     )
     val tools: StateFlow<ToolsState> = settingsEditor.state
         .map { v ->
@@ -119,11 +122,21 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 v.photoAspect, v.viewfinderLevel, v.locationTagging,
                 v.effectiveLensProfiles(DeviceLensDefaults.lenses)
                     .filter { it.image.mirror != com.rawr.camera.settings.model.LensMirror.None }.map { it.name }.toSet(),
-                v.focusLoupe
+                v.focusLoupe,
+                com.rawr.camera.settings.model.ZoomChain.of(v.effectiveLensProfiles(DeviceLensDefaults.lenses))
             )
         }
         .distinctUntilChanged()
         .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, ToolsState())
+
+    /** X14U digital zoom: crop on top of the current lens (1 = none); photos only. */
+    @Volatile private var digitalZoomCrop = 1f
+    fun setDigitalZoom(crop: Float) {
+        val c = crop.coerceIn(1f, 8f)
+        if (c == digitalZoomCrop) return
+        digitalZoomCrop = c
+        previewCoordinator.setDigitalZoom(c, latestSettings.zoomUpscale)
+    }
 
     fun setPhotoAspect(aspect: com.rawr.camera.settings.model.PhotoAspect) {
         settingsEditor.update { it.copy(photoAspect = aspect) }
@@ -216,7 +229,16 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         StillCaptureCoordinator(
             application = application,
             preview = previewCoordinator,
-            settings = { latestSettings },
+            // Zoomed past a lens with multiframe on: Super-resolution recovers real detail for the crop.
+            settings = {
+                latestSettings.let { s ->
+                    if (digitalZoomCrop > 1.01f && s.experimentalMultiframeEnabled) s.copy(
+                        multiframeTuning = s.multiframeTuning.copy(
+                            mergeAlgorithm = com.rawr.camera.settings.model.MultiframeMergeAlgorithm.Wronski
+                        )
+                    ) else s
+                }
+            },
             onJpegPublished = ::onJpegPublished,
             onDngPublished = ::refreshLatestGalleryImage,
             gpsSnapshot = cameraLocation::snapshot
@@ -326,6 +348,28 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 before.selectedFilmPresetId == after.selectedFilmPresetId &&
                     before.filmSimLook == after.filmSimLook && before.filmPresets == after.filmPresets
             }.collect { mutableFilmSimQuick.value = it.toFilmSimQuickState() }
+        }
+        viewModelScope.launch {
+            settingsEditor.values.map { it.zoomUpscale }.distinctUntilChanged().collect {
+                previewCoordinator.setDigitalZoom(digitalZoomCrop, it)
+            }
+        }
+        // Option A, once: in-sensor-zoom lenses (the 2x) go off so zooming crops the main camera without a switch.
+        // They can be turned back on in Settings → Lenses and then show as their own button again.
+        viewModelScope.launch {
+            settingsEditor.values.first().let { v ->
+                if (!v.inSensorZoomLensesOffOnce) {
+                    settingsEditor.update { s ->
+                        val lenses = s.effectiveLensProfiles(DeviceLensDefaults.lenses)
+                        val crops = com.rawr.camera.settings.model.ZoomChain.inSensorCrops(lenses)
+                        s.copy(
+                            lensProfiles = if (crops.isEmpty()) s.lensProfiles
+                            else lenses.map { if (it.name in crops) it.copy(enabled = false) else it },
+                            inSensorZoomLensesOffOnce = true
+                        )
+                    }
+                }
+            }
         }
         viewModelScope.launch {
             settingsEditor.values.map { it.photoAspect }.distinctUntilChanged().collect {

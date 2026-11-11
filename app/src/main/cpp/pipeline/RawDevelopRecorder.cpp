@@ -637,6 +637,16 @@ RawDevelopRecordResult RawDevelopRecorder::record(const RawDevelopRecordInput& i
             previewCrop = rawrcam::video::scaleVideoSourceRect(full, in.rawWidth, in.rawHeight, in.previewWidth,
                                                                in.previewHeight);
         }
+    } else if (in.diagnosticMode == 0u && in.viewfinderZoom > 1.001f && in.previewWidth >= 4 && in.previewHeight >= 4) {
+        // Digital zoom: the same centred window SessionEngine maps taps through.
+        const auto w = static_cast<uint32_t>(in.previewWidth / in.viewfinderZoom) & ~1u;
+        const auto h = static_cast<uint32_t>(in.previewHeight / in.viewfinderZoom) & ~1u;
+        if (w >= 2 && h >= 2) {
+            previewCrop.x = ((in.previewWidth - w) / 2u) & ~1u;
+            previewCrop.y = ((in.previewHeight - h) / 2u) & ~1u;
+            previewCrop.width = w;
+            previewCrop.height = h;
+        }
     }
     // Framing matches the undistorted photo or recording (Kotlin sends the
     // current mode's setting); diagnostics show the sensor image as is. The

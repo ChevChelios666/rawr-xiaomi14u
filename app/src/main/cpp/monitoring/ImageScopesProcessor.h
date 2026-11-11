@@ -65,6 +65,8 @@ class ImageScopesProcessor final {
     void recordFocus(VkCommandBuffer command, uint32_t frameSlot, VkImageView displayView, VkImage displayImage,
                      uint32_t presentationQuarterTurns, uint32_t lensMirror);
     [[nodiscard]] float focusValue() const noexcept { return focusValue_.load(std::memory_order_relaxed); }
+    // Digital zoom: the viewfinder shows the centred 1 / crop of the image, so the window is scaled into it.
+    void setFocusZoom(float crop) noexcept { focusZoom_.store(crop >= 1.0f ? crop : 1.0f); }
     [[nodiscard]] std::optional<RenderedExposureFeedback> consumeExposureFeedback(uint32_t frameSlot);
     void discardFrameSlot(uint32_t frameSlot) noexcept;
 
@@ -110,6 +112,7 @@ class ImageScopesProcessor final {
     std::atomic<bool> focusEnabled_{false};
     std::array<std::atomic<float>, 4> focusWindow_{};
     std::atomic<float> focusValue_{-1.0f};
+    std::atomic<float> focusZoom_{1.0f};
     void createReadback(ExposureStatsReadback& rb, VkDeviceSize bytes);
     void destroyReadback(ExposureStatsReadback& rb) noexcept;
     bool readReadback(ExposureStatsReadback& rb, void* out, size_t bytes);

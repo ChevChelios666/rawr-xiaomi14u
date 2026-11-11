@@ -3,6 +3,9 @@ package com.rawr.camera.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -59,12 +62,15 @@ internal fun CaptureViewfinder(
     /** X14U: a vertical swipe on the viewfinder (+1 down, -1 up). */
     onViewfinderSwipe: ((Int) -> Unit)? = null,
     /** X14U: double-tap at a viewfinder point (fractions); null = no double-tap (single taps act at once). */
-    onViewfinderDoubleTap: ((Float, Float) -> Unit)? = null
+    onViewfinderDoubleTap: ((Float, Float) -> Unit)? = null,
+    /** X14U digital zoom: two-finger pinch, as a scale factor per move; null = no pinch. */
+    onViewfinderPinch: ((Float) -> Unit)? = null
 ) {
     val haptics = LocalCaptureHaptics.current
     val latestViewfinderTap by rememberUpdatedState(onViewfinderTap)
     val latestSwipe by rememberUpdatedState(onViewfinderSwipe)
     val latestDoubleTap by rememberUpdatedState(onViewfinderDoubleTap)
+    val latestPinch by rememberUpdatedState(onViewfinderPinch)
     val doubleTapOn = onViewfinderDoubleTap != null
     Box(
         modifier
@@ -129,6 +135,23 @@ internal fun CaptureViewfinder(
                                 }
                             )
                         }.then(
+                            // Pinch: only while two fingers are down, so one-finger taps and swipes are untouched.
+                            if (onViewfinderPinch == null) Modifier else Modifier.pointerInput(Unit) {
+                                awaitEachGesture {
+                                    awaitFirstDown(requireUnconsumed = false)
+                                    do {
+                                        val event = awaitPointerEvent()
+                                        if (event.changes.count { it.pressed } >= 2) {
+                                            val factor = event.calculateZoom()
+                                            if (factor != 1f && factor.isFinite()) {
+                                                latestPinch?.invoke(factor)
+                                                event.changes.forEach { it.consume() }
+                                            }
+                                        }
+                                    } while (event.changes.any { it.pressed })
+                                }
+                            }
+                        ).then(
                             if (onViewfinderSwipe == null) Modifier else Modifier.pointerInput(Unit) {
                                 var travel = 0f
                                 detectVerticalDragGestures(

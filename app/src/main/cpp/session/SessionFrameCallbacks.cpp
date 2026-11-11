@@ -219,7 +219,14 @@ std::array<float, 4> SessionFrameCallbacks::sceneMeteringSpot() {
     const auto* controller = engine_->cameraControls_.controller();
     if (!controller) return {};
     const auto context = controller->rawrAeContext();
-    if (!context.engaged || !context.spotActive) return {};
+    if (!context.engaged) return {};
+    if (!context.spotActive) {
+        // Digital zoom: meter only what the photo will hold (the centred window).
+        const float zoom = engine_->viewfinderZoom();
+        if (zoom <= 1.001f) return {};
+        const float half = 0.5f / zoom;
+        return {0.5f - half, 0.5f - half, 0.5f + half, 0.5f + half};
+    }
     // The Camera2 spot region's footprint: 1/8 of each dimension.
     constexpr float kHalf = 1.0f / 16.0f;
     const float cx = std::clamp(context.spotX, kHalf, 1.0f - kHalf);

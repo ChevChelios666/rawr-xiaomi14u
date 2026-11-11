@@ -71,6 +71,10 @@ internal fun reduceCaptureSettings(
         state.withValues(state.values.copy(gridMode = action.value))
     }
 
+    is SetZoomUpscale -> {
+        state.withValues(state.values.copy(zoomUpscale = action.value))
+    }
+
     is SetFocusLoupe -> {
         state.withValues(state.values.copy(focusLoupe = action.value))
     }
