@@ -1195,6 +1195,8 @@ data class SettingsValues(
     val focusLoupe: FocusLoupeSettings = FocusLoupeSettings(),
     /** X14U digital zoom: upscale zoomed JPEGs back to full size (false: keep the crop's own pixels). */
     val zoomUpscale: Boolean = true,
+    /** X14U digital zoom: the multiframe merge for zoomed shots; null = the usual merge. */
+    val zoomMergeAlgorithm: MultiframeMergeAlgorithm? = MultiframeMergeAlgorithm.Wronski,
     /** X14U: the in-sensor-zoom lenses (2x) were turned off once, so zoom crops the main camera; they can be re-enabled. */
     val inSensorZoomLensesOffOnce: Boolean = false
 ) {

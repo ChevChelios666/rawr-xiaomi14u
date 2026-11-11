@@ -4,6 +4,8 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,25 +25,23 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.rawr.camera.architecture.CaptureDispatch
 import com.rawr.camera.architecture.LockWhiteBalance
@@ -55,45 +56,72 @@ import com.rawr.camera.model.Orientation
 import com.rawr.camera.model.WhiteBalanceMode
 import com.rawr.camera.storage.CaptureFileNames
 import kotlin.math.abs
+import kotlin.math.asin
 import kotlin.math.atan
 import kotlin.math.atan2
+import kotlin.math.ceil
+import kotlin.math.hypot
 
 /** Pano sweep direction, as seen on the viewfinder. */
 internal enum class PanoDirection(val arrow: String) { Right("→"), Left("←"), Up("↑"), Down("↓") }
 
+/** What the set covers: one row (or column), or a 3 × 3 grid around the first frame. */
+internal enum class PanoShape(val label: String) { Wide("Wide"), Grid("3×3") }
+
 /**
- * X14U Pano: a set of frames for a panorama merge elsewhere (Lightroom Photo Merge). The first frame locks exposure,
- * focus and white balance (and the UI locks lens, f-stop, format and multiframe) so every frame matches; a faded strip
- * of the last frame guides the overlap, and the motion sensor says when the phone has turned far enough.
+ * X14U Pano, automatic: the shutter starts a set (frame 1, which locks exposure, focus and white balance) and stops
+ * it. In between every frame takes itself: a dot shows where the next frame is, and when it sits in the centre ring
+ * and the phone holds still for a moment the frame fires. Frames are for a panorama merge elsewhere (Lightroom Photo
+ * Merge), numbered per set. The phone must be still when a frame fires: exposure is locked (no faster shutter for
+ * motion) and a multiframe merge uses frames from just before the shutter.
  */
 @Stable
 internal class PanoSet {
     var direction by mutableStateOf(PanoDirection.Right)
     var overlap by mutableIntStateOf(30)
-    var auto by mutableStateOf(false)
+    var shape by mutableStateOf(PanoShape.Wide)
+    /** Wide only: stop by itself after this many degrees (0 = until the stop button). */
+    var stopAt by mutableIntStateOf(0)
     var frames by mutableIntStateOf(0)
         private set
-    /** Set name part, from its start time ("2231"). */
-    private var tag = ""
-    private val ghosts = mutableStateListOf<ImageBitmap?>()
-    private val refs = ArrayList<FloatArray?>()
-    val ghost: ImageBitmap? get() = ghosts.lastOrNull()
-    val reference: FloatArray? get() = refs.lastOrNull()
+    var arming by mutableStateOf(false)
     var lastShotAt = 0L
         private set
-    var arming by mutableStateOf(false)
+
+    /** Set name part, from its start time ("2231"). */
+    private var tag = ""
+    /** Phone orientation at frame 1; every target is an angle from it. */
+    var reference: FloatArray? = null
+        private set
+    /** Field of view across the viewfinder's width and height (degrees), for the set's lens. */
+    var fovX = 60f
+        private set
+    var fovY = 75f
+        private set
+    /** Frame places, (along, across) degrees from frame 1 in the set's axes; frame 1 is the first. */
+    var targets: List<Pair<Float, Float>> = emptyList()
+        private set
+    /** The targets end the set (3 × 3, or a Wide stop angle). */
+    var finite = false
+        private set
 
     private data class Saved(val exposure: ExposureMode, val focus: FocusMode, val wb: WhiteBalanceMode)
     private var saved: Saved? = null
 
     val inSet: Boolean get() = frames > 0 || arming
+    /** Up / down sweeps measure the turn as pitch; the rest as yaw. */
+    val vertical: Boolean get() = shape == PanoShape.Wide && (direction == PanoDirection.Up || direction == PanoDirection.Down)
 
     fun frameTag(n: Int = frames) = "_PANO${tag}_%02d".format(n)
 
-    /** Locks for frame 1, from what the camera is doing now. */
-    fun lock(state: CaptureUiState, dispatch: CaptureDispatch) {
+    /** Locks for frame 1 from what the camera is doing now, and lays out the frame places for [lensFactor]. */
+    fun start(state: CaptureUiState, dispatch: CaptureDispatch, lensFactor: Float) {
         saved = Saved(state.exposureControl.mode, state.focus.mode, state.whiteBalanceMode)
         tag = java.text.SimpleDateFormat("HHmm", java.util.Locale.US).format(java.util.Date())
+        fovX = fov(lensFactor, alongWidth = true)
+        fovY = fov(lensFactor, alongWidth = false)
+        layOut()
+        arming = true
         if (state.exposureControl.mode != ExposureMode.Manual &&
             ExposureMode.Manual in state.capabilities.supportedExposureModes) dispatch(SetExposureMode(ExposureMode.Manual))
         if (state.focus.mode == FocusMode.Af) dispatch(SetFocusMode(FocusMode.AfLock))
@@ -102,29 +130,53 @@ internal class PanoSet {
         }
     }
 
-    /** Takes the next frame; returns its number (its ghost arrives later through [setGhost]). */
-    fun shoot(reference: FloatArray?, dispatch: CaptureDispatch): Int {
+    private fun layOut() {
+        val share = 1f - overlap / 100f
+        val stepX = share * fovX
+        val stepY = share * fovY
+        when (shape) {
+            // Centre first, then the ring around it clockwise from the left: every move is to a neighbour.
+            PanoShape.Grid -> {
+                finite = true
+                targets = listOf(
+                    0f to 0f, -stepX to 0f, -stepX to stepY, 0f to stepY, stepX to stepY,
+                    stepX to 0f, stepX to -stepY, 0f to -stepY, -stepX to -stepY
+                )
+            }
+            PanoShape.Wide -> {
+                val step = if (vertical) stepY else stepX
+                val span = if (vertical) fovY else fovX
+                val sign = if (direction == PanoDirection.Right || direction == PanoDirection.Up) 1f else -1f
+                val count = when {
+                    stopAt <= 0 -> 72
+                    stopAt >= 360 -> ceil(360f / step).toInt()
+                    else -> ceil(((stopAt - span).coerceAtLeast(0f)) / step).toInt() + 1
+                }.coerceIn(2, 72)
+                finite = stopAt > 0
+                targets = List(count) { k -> sign * k * step to 0f }
+            }
+        }
+    }
+
+    /** The next frame's place, or null when the set is complete. */
+    val nextTarget: Pair<Float, Float>? get() = targets.getOrNull(frames)
+
+    /** Takes the next frame; frame 1 also fixes the reference orientation. */
+    fun shoot(orientation: FloatArray?, dispatch: CaptureDispatch) {
+        if (frames == 0) reference = orientation
         arming = false
         frames += 1
-        ghosts.add(null)
-        refs.add(reference)
         lastShotAt = System.currentTimeMillis()
         CaptureFileNames.setNextStillSuffix(frameTag())
         dispatch(TriggerCapture)
-        return frames
     }
 
-    fun setGhost(frame: Int, ghost: ImageBitmap?) {
-        if (frame in 1..ghosts.size) ghosts[frame - 1] = ghost
-    }
-
-    /** Drops the last frame; returns its name tag. */
+    /** Drops the last frame (the dot goes back to its place); returns its name tag. */
     fun undo(state: CaptureUiState, dispatch: CaptureDispatch): String? {
         if (frames == 0) return null
         val dropped = frameTag()
         frames -= 1
-        ghosts.removeAt(ghosts.lastIndex)
-        refs.removeAt(refs.lastIndex)
+        lastShotAt = System.currentTimeMillis()
         if (frames == 0) end(state, dispatch)
         return dropped
     }
@@ -141,8 +193,7 @@ internal class PanoSet {
         saved = null
         arming = false
         frames = 0
-        ghosts.clear()
-        refs.clear()
+        reference = null
         CaptureFileNames.setNextStillSuffix("")
     }
 }
@@ -151,7 +202,7 @@ internal class PanoSet {
 @Composable
 internal fun rememberPanoMotion(active: Boolean): () -> FloatArray? {
     val context = LocalContext.current
-    val latest = androidx.compose.runtime.remember { arrayOfNulls<FloatArray>(1) }
+    val latest = remember { arrayOfNulls<FloatArray>(1) }
     DisposableEffect(active) {
         val manager = context.getSystemService(SensorManager::class.java)
         val sensor = manager?.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
@@ -173,16 +224,35 @@ internal fun rememberPanoMotion(active: Boolean): () -> FloatArray? {
     return { latest[0]?.copyOf() }
 }
 
-/** Turn since [ref] in degrees: x toward the screen's right, y toward its top. */
-private fun turnSince(ref: FloatArray, now: FloatArray): Pair<Float, Float> {
-    // The camera looks along device -Z; express today's view direction in the reference's device frame.
+private fun deg(rad: Float) = Math.toDegrees(rad.toDouble()).toFloat()
+
+/**
+ * Where the camera points, in [ref]'s device frame (degrees): yaw toward the screen's right, pitch toward its top,
+ * and the sideways and up/down tilt measured from the other axis (for the cross error).
+ */
+private class Aim(val yaw: Float, val pitch: Float, val up: Float, val side: Float)
+
+private fun aimSince(ref: FloatArray, now: FloatArray): Aim {
+    // The camera looks along device -Z.
     val wx = -now[2]
     val wy = -now[5]
     val wz = -now[8]
     val vx = ref[0] * wx + ref[3] * wy + ref[6] * wz
     val vy = ref[1] * wx + ref[4] * wy + ref[7] * wz
     val vz = ref[2] * wx + ref[5] * wy + ref[8] * wz
-    return Math.toDegrees(atan2(vx, -vz).toDouble()).toFloat() to Math.toDegrees(atan2(vy, -vz).toDouble()).toFloat()
+    return Aim(
+        yaw = deg(atan2(vx, -vz)),
+        pitch = deg(atan2(vy, -vz)),
+        up = deg(asin(vy.coerceIn(-1f, 1f))),
+        side = deg(asin(vx.coerceIn(-1f, 1f)))
+    )
+}
+
+private fun wrap180(a: Float): Float {
+    var v = a % 360f
+    if (v > 180f) v -= 360f
+    if (v <= -180f) v += 360f
+    return v
 }
 
 /** Field of view across the viewfinder (portrait 3:4) for a lens zoom factor (1x = 23 mm equivalent). */
@@ -192,137 +262,221 @@ private fun fov(factor: Float, alongWidth: Boolean): Float {
     return Math.toDegrees(2.0 * atan((half / f).toDouble())).toFloat()
 }
 
-internal data class PanoGuide(val text: String, val aligned: Boolean)
+/** Live aiming state for the overlay. */
+private data class PanoAimState(
+    /** Target dot from the viewfinder centre, in fractions of its width / height (+x right, +y down). */
+    val dot: Offset,
+    val inside: Boolean,
+    val hold: Float,
+    val message: String
+)
 
-/** Where the phone points against the next frame's place. Null before frame 1 or without the sensor. */
-private fun panoGuide(set: PanoSet, factor: Float, now: FloatArray?): PanoGuide? {
-    val ref = set.reference ?: return null
-    now ?: return null
-    val (x, y) = turnSince(ref, now)
-    val horizontal = set.direction == PanoDirection.Right || set.direction == PanoDirection.Left
-    val along = when (set.direction) {
-        PanoDirection.Right -> x
-        PanoDirection.Left -> -x
-        PanoDirection.Up -> y
-        PanoDirection.Down -> -y
-    }
-    val cross = if (horizontal) y else x
-    val span = fov(factor, alongWidth = horizontal)
-    val target = (1f - set.overlap / 100f) * span
-    val remaining = target - along
-    val tolerance = maxOf(1.5f, target * .08f)
-    val crossLimit = maxOf(2f, fov(factor, alongWidth = !horizontal) * .06f)
-    return when {
-        abs(cross) > crossLimit -> PanoGuide(
-            if (horizontal) (if (cross > 0) "tilt down %.0f°" else "tilt up %.0f°").format(abs(cross))
-            else (if (cross > 0) "turn left %.0f°" else "turn right %.0f°").format(abs(cross)), false
-        )
-        abs(remaining) <= tolerance -> PanoGuide("aligned · frame ${set.frames + 1}", true)
-        remaining > 0 -> PanoGuide("${set.direction.arrow} %.0f°".format(remaining), false)
-        else -> PanoGuide("too far · back %.0f°".format(-remaining), false)
-    }
-}
+private const val HOLD_MS = 500L
+private const val SETTLE_MS = 1200L
+/** Still enough to fire: degrees per second. */
+private const val STEADY_DPS = 4f
+/** Too fast to keep overlap and sharpness. */
+private const val FAST_DPS = 35f
 
-/** Ghost strip, arrow, locks and alignment over the viewfinder frame. */
+/**
+ * Aiming aid over the viewfinder frame during a set: the centre ring, the dot at the next frame's place, the hold
+ * ring filling, a progress strip on top, and a flash when a frame is taken. It fires frames ([onFrame]) and ends a
+ * complete set ([onFinish]).
+ */
 @Composable
 internal fun X14uPanoOverlay(
     set: PanoSet,
-    lensFactor: Float,
     motion: () -> FloatArray?,
     orientation: Orientation,
-    onAutoShoot: () -> Unit,
+    onFrame: () -> Unit,
+    onFinish: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var guide by androidx.compose.runtime.remember { mutableStateOf<PanoGuide?>(null) }
-    val shoot by rememberUpdatedState(onAutoShoot)
-    val factor by rememberUpdatedState(lensFactor)
+    val haptics = LocalCaptureHaptics.current
+    var aim by remember { mutableStateOf<PanoAimState?>(null) }
+    val flash = remember { Animatable(0f) }
+    val frame by rememberUpdatedState(onFrame)
+    val finish by rememberUpdatedState(onFinish)
     LaunchedEffect(set) {
-        var alignedSince = 0L
+        var holdStart = 0L
+        var lastA = 0f
+        var lastB = 0f
+        var lastRawA = Float.NaN
+        var accA = 0f
+        var lastAt = 0L
+        var speed = 0f
+        var shotsSeen = set.frames
         while (true) {
-            val g = panoGuide(set, factor, motion())
-            guide = g
-            val now = System.currentTimeMillis()
-            if (g?.aligned == true && set.auto && set.frames > 0) {
-                if (alignedSince == 0L) alignedSince = now
-                // Held steady in place, and the last frame had time to leave the sensor.
-                if (now - alignedSince > 450L && now - set.lastShotAt > 1500L) {
-                    alignedSince = 0L
-                    shoot()
+            kotlinx.coroutines.delay(50L)
+            val ref = set.reference
+            val now = motion()
+            val target = set.nextTarget
+            if (set.frames != shotsSeen) {
+                // A frame was taken (or undone): flash on a new one, start the next hold fresh.
+                if (set.frames > shotsSeen) {
+                    haptics.capture()
+                    flash.snapTo(.55f)
+                    flash.animateTo(0f, tween(260))
                 }
-            } else alignedSince = 0L
-            kotlinx.coroutines.delay(66L)
+                shotsSeen = set.frames
+                holdStart = 0L
+            }
+            if (ref == null || now == null || set.frames == 0) {
+                aim = null
+                lastRawA = Float.NaN
+                accA = 0f
+                continue
+            }
+            if (target == null) {
+                // Every frame is in: the set ends by itself.
+                aim = null
+                if (System.currentTimeMillis() - set.lastShotAt > 700L) finish()
+                continue
+            }
+            val a = aimSince(ref, now)
+            // Along (unwrapped past ±180°) and across, in the sweep's axes.
+            val rawA = if (set.vertical) a.pitch else a.yaw
+            accA = if (lastRawA.isNaN()) rawA else accA + wrap180(rawA - lastRawA)
+            lastRawA = rawA
+            val b = if (set.vertical) a.side else a.up
+            val t = System.currentTimeMillis()
+            if (lastAt > 0L) {
+                val dt = (t - lastAt).coerceAtLeast(1L) / 1000f
+                val instant = hypot(accA - lastA, b - lastB) / dt
+                speed += .35f * (instant - speed)
+            }
+            lastAt = t
+            lastA = accA
+            lastB = b
+            // In the vertical sweep "along" is up the screen and "across" sideways; otherwise the other way round.
+            val errA = target.first - accA
+            val errB = target.second - b
+            val spanA = if (set.vertical) set.fovY else set.fovX
+            val spanB = if (set.vertical) set.fovX else set.fovY
+            val radA = maxOf(1.5f, spanA * .06f)
+            val radB = maxOf(1.5f, spanB * .06f)
+            val inside = (errA / radA) * (errA / radA) + (errB / radB) * (errB / radB) <= 1f
+            val settled = t - set.lastShotAt > SETTLE_MS
+            val steady = speed < STEADY_DPS
+            if (inside && steady && settled) {
+                if (holdStart == 0L) holdStart = t
+            } else holdStart = 0L
+            val hold = if (holdStart == 0L) 0f else ((t - holdStart).toFloat() / HOLD_MS).coerceIn(0f, 1f)
+            val dot = if (set.vertical) Offset(errB / set.fovX, -errA / set.fovY) else Offset(errA / set.fovX, -errB / set.fovY)
+            val message = when {
+                !settled -> "hold…"
+                speed > FAST_DPS -> "slow down"
+                inside -> "hold still"
+                else -> {
+                    val far = hypot(errA, errB)
+                    "%s %.0f°".format(arrowFor(dot), far)
+                }
+            }
+            aim = PanoAimState(dot, inside, hold, message)
+            if (hold >= 1f) {
+                holdStart = 0L
+                frame()
+            }
         }
     }
     Box(modifier.fillMaxSize()) {
-        val ghost = set.ghost
-        val share = set.overlap / 100f
-        if (ghost != null && set.frames > 0) {
-            Canvas(Modifier.fillMaxSize()) {
-                val bw = ghost.width
-                val bh = ghost.height
-                // Source strip of the last frame, and where it lands on the next.
-                val (src, srcSize, dst, dstSize) = when (set.direction) {
-                    PanoDirection.Right -> listOf(
-                        IntOffset((bw * (1 - share)).toInt(), 0), IntSize((bw * share).toInt(), bh),
-                        IntOffset(0, 0), IntSize((size.width * share).toInt(), size.height.toInt())
-                    )
-                    PanoDirection.Left -> listOf(
-                        IntOffset(0, 0), IntSize((bw * share).toInt(), bh),
-                        IntOffset((size.width * (1 - share)).toInt(), 0), IntSize((size.width * share).toInt(), size.height.toInt())
-                    )
-                    PanoDirection.Up -> listOf(
-                        IntOffset(0, 0), IntSize(bw, (bh * share).toInt()),
-                        IntOffset(0, (size.height * (1 - share)).toInt()), IntSize(size.width.toInt(), (size.height * share).toInt())
-                    )
-                    PanoDirection.Down -> listOf(
-                        IntOffset(0, (bh * (1 - share)).toInt()), IntSize(bw, (bh * share).toInt()),
-                        IntOffset(0, 0), IntSize(size.width.toInt(), (size.height * share).toInt())
-                    )
-                }.let { Quad(it[0] as IntOffset, it[1] as IntSize, it[2] as IntOffset, it[3] as IntSize) }
-                drawImage(ghost, src, srcSize, dst, dstSize, alpha = .45f)
-                val dash = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()))
-                val edge = Color.White.copy(alpha = .85f)
-                val stroke = 1.5.dp.toPx()
-                when (set.direction) {
-                    PanoDirection.Right -> drawLine(edge, Offset(dstSize.width.toFloat(), 0f), Offset(dstSize.width.toFloat(), size.height), stroke, pathEffect = dash)
-                    PanoDirection.Left -> drawLine(edge, Offset(dst.x.toFloat(), 0f), Offset(dst.x.toFloat(), size.height), stroke, pathEffect = dash)
-                    PanoDirection.Up -> drawLine(edge, Offset(0f, dst.y.toFloat()), Offset(size.width, dst.y.toFloat()), stroke, pathEffect = dash)
-                    PanoDirection.Down -> drawLine(edge, Offset(0f, dstSize.height.toFloat()), Offset(size.width, dstSize.height.toFloat()), stroke, pathEffect = dash)
-                }
-            }
-        }
         if (set.frames > 0) {
+            val accent = CaptureColors.Accent
+            val green = Color(0xFF5BD16A)
+            val state = aim
+            Canvas(Modifier.fillMaxSize()) {
+                val c = Offset(size.width / 2f, size.height / 2f)
+                val ring = 26.dp.toPx()
+                val stroke = 2.dp.toPx()
+                drawCircle(Color.White.copy(alpha = .85f), ring, c, style = Stroke(stroke))
+                if (state != null) {
+                    if (state.hold > 0f) {
+                        drawArc(green, -90f, 360f * state.hold, false, Offset(c.x - ring, c.y - ring), Size(ring * 2, ring * 2),
+                            style = Stroke(4.dp.toPx()))
+                    }
+                    val inset = 18.dp.toPx()
+                    val p = Offset(
+                        (c.x + state.dot.x * size.width).coerceIn(inset, size.width - inset),
+                        (c.y + state.dot.y * size.height).coerceIn(inset, size.height - inset)
+                    )
+                    drawCircle(Color.Black.copy(alpha = .35f), 11.dp.toPx(), p)
+                    drawCircle(if (state.inside) green else accent, 8.dp.toPx(), p)
+                }
+                if (flash.value > 0f) drawRect(Color.White.copy(alpha = flash.value))
+            }
             Row(Modifier.align(Alignment.TopEnd).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 listOf("AE-L", "AF-L", "WB-L").forEach { PanoBadge(it, CaptureColors.Accent, orientation) }
             }
-            val arrowAlign = when (set.direction) {
-                PanoDirection.Right -> Alignment.CenterEnd
-                PanoDirection.Left -> Alignment.CenterStart
-                PanoDirection.Up -> Alignment.TopCenter
-                PanoDirection.Down -> Alignment.BottomCenter
-            }
-            Text(
-                set.direction.arrow, fontFamily = X14uFont, fontSize = dpText(26f), color = CaptureColors.Accent,
-                modifier = Modifier.align(arrowAlign).padding(horizontal = 10.dp, vertical = 44.dp)
-            )
-            val g = guide
-            Box(Modifier.align(Alignment.BottomStart).padding(start = 8.dp, bottom = 52.dp)) {
-                PanoBadge(
-                    g?.text ?: "${set.frames} frame${if (set.frames == 1) "" else "s"}",
-                    if (g?.aligned == true) Color(0xFF5BD16A) else Color.White,
-                    orientation
-                )
+            PanoProgress(set, Modifier.align(Alignment.TopCenter).padding(top = 36.dp))
+            if (state != null) {
+                Box(Modifier.align(Alignment.Center).offset(y = 46.dp)) {
+                    PanoBadge(state.message, if (state.inside) green else Color.White, orientation)
+                }
             }
         } else {
             // Above the centre, clear of the level line.
             Box(Modifier.align(Alignment.Center).offset(y = (-56).dp)) {
-                PanoBadge("Set exposure, then shoot frame 1", Color.White, orientation)
+                PanoBadge(if (set.arming) "Hold still…" else "Aim, then tap the shutter to start", Color.White, orientation)
             }
         }
     }
 }
 
-private data class Quad(val src: IntOffset, val srcSize: IntSize, val dst: IntOffset, val dstSize: IntSize)
+private fun arrowFor(dot: Offset): String {
+    val ax = abs(dot.x)
+    val ay = abs(dot.y)
+    return when {
+        ax > ay * 2f -> if (dot.x > 0) "→" else "←"
+        ay > ax * 2f -> if (dot.y > 0) "↓" else "↑"
+        dot.x > 0 && dot.y < 0 -> "↗"
+        dot.x > 0 -> "↘"
+        dot.y < 0 -> "↖"
+        else -> "↙"
+    }
+}
+
+/** Frames done in the set: a strip of blocks (Wide) or a 3 × 3 map. */
+@Composable
+private fun PanoProgress(set: PanoSet, modifier: Modifier) {
+    val accent = CaptureColors.Accent
+    if (set.shape == PanoShape.Grid) {
+        // Grid cell of each target, in the order they're taken.
+        val cells = listOf(1 to 1, 0 to 1, 0 to 0, 1 to 0, 2 to 0, 2 to 1, 2 to 2, 1 to 2, 0 to 2)
+        Canvas(modifier.size(46.dp)) {
+            val cell = size.width / 3f
+            val gap = 2.dp.toPx()
+            cells.forEachIndexed { i, (col, row) ->
+                val topLeft = Offset(col * cell + gap / 2f, row * cell + gap / 2f)
+                val box = Size(cell - gap, cell - gap)
+                when {
+                    i < set.frames -> drawRoundRect(accent, topLeft, box, CornerRadius(2.dp.toPx()))
+                    i == set.frames -> drawRoundRect(Color.White, topLeft, box, CornerRadius(2.dp.toPx()), style = Stroke(1.5.dp.toPx()))
+                    else -> drawRoundRect(Color.White.copy(alpha = .25f), topLeft, box, CornerRadius(2.dp.toPx()))
+                }
+            }
+        }
+    } else {
+        val shown = if (set.finite) set.targets.size else (set.frames + 1).coerceAtMost(14)
+        val skip = if (set.finite) 0 else (set.frames + 1 - shown).coerceAtLeast(0)
+        Row(modifier.height(8.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            repeat(shown) { k ->
+                val i = k + skip
+                Box(
+                    Modifier
+                        .size(width = if (shown > 18) 8.dp else 12.dp, height = 8.dp)
+                        .background(
+                            when {
+                                i < set.frames -> accent
+                                i == set.frames -> Color.White
+                                else -> Color.White.copy(alpha = .25f)
+                            },
+                            RoundedCornerShape(2.dp)
+                        )
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun PanoBadge(text: String, color: Color, orientation: Orientation) {
@@ -339,29 +493,35 @@ private fun PanoBadge(text: String, color: Color, orientation: Orientation) {
     )
 }
 
-/** Pano's row above the mode strip: direction · overlap · auto before a set; Done during one. */
+/**
+ * Pano's row above the mode strip. Before a set: direction (Wide), overlap, shape, and the stop angle (Wide). During
+ * one: the same, dimmed, and the frame count.
+ */
 @Composable
-internal fun X14uPanoControls(set: PanoSet, enabled: Boolean, onDone: () -> Unit) {
-    val haptics = LocalCaptureHaptics.current
+internal fun X14uPanoControls(set: PanoSet, enabled: Boolean) {
     Row(
         Modifier.height(30.dp).testTag("x14u_pano_controls"),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         val locked = set.inSet || !enabled
-        PanoChip("${set.direction.arrow} ${set.direction.name.lowercase()}", active = false, enabled = !locked) {
+        val wide = set.shape == PanoShape.Wide
+        if (wide) PanoChip(set.direction.arrow, active = false, enabled = !locked) {
             set.direction = PanoDirection.entries[(set.direction.ordinal + 1) % PanoDirection.entries.size]
         }
-        PanoChip("overlap ${set.overlap}%", active = false, enabled = !locked) {
+        PanoChip("${set.overlap}%", active = false, enabled = !locked) {
             set.overlap = when (set.overlap) { 20 -> 30; 30 -> 40; else -> 20 }
         }
+        PanoChip(set.shape.label, active = false, enabled = !locked) {
+            set.shape = if (wide) PanoShape.Grid else PanoShape.Wide
+        }
         if (set.inSet) {
-            PanoChip("Done · ${set.frames}", active = true, enabled = enabled) {
-                haptics.selection()
-                onDone()
+            val total = if (set.finite) " / ${set.targets.size}" else ""
+            PanoChip("● ${set.frames}$total", active = true, enabled = true) {}
+        } else if (wide) {
+            PanoChip(if (set.stopAt == 0) "free" else "${set.stopAt}°", active = false, enabled = !locked) {
+                set.stopAt = when (set.stopAt) { 0 -> 90; 90 -> 180; 180 -> 360; else -> 0 }
             }
-        } else {
-            PanoChip(if (set.auto) "auto on" else "auto off", active = set.auto, enabled = enabled) { set.auto = !set.auto }
         }
     }
 }
@@ -373,14 +533,14 @@ private fun PanoChip(text: String, active: Boolean, enabled: Boolean, onClick: (
     Box(
         Modifier
             .height(30.dp)
-            .alpha(if (enabled) 1f else .45f)
+            .alpha(if (enabled || active) 1f else .45f)
             .background(if (active) CaptureColors.Accent else Color.White.copy(alpha = .12f), RoundedCornerShape(15.dp))
-            .captureClickable(shape = RoundedCornerShape(15.dp), enabled = enabled) {
+            .captureClickable(shape = RoundedCornerShape(15.dp), enabled = enabled && !active) {
                 haptics.selection()
                 onClick()
             }
             .semantics { contentDescription = text }
-            .padding(horizontal = 13.dp),
+            .padding(horizontal = 12.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -402,9 +562,5 @@ private fun PanoChip(text: String, active: Boolean, enabled: Boolean, onClick: (
     }
 }
 
-/** The shutter row in Pano: the shutter runs the set; undo (during a set) takes the front-camera button's place. */
+/** The shutter row in Pano: the shutter starts and stops a set (stop square while one runs); undo during a set. */
 internal data class PanoShutter(val onShoot: () -> Unit, val onUndo: (() -> Unit)?, val locked: Boolean)
-
-/** Turns a viewfinder copy into the ghost of the frame just taken. */
-internal fun android.graphics.Bitmap?.toGhost(): ImageBitmap? = this?.asImageBitmap()
-

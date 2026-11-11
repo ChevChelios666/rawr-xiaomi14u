@@ -259,13 +259,12 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         StillCaptureCoordinator(
             application = application,
             preview = previewCoordinator,
-            // Zoomed past a lens with multiframe on: Super-resolution recovers real detail for the crop.
+            // Zoomed past a lens with multiframe on: the "Merge when zoomed" choice (default Super-resolution).
             settings = {
                 latestSettings.let { s ->
-                    if (digitalZoomCrop > 1.01f && s.experimentalMultiframeEnabled) s.copy(
-                        multiframeTuning = s.multiframeTuning.copy(
-                            mergeAlgorithm = com.rawr.camera.settings.model.MultiframeMergeAlgorithm.Wronski
-                        )
+                    val zoomMerge = s.zoomMergeAlgorithm
+                    if (digitalZoomCrop > 1.01f && s.experimentalMultiframeEnabled && zoomMerge != null) s.copy(
+                        multiframeTuning = s.multiframeTuning.copy(mergeAlgorithm = zoomMerge)
                     ) else s
                 }
             },

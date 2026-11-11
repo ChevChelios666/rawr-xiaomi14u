@@ -50,6 +50,21 @@ internal fun MultiframeSettings(state: SettingsUiState, dispatch: SettingsDispat
             }
         }
         SettingsGroup(
+            title = "Merge When Zoomed",
+            description = "Shots zoomed past a lens (digital zoom) use this merge. Super-resolution recovers real detail " +
+                "for the crop; an HDR+ merge is cleaner in low light. Same as normal: the merge above."
+        ) {
+            val options = listOf<MultiframeMergeAlgorithm?>(null) + MultiframeMergeAlgorithm.entries.filter { it.available }
+            options.forEachIndexed { index, candidate ->
+                if (index > 0) SettingDivider()
+                SettingsSelectionRow(
+                    title = candidate?.label ?: "Same as normal",
+                    selected = state.values.zoomMergeAlgorithm == candidate,
+                    enabled = enabled
+                ) { dispatch.invoke(SetZoomMergeAlgorithm(candidate)) }
+            }
+        }
+        SettingsGroup(
             title = "Reference Frame",
             description = "Which burst frame anchors alignment and merge."
         ) {

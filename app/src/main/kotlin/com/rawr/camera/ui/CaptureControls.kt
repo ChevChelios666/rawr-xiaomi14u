@@ -421,7 +421,9 @@ internal fun Shutter(
     dispatch: CaptureDispatch,
     modifier: Modifier,
     countingDown: Boolean = false,
-    longExposure: LongExposureUiState = LongExposureUiState()
+    longExposure: LongExposureUiState = LongExposureUiState(),
+    /** X14U Pano: a set is running, so the shutter is its stop button (red square). */
+    stopSquare: Boolean = false
 ) {
     val haptics = LocalCaptureHaptics.current
     // The ring runs from the press over queue + exposure + readout: the HAL
@@ -462,7 +464,7 @@ internal fun Shutter(
             .border(2.dp, Color.White.copy(alpha = .86f), CircleShape)
             .semantics {
                 role = Role.Button
-                contentDescription = if (countingDown) "Cancel self timer" else "Shutter"
+                contentDescription = when { stopSquare -> "Stop panorama"; countingDown -> "Cancel self timer"; else -> "Shutter" }
                 onClick {
                     haptics.capture()
                     dispatch(TriggerCapture)
@@ -482,7 +484,9 @@ internal fun Shutter(
             },
         contentAlignment = Alignment.Center
     ) {
-        Box(
+        if (stopSquare) {
+            Box(Modifier.size(26.dp).background(Color(0xFFE5484D), RoundedCornerShape(6.dp)))
+        } else Box(
             Modifier.size(CaptureDimens.ShutterInner)
                 .background(Color(0xFFF5F5F5).copy(alpha = if (exposing) .35f else 1f), CircleShape)
         )

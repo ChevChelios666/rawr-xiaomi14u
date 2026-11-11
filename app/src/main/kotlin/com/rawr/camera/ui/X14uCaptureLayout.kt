@@ -364,24 +364,19 @@ internal fun X14uCaptureLayout(
     val panoScope = androidx.compose.runtime.rememberCoroutineScope()
     val panoExtras = LocalCaptureExtras.current
     val panoState by rememberUpdatedState(state)
+    val panoDone: () -> Unit = { panoSet.end(panoState, dispatch) }
+    // The shutter starts a set (frame 1 after the locks settle) and stops it; the frames between take themselves.
     val panoShoot: () -> Unit = shoot@{
         if (recordingLock || panoSet.arming) return@shoot
-        val take = {
-            val frame = panoSet.shoot(panoMotion(), dispatch)
-            preview.snapshot { copy -> panoSet.setGhost(frame, copy.toGhost()) }
+        if (panoSet.frames > 0) return@shoot panoDone()
+        panoSet.start(panoState, dispatch, com.rawr.camera.settings.model.ZoomChain.factorOf(panoState.selectedLensId) ?: 1f)
+        panoScope.launch {
+            kotlinx.coroutines.delay(400L)
+            if (panoSet.arming) panoSet.shoot(panoMotion(), dispatch)
         }
-        if (panoSet.frames == 0) {
-            // Frame 1: lock exposure, focus and white balance where they are, let the camera settle, then shoot.
-            panoSet.arming = true
-            panoSet.lock(panoState, dispatch)
-            panoScope.launch {
-                kotlinx.coroutines.delay(400L)
-                take()
-            }
-        } else take()
     }
+    val panoFrame: () -> Unit = { if (panoSet.frames > 0) panoSet.shoot(panoMotion(), dispatch) }
     val panoUndo: () -> Unit = { panoSet.undo(panoState, dispatch)?.let(panoExtras.onPanoUndo) }
-    val panoDone: () -> Unit = { panoSet.end(panoState, dispatch) }
     // Leaving Pano (another mode, Video) ends the set, keeping its frames.
     LaunchedEffect(pano) { if (!pano && panoSet.inSet) panoSet.end(panoState, dispatch) }
     // Photo, Pro and Video each remember their own exposure mode (A·M·S·I) and white balance: switching mode saves
@@ -607,10 +602,10 @@ internal fun X14uCaptureLayout(
                 if (!isVideo && !pano) X14uAspectMask(tools.photoAspect, Modifier.fillMaxSize())
                 if (pano) X14uPanoOverlay(
                     set = panoSet,
-                    lensFactor = com.rawr.camera.settings.model.ZoomChain.factorOf(state.selectedLensId) ?: 1f,
                     motion = panoMotion,
                     orientation = orientation,
-                    onAutoShoot = panoShoot,
+                    onFrame = panoFrame,
+                    onFinish = panoDone,
                     modifier = Modifier.fillMaxSize()
                 )
                 if (tools.level) X14uLevel(Modifier.fillMaxSize())
@@ -745,7 +740,7 @@ internal fun X14uCaptureLayout(
                     X14uEditorView(editorFor(key), orientation)
                 } else if (panel == null) {
                     X14uIdleControlArea(state, dispatch, videoControls, showNumbers, enabled = !recordingLock,
-                        panoControls = if (!pano) null else ({ X14uPanoControls(panoSet, enabled = true, onDone = panoDone) }))
+                        panoControls = if (!pano) null else ({ X14uPanoControls(panoSet, enabled = true) }))
                 }
             }
             X14uShutterRow(
@@ -2332,7 +2327,8 @@ private fun X14uShutterRow(
                 },
                 modifier = Modifier,
                 countingDown = state.selfTimerRemainingMs != null,
-                longExposure = state.longExposure
+                longExposure = state.longExposure,
+                stopSquare = pano?.locked == true
             )
         }
         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {

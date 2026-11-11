@@ -75,6 +75,10 @@ internal fun reduceCaptureSettings(
         state.withValues(state.values.copy(zoomUpscale = action.value))
     }
 
+    is SetZoomMergeAlgorithm -> {
+        state.withValues(state.values.copy(zoomMergeAlgorithm = action.value))
+    }
+
     is SetFocusLoupe -> {
         state.withValues(state.values.copy(focusLoupe = action.value))
     }
