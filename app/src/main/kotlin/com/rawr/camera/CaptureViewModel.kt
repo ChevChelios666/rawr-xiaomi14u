@@ -144,7 +144,9 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         val mirroredLenses: Set<String> = emptySet(),
         val focusLoupe: com.rawr.camera.settings.model.FocusLoupeSettings = com.rawr.camera.settings.model.FocusLoupeSettings(),
         /** Digital zoom chain: lens name to its zoom factor, widest first. */
-        val zoomChain: List<Pair<String, Float>> = emptyList()
+        val zoomChain: List<Pair<String, Float>> = emptyList(),
+        /** Video horizon lock (the Level tile's "Level + lock"). */
+        val horizonLock: Boolean = false
     )
     val tools: StateFlow<ToolsState> = settingsEditor.state
         .map { v ->
@@ -153,7 +155,8 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 v.effectiveLensProfiles(DeviceLensDefaults.lenses)
                     .filter { it.image.mirror != com.rawr.camera.settings.model.LensMirror.None }.map { it.name }.toSet(),
                 v.focusLoupe,
-                com.rawr.camera.settings.model.ZoomChain.of(v.effectiveLensProfiles(DeviceLensDefaults.lenses))
+                com.rawr.camera.settings.model.ZoomChain.of(v.effectiveLensProfiles(DeviceLensDefaults.lenses)),
+                v.videoHorizonLock
             )
         }
         .distinctUntilChanged()
@@ -180,8 +183,20 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         settingsEditor.update { it.copy(stillsHintCount = it.stillsHintCount + 1) }
     }
 
+    fun setHorizonLock(on: Boolean) {
+        settingsEditor.update { it.copy(videoHorizonLock = on, viewfinderLevel = it.viewfinderLevel || on) }
+    }
+
     fun toggleLevel() {
-        settingsEditor.update { it.copy(viewfinderLevel = !it.viewfinderLevel) }
+        // Level off is lock off too (the tile's Off).
+        settingsEditor.update {
+            it.copy(viewfinderLevel = !it.viewfinderLevel, videoHorizonLock = it.videoHorizonLock && !it.viewfinderLevel)
+        }
+    }
+
+    /** X14U video horizon lock: gravity in, roll and crop out to the native viewfinder and recorder. */
+    private val horizonSensor = com.rawr.camera.integration.HorizonLockSensor(application) { roll, crop ->
+        previewCoordinator.setHorizonLock(roll, crop)
     }
     fun setLocationTagging(on: Boolean) {
         settingsEditor.update { it.copy(locationTagging = on) }
@@ -406,6 +421,21 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 if (pano) com.rawr.camera.settings.model.PhotoAspect.Native.nativeRatio else aspect.nativeRatio
             }.distinctUntilChanged().collect { previewCoordinator.setOutputAspect(it) }
         }
+        // Video horizon lock: on in Video with the setting, range by lens; Full freezes its framing while recording.
+        viewModelScope.launch {
+            kotlinx.coroutines.flow.combine(
+                settingsEditor.values.map { it.videoHorizonLock to it.horizonLockRange }.distinctUntilChanged(),
+                controller.state.map { (it.captureMode == com.rawr.camera.model.CaptureMode.Video) to it.selectedLensId }
+                    .distinctUntilChanged(),
+                recording.state.map { it.recording }.distinctUntilChanged()
+            ) { (on, range), (video, lens), rec ->
+                val resolved = range.resolved(com.rawr.camera.settings.model.ZoomChain.factorOf(lens) ?: 1f)
+                val degrees = if (on && video) resolved.degrees else 0
+                Triple(degrees, resolved.crop, rec to com.rawr.camera.ui.isFrontLens(lens, lens))
+            }.distinctUntilChanged().collect { (degrees, crop, recFront) ->
+                horizonSensor.configure(degrees, crop, recording = recFront.first, front = recFront.second)
+            }
+        }
         settingsSync.start()
     }
 
@@ -533,6 +563,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     }
 
     override fun onCleared() {
+        horizonSensor.close()
         recording.closeWhenIdle {
             stillCaptureCoordinator.closeWhenIdle {
                 controller.close()

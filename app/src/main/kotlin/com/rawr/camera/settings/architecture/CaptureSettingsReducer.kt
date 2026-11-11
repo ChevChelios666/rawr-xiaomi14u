@@ -75,6 +75,14 @@ internal fun reduceCaptureSettings(
         state.withValues(state.values.copy(zoomUpscale = action.value))
     }
 
+    is SetVideoHorizonLock -> {
+        state.withValues(state.values.copy(videoHorizonLock = action.value))
+    }
+
+    is SetHorizonLockRange -> {
+        state.withValues(state.values.copy(horizonLockRange = action.value))
+    }
+
     is SetZoomMergeAlgorithm -> {
         state.withValues(state.values.copy(zoomMergeAlgorithm = action.value))
     }

@@ -1,3 +1,4 @@
+#include "geometry/HorizonLock.h"
 #include "pipeline/RawDevelopRecorder.h"
 
 #include <vulkan/vulkan.h>
@@ -665,6 +666,27 @@ RawDevelopRecordResult RawDevelopRecorder::record(const RawDevelopRecordInput& i
             cropWarp->outputScale = rawrcam::geometry::containedOutputScale(*cropWarp, previewCrop.x, previewCrop.y,
                                                                             previewCrop.width, previewCrop.height);
             presented.lensWarp = &*cropWarp;
+        }
+    }
+    // X14U video horizon lock: the viewfinder rotates and zooms like the recording (pinhole model without a lens one).
+    std::optional<rawrcam::geometry::LensDistortionModel> horizonWarp;
+    if (in.diagnosticMode == 0u && in.previewWidth >= 2 && in.previewHeight >= 2) {
+        if (const auto lock = rawrcam::geometry::horizonSampling(); lock.active) {
+            rawrcam::geometry::LensDistortionModel m;
+            if (presented.lensWarp) {
+                m = *presented.lensWarp;
+            } else {
+                m.width = in.previewWidth;
+                m.height = in.previewHeight;
+                m.fx = m.fy = double(in.previewWidth);
+                m.cx = (double(in.previewWidth) - 1.0) * 0.5;
+                m.cy = (double(in.previewHeight) - 1.0) * 0.5;
+            }
+            m.rollCos = lock.cosA;
+            m.rollSin = lock.sinA;
+            m.rollScale = lock.scale;
+            horizonWarp = m;
+            presented.lensWarp = &*horizonWarp;
         }
     }
     monitor_.present(presented, previewCrop.x, previewCrop.y, previewCrop.width, previewCrop.height);

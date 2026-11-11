@@ -250,6 +250,7 @@ class MainActivity : ComponentActivity() {
                     tools = tools,
                     onSetPhotoAspect = captureViewModel::setPhotoAspect,
                     onToggleLevel = captureViewModel::toggleLevel,
+                    onSetHorizonLock = captureViewModel::setHorizonLock,
                     onSetLocationTagging = captureViewModel::setLocationTagging,
                     onToggleLensMirror = captureViewModel::toggleLensMirror,
                     stillsHint = stillsHint,

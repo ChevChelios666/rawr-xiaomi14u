@@ -1,3 +1,4 @@
+#include "geometry/HorizonLock.h"
 #include "encoding/OutputAspect.h"
 #include <android/asset_manager_jni.h>
 #include <android/log.h>
@@ -186,6 +187,16 @@ extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreview
     rawrcam::encoding::outputZoom().store(c, std::memory_order_relaxed);
     rawrcam::encoding::outputUpscale().store(upscale == JNI_TRUE, std::memory_order_relaxed);
     rawrcam::session::setViewfinderZoom(handle(h), c);
+}
+
+// X14U video horizon lock: roll past the kept framing (radians) and the fixed crop (>= 1; 1 = off). Atomics only,
+// called straight from the sensor thread.
+extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setHorizonLock(JNIEnv*, jobject,
+                                                                                                      jfloat roll,
+                                                                                                      jfloat scale) {
+    rawrcam::geometry::horizonRoll().store(std::isfinite(roll) ? float(roll) : 0.0f, std::memory_order_relaxed);
+    rawrcam::geometry::horizonScale().store(std::isfinite(scale) ? std::clamp(float(scale), 1.0f, 3.0f) : 1.0f,
+                                            std::memory_order_relaxed);
 }
 
 // X14U: photo aspect ratio (long:short; 0 = native) for the next captures.

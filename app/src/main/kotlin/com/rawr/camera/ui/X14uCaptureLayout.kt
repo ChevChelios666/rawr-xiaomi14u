@@ -609,6 +609,19 @@ internal fun X14uCaptureLayout(
                     modifier = Modifier.fillMaxSize()
                 )
                 if (tools.level) X14uLevel(Modifier.fillMaxSize())
+                // Video horizon lock on: a small badge, so the fixed crop isn't a surprise.
+                if (isVideo && tools.horizonLock) {
+                    Text(
+                        "LEVEL LOCK",
+                        fontFamily = X14uFont,
+                        fontSize = dpText(10.5f),
+                        color = CaptureColors.Accent,
+                        modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
+                            .background(Color.Black.copy(alpha = .5f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 6.dp, vertical = 3.dp)
+                            .uprightInLandscape(orientation)
+                    )
+                }
                 // Photo / Photo+ only: in Video the viewfinder runs past this frame (16:9), so the loupe would sit off.
                 if (loupeOpen && !isVideo) {
                     val target = state.focus.target

@@ -105,6 +105,7 @@ class SwapchainRenderer final {
         float lensCx, lensCy, lensFx, lensFy, lensFxOut, lensFyOut;
         std::array<float, 8> k;
         uint32_t lensMirror;
+        float rollCos, rollSin;
     };
 
     std::pair<uint64_t, int64_t> livePresentation_{};

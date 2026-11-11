@@ -7,7 +7,9 @@ layout(push_constant) uniform PC { uint quarterTurns; float srcAspect; float dst
     uint lensWarp; float lensCx; float lensCy; float lensFx; float lensFy; float lensFxOut; float lensFyOut;
     float k1; float k2; float p1; float p2; float k3; float k4; float k5; float k6;
     // Lens profile mirror of the corrected image (bit 0 horizontal, bit 1 vertical, sensor frame).
-    uint lensMirror; } pc;
+    uint lensMirror;
+    // X14U video horizon lock: rotation of the corrected output about the centre (identity when off).
+    float rollCos; float rollSin; } pc;
 layout(location=0) in vec2 uv;
 layout(location=0) out vec4 outColor;
 
@@ -30,6 +32,7 @@ vec2 sourceUv(vec2 q) {
 vec2 lensSource(vec2 s) {
     vec2 c=vec2(pc.lensCx,pc.lensCy);
     vec2 x=(s-c)/vec2(pc.lensFxOut,pc.lensFyOut);
+    x=vec2(pc.rollCos*x.x-pc.rollSin*x.y,pc.rollSin*x.x+pc.rollCos*x.y);
     float r2=dot(x,x);
     float radial=(1.0+r2*(pc.k1+r2*(pc.k2+r2*pc.k3)))/(1.0+r2*(pc.k4+r2*(pc.k5+r2*pc.k6)));
     vec2 d=vec2(x.x*radial+2.0*pc.p1*x.x*x.y+pc.p2*(r2+2.0*x.x*x.x),

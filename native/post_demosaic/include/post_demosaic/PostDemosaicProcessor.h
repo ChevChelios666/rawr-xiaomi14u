@@ -50,6 +50,10 @@ struct StillDistortionCorrection {
     // vertical), independent of [enabled]: the final image is flipped in place
     // after every sensor-aligned stage (highlights, defringe, FCC) has run.
     uint32_t mirror = 0;
+    // Rational only (video horizon lock): rotation of the normalized output coordinate about the centre, applied
+    // before the lens model; identity when off. The zoom-in that keeps the frame filled is in outputFocal.
+    float rollCos = 1.0f;
+    float rollSin = 0.0f;
 };
 
 // Exact still-pipeline domain bridge: pre-WB camera-linear RGB -> WB camera RGB

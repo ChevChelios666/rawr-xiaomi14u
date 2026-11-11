@@ -68,6 +68,9 @@ data class SetGridMode(val value: GridMode) : SettingsApplicationAction
 
 /** X14U digital zoom: upscale zoomed JPEGs. */
 data class SetZoomUpscale(val value: Boolean) : SettingsApplicationAction
+/** X14U: video horizon lock on/off and its range. */
+data class SetVideoHorizonLock(val value: Boolean) : SettingsApplicationAction
+data class SetHorizonLockRange(val value: com.rawr.camera.settings.model.HorizonLockRange) : SettingsApplicationAction
 /** X14U: merge for digitally zoomed multiframe shots (null = the usual merge). */
 data class SetZoomMergeAlgorithm(val value: com.rawr.camera.settings.model.MultiframeMergeAlgorithm?) : SettingsApplicationAction
 

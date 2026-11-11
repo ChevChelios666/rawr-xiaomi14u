@@ -27,6 +27,8 @@ struct PresentPush {
     float lensCx, lensCy, lensFx, lensFy, lensFxOut, lensFyOut;
     std::array<float, 8> k;
     uint32_t lensMirror;
+    // X14U video horizon lock: output -> source rotation inside the lens warp (identity when off).
+    float rollCos, rollSin;
 };
 }  // namespace
 void PresentRecorder::record(const RecordInfo& i) {
@@ -111,7 +113,9 @@ void PresentRecorder::record(const RecordInfo& i) {
                          0.0f,
                          0.0f,
                          {},
-                         0u};
+                         0u,
+                         1.0f,
+                         0.0f};
     // Live viewfinder only (no EXIF review or diagnostic view). With the idle
     // video crop the warp runs after it, in full-frame UV, like the recorder.
     PresentPush pcWarp = pc;
@@ -124,9 +128,11 @@ void PresentRecorder::record(const RecordInfo& i) {
         pcWarp.lensCy = float((m.cy + 0.5) / m.height);
         pcWarp.lensFx = float(m.fx / m.width);
         pcWarp.lensFy = float(m.fy / m.height);
-        pcWarp.lensFxOut = float(m.fx * m.outputScale / m.width);
-        pcWarp.lensFyOut = float(m.fy * m.outputScale / m.height);
+        pcWarp.lensFxOut = float(m.fx * m.outputScale * m.rollScale / m.width);
+        pcWarp.lensFyOut = float(m.fy * m.outputScale * m.rollScale / m.height);
         for (size_t k = 0; k < 8; ++k) pcWarp.k[k] = float(m.k[k]);
+        pcWarp.rollCos = float(m.rollCos);
+        pcWarp.rollSin = float(m.rollSin);
     }
     static_assert(sizeof(PresentPush) <= 128, "push constants beyond the guaranteed minimum");
     vkCmdPushConstants(i.command, i.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pcWarp), &pcWarp);
@@ -154,7 +160,7 @@ void PresentRecorder::record(const RecordInfo& i) {
         const PresentPush sp{
             s.quarterTurns, s.sourceAspect, static_cast<float>(ex - sx) / static_cast<float>(ey - sy), 100u, 0u,
             s.cornerRadius,
-            0u, 0u, 0.0f, 0.0f, 1.0f, 1.0f, 0u, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, {}, 0u};
+            0u, 0u, 0.0f, 0.0f, 1.0f, 1.0f, 0u, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, {}, 0u, 1.0f, 0.0f};
         vkCmdPushConstants(i.command, i.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sp), &sp);
         vkCmdDraw(i.command, 3, 1, 0, 0);
     }

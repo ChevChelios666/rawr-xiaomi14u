@@ -530,10 +530,14 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
             stillsHintCount = p[Keys.stillsHintCount] ?: d.stillsHintCount,
             stillsSwitched = p[Keys.stillsSwitched] ?: d.stillsSwitched,
             zoomUpscale = p[Keys.zoomUpscale] ?: d.zoomUpscale,
-            zoomMergeAlgorithm = p[Keys.zoomMerge]?.let { saved ->
-                if (saved == "same") null
-                else MultiframeMergeAlgorithm.entries.firstOrNull { it.name == saved && it.available } ?: d.zoomMergeAlgorithm
-            } ?: d.zoomMergeAlgorithm,
+            videoHorizonLock = p[Keys.horizonLock] ?: d.videoHorizonLock,
+            horizonLockRange = enumOrDefault(p[Keys.horizonRange], d.horizonLockRange),
+            zoomMergeAlgorithm = when (val saved = p[Keys.zoomMerge]) {
+                null -> d.zoomMergeAlgorithm
+                "same" -> null
+                else -> com.rawr.camera.settings.model.MultiframeMergeAlgorithm.entries
+                    .firstOrNull { it.name == saved && it.available } ?: d.zoomMergeAlgorithm
+            },
             inSensorZoomLensesOffOnce = p[Keys.inSensorZoomOff] ?: d.inSensorZoomLensesOffOnce,
             focusLoupe = FocusLoupeSettings(
                 zoom = (p[Keys.loupeZoom] ?: d.focusLoupe.zoom).takeIf { it in FocusLoupeSettings.ZOOMS } ?: d.focusLoupe.zoom,
@@ -793,6 +797,8 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
         p[Keys.stillsSwitched] = v.stillsSwitched
         p[Keys.loupeZoom] = v.focusLoupe.zoom
         p[Keys.zoomUpscale] = v.zoomUpscale
+        p[Keys.horizonLock] = v.videoHorizonLock
+        p[Keys.horizonRange] = v.horizonLockRange.name
         p[Keys.zoomMerge] = v.zoomMergeAlgorithm?.name ?: "same"
         p[Keys.inSensorZoomOff] = v.inSensorZoomLensesOffOnce
         p[Keys.loupeOnMf] = v.focusLoupe.onManualFocus
@@ -1113,6 +1119,8 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
         val loupeZoom = intPreferencesKey("x14u_loupe_zoom")
         val zoomUpscale = booleanPreferencesKey("x14u_zoom_upscale")
         val zoomMerge = stringPreferencesKey("x14u_zoom_merge")
+        val horizonLock = booleanPreferencesKey("x14u_horizon_lock")
+        val horizonRange = stringPreferencesKey("x14u_horizon_range")
         val inSensorZoomOff = booleanPreferencesKey("x14u_in_sensor_zoom_off_once")
         val loupeOnMf = booleanPreferencesKey("x14u_loupe_on_mf")
         val loupeDoubleTap = booleanPreferencesKey("x14u_loupe_double_tap")

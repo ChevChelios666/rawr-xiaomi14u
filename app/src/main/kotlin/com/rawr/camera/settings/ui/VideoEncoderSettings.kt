@@ -43,6 +43,23 @@ internal fun VideoEncoderSettings(state: SettingsUiState, dispatch: SettingsDisp
             ) { set(encoder.copy(audioMuted = it)) }
         }
         SettingsGroup(
+            title = "Horizon Lock",
+            description = "Keeps the horizon level while you move (Level tile → Level + lock, Video only). The picture is " +
+                "zoomed in by a fixed amount so the turned frame stays full: the wider the range, the more it crops. " +
+                "Past the range the horizon follows the phone. Auto: Full on the 0.5x (about a 1x view stays), ±15° " +
+                "on the other lenses."
+        ) {
+            com.rawr.camera.settings.model.HorizonLockRange.entries.forEachIndexed { index, range ->
+                if (index > 0) SettingDivider()
+                SettingsSelectionRow(
+                    title = if (range == com.rawr.camera.settings.model.HorizonLockRange.Auto) range.label
+                    else "${range.label} · %.2fx crop".format(range.crop),
+                    selected = state.values.horizonLockRange == range,
+                    enabled = true
+                ) { dispatch.invoke(com.rawr.camera.settings.architecture.SetHorizonLockRange(range)) }
+            }
+        }
+        SettingsGroup(
             title = "Video",
             description = "HEVC settings apply to the next recording. Some encoders ignore B-frame limits; the recording monitor shows the actual GOP."
         ) {

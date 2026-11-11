@@ -26,6 +26,8 @@ struct LensDistortionModel {
     // [k1, k2, p1, p2, k3, k4, k5, k6] (OpenCV order).
     std::array<double, 8> k{};
     double outputScale = 1.0;
+    // X14U video horizon lock (viewfinder only): output -> source rotation about the centre and its zoom-in.
+    double rollCos = 1.0, rollSin = 0.0, rollScale = 1.0;
 };
 
 [[nodiscard]] bool isValid(const LensDistortionModel& model) noexcept;

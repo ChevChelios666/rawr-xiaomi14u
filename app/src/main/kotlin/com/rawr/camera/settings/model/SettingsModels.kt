@@ -483,6 +483,29 @@ enum class MultiframeMergeAlgorithm(val nativeId: Int, val label: String) {
         get() = this != HdrPlusBracketed || FeatureFlags.hdrPlusBracketed
 }
 
+/**
+ * X14U video horizon lock range. A 16:9 frame rotated by up to [degrees] stays filled when zoomed in by
+ * cos + (16/9) sin of that angle, at most 2.04x for any angle (Full). Auto: Full on the ultra-wide, ±15° otherwise.
+ */
+enum class HorizonLockRange(val label: String, val degrees: Int) {
+    Auto("Auto", 0),
+    Deg15("±15°", 15),
+    Deg30("±30°", 30),
+    Full("Full", 180);
+
+    /** Fixed zoom-in that keeps a 16:9 frame filled over the range. */
+    val crop: Float
+        get() {
+            val a = 16.0 / 9.0
+            if (degrees >= 90) return kotlin.math.sqrt(1.0 + a * a).toFloat()
+            val r = Math.toRadians(degrees.toDouble())
+            return (kotlin.math.cos(r) + a * kotlin.math.sin(r)).toFloat()
+        }
+
+    /** The range on a lens of [factor] (0.5 for the ultra-wide). */
+    fun resolved(factor: Float): HorizonLockRange = if (this != Auto) this else if (factor < .9f) Full else Deg15
+}
+
 enum class MultiframeBaseFrameMode(val nativeId: Int, val label: String) {
     Middle(0, "Middle"),
     Sharpest(1, "Sharpest")
@@ -1195,6 +1218,9 @@ data class SettingsValues(
     val focusLoupe: FocusLoupeSettings = FocusLoupeSettings(),
     /** X14U digital zoom: upscale zoomed JPEGs back to full size (false: keep the crop's own pixels). */
     val zoomUpscale: Boolean = true,
+    /** X14U video horizon lock (Level tile: Level + lock) and how far it holds the horizon. */
+    val videoHorizonLock: Boolean = false,
+    val horizonLockRange: HorizonLockRange = HorizonLockRange.Auto,
     /** X14U digital zoom: the multiframe merge for zoomed shots; null = the usual merge. */
     val zoomMergeAlgorithm: MultiframeMergeAlgorithm? = MultiframeMergeAlgorithm.Wronski,
     /** X14U: the in-sensor-zoom lenses (2x) were turned off once, so zoom crops the main camera; they can be re-enabled. */

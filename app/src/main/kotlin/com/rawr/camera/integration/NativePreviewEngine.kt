@@ -30,6 +30,9 @@ class NativePreviewEngine {
     /** X14U digital zoom crop (1 = none) for the viewfinder, metering and next captures; upscale zoomed JPEGs. */
     external fun setDigitalZoom(handle: Long, crop: Float, upscale: Boolean)
 
+    /** X14U video horizon lock: roll past the kept framing (radians, clockwise in the camera's image) and crop (1 = off). */
+    external fun setHorizonLock(roll: Float, scale: Float)
+
     /** X14U photo aspect ratio (long:short; 0 = the sensor's own) for the next captures. */
     external fun setOutputAspect(aspect: Float)
 

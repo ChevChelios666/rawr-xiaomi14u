@@ -14,6 +14,7 @@
 #include "tonemap_video_linear.h"
 #include "tonemap_video_rgb10a2.h"
 #include "tonemap_video_rgba8.h"
+#include "geometry/HorizonLock.h"
 #include "video/VideoOutput.h"
 #include "vulkan/VulkanContext.h"
 namespace rawrcam::video {
@@ -139,6 +140,25 @@ void VideoRecorder::record(VkCommandBuffer command, uint32_t frameSlot, uint32_t
                                                            resources_.demosaic_->sensorScale()};
     auto lensCorrection =
         lensDistortion ? distortionFor(*lensDistortion, rawWidth, rawHeight) : rawr::post::StillDistortionCorrection{};
+    // X14U horizon lock: rotate the output about the centre and zoom in by the lock's fixed crop. Without a lens
+    // profile (or with correction off) a plain pinhole model carries it; its focal length cancels out.
+    if (const auto lock = rawrcam::geometry::horizonSampling(); lock.active) {
+        if (!lensCorrection.enabled) {
+            rawrcam::geometry::LensDistortionModel pinhole;
+            pinhole.width = rawWidth;
+            pinhole.height = rawHeight;
+            pinhole.fx = pinhole.fy = double(rawWidth);
+            pinhole.cx = (double(rawWidth) - 1.0) * 0.5;
+            pinhole.cy = (double(rawHeight) - 1.0) * 0.5;
+            lensCorrection = distortionFor(pinhole, rawWidth, rawHeight);
+        }
+        if (lensCorrection.enabled) {
+            lensCorrection.outputFocal[0] *= lock.scale;
+            lensCorrection.outputFocal[1] *= lock.scale;
+            lensCorrection.rollCos = lock.cosA;
+            lensCorrection.rollSin = lock.sinA;
+        }
+    }
     lensCorrection.mirror = lensMirror;
     stage.record(command, resources_.demosaic_->outputImage(frameSlot), resources_.demosaic_->outputView(frameSlot),
                  resources_.demosaic_->clipStateImage(frameSlot), resources_.demosaic_->clipStateView(frameSlot), gains,
