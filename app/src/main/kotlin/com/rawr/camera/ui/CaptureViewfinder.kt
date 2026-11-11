@@ -262,7 +262,8 @@ internal fun ViewfinderBottomSlot(
         modifier,
         verticalArrangement = Arrangement.spacedBy(CaptureDimens.ControlGap)
     ) {
-        if (state.focus.selectorOpen) {
+        if (state.focus.selectorOpen && !x14uClean) {
+            // X14U opens focus below its exposure row instead.
             // Long-press on the focus area swaps the bottom slot: exposure
             // rails + AMSI/SHD-HL are hidden and replaced by focus mode
             // buttons + MF rail. Same slot, same heights, no overlay.

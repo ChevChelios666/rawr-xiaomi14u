@@ -74,6 +74,7 @@ import com.rawr.camera.architecture.SetCaptureMode
 import com.rawr.camera.architecture.SetExposureCandidate
 import com.rawr.camera.architecture.SetExposureMode
 import com.rawr.camera.architecture.SetFocusMode
+import com.rawr.camera.architecture.CloseFocusSelector
 import com.rawr.camera.architecture.SetManualFocus
 import com.rawr.camera.architecture.SetRenderExposureTenths
 import com.rawr.camera.architecture.SetWhiteBalanceMode
@@ -196,6 +197,9 @@ private sealed interface X14uEditor {
         X14uEditor
 
     data class Message(val text: String) : X14uEditor
+
+    /** Chips on top and, when present, another editor under them (Photo focus: AF · AF-L · MF, ruler in MF). */
+    data class Stacked(val top: Chips, val below: X14uEditor?) : X14uEditor
 }
 
 private object X14uGeometry {
@@ -314,6 +318,14 @@ internal fun X14uCaptureLayout(
             onQuickEvent(CaptureQuickEvent.SelectLensOption(options.lensId, apertureRowIndex, target))
         }
     }
+    // Long-press on the AF target: Photo opens AF · AF-L · MF below the exposure row, Pro opens its focus cell.
+    LaunchedEffect(state.focus.selectorOpen) {
+        if (state.focus.selectorOpen) {
+            panel = null
+            selected = if (simplePhoto) PHOTO_FOCUS_KEY else "af"
+            dispatch(CloseFocusSelector)
+        }
+    }
     // Photo has no focus control: entering it returns focus to continuous AF.
     LaunchedEffect(simplePhoto) {
         if (simplePhoto && state.focus.mode != FocusMode.Af) dispatch(SetFocusMode(FocusMode.Af))
@@ -336,7 +348,10 @@ internal fun X14uCaptureLayout(
                 }
                 owners.mapNotNull { k -> all.firstOrNull { it.key == k } } + all.filter { it.key == "f" }
             } else all
-            editorFor = { key -> exposureEditor(key, state, dispatch, lensOptions, recordingLock, onQuickEvent) }
+            editorFor = { key ->
+                if (key == PHOTO_FOCUS_KEY) photoFocusEditor(state, dispatch)
+                else exposureEditor(key, state, dispatch, lensOptions, recordingLock, onQuickEvent)
+            }
         }
         X14uPanel.Exposure -> {
             cells = aeCells(quick)
@@ -395,7 +410,7 @@ internal fun X14uCaptureLayout(
             }
         }
     }
-    val currentKey = if (panel == null) selected?.takeIf { k -> cells.any { it.key == k } } else (panelKey?.takeIf { k -> cells.any { it.key == k } } ?: cells.firstOrNull()?.key)
+    val currentKey = if (panel == null) selected?.takeIf { k -> (k == PHOTO_FOCUS_KEY && simplePhoto) || cells.any { it.key == k } } else (panelKey?.takeIf { k -> cells.any { it.key == k } } ?: cells.firstOrNull()?.key)
 
     BoxWithConstraints(modifier) {
         val s = (maxHeight / X14uGeometry.reference).coerceIn(.8f, 1.25f)
@@ -443,6 +458,14 @@ internal fun X14uCaptureLayout(
                         modifier = Modifier.align(Alignment.TopCenter).padding(top = 10.dp)
                     )
                 }
+                X14uRawrAeToggle(
+                    on = quick.rawrAe.enabled,
+                    enabled = !recordingLock,
+                    orientation = orientation,
+                    onToggle = { onQuickEvent(CaptureQuickEvent.SetRawrAeOption { it.copy(enabled = !it.enabled) }) },
+                    modifier = Modifier.align(Alignment.BottomEnd)
+                        .padding(bottom = (31.dp * s - 18.dp).coerceAtLeast(4.dp) + 40.dp + 10.dp, end = 7.dp)
+                )
                 X14uLensRow(
                     state = state,
                     dispatch = dispatch,
@@ -470,7 +493,18 @@ internal fun X14uCaptureLayout(
             }
             val rowModifier = Modifier.fillMaxWidth().offset(y = bottom + 6.dp * s).height(48.dp * s)
             if (panel == null && simplePhoto) {
-                X14uPhotoRow(cells, currentKey, state, dispatch, enabled = !recordingLock, modifier = rowModifier, onTap = onCellTap)
+                // A: what auto exposure picked, dim either side of EV; tapping one switches to S or I with its editor open.
+                val live = if (state.exposureControl.mode == ExposureMode.Auto) {
+                    exposureCells(state, quick, lensOptions).filter { it.key == "ss" || it.key == "iso" }
+                } else emptyList()
+                X14uPhotoRow(cells, live, currentKey, state, dispatch, enabled = !recordingLock, modifier = rowModifier,
+                    onTap = onCellTap) { key ->
+                    val mode = if (key == "ss") ExposureMode.ShutterPriority else ExposureMode.IsoPriority
+                    if (mode in state.capabilities.supportedExposureModes) {
+                        dispatch(SetExposureMode(mode))
+                        selected = key
+                    }
+                }
             } else {
                 X14uCellRow(cells = cells, selectedKey = currentKey, orientation = orientation, modifier = rowModifier, onTap = onCellTap)
             }
@@ -611,6 +645,38 @@ private fun X14uRoundButton(
     }
 }
 
+/** R AE: Rawr AE on (accent) or Device AE (grey); S and I need Rawr AE. */
+@Composable
+private fun X14uRawrAeToggle(on: Boolean, enabled: Boolean, orientation: Orientation, onToggle: () -> Unit, modifier: Modifier) {
+    val haptics = LocalCaptureHaptics.current
+    Box(
+        modifier
+            .size(36.dp)
+            .background(Color.Black.copy(alpha = .5f), CircleShape)
+            .border(1.2.dp, if (on) CaptureColors.Accent else Color.White.copy(alpha = .25f), CircleShape)
+            .captureClickable(shape = CircleShape, enabled = enabled, role = Role.Switch) {
+                haptics.selection()
+                onToggle()
+            }
+            .semantics { contentDescription = if (on) "Rawr AE on. Tap for device AE." else "Device AE. Tap for Rawr AE." },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            "R AE",
+            fontFamily = X14uFont,
+            fontWeight = FontWeight.Medium,
+            fontSize = dpText(10.5f),
+            maxLines = 1,
+            color = when {
+                !enabled -> Color.White.copy(alpha = .25f)
+                on -> CaptureColors.Accent
+                else -> Color.White.copy(alpha = .5f)
+            },
+            modifier = Modifier.uprightInLandscape(orientation)
+        )
+    }
+}
+
 @Composable
 private fun X14uLensRow(
     state: CaptureUiState,
@@ -721,10 +787,18 @@ private fun PillItem(text: String, on: Boolean, orientation: Orientation, width:
         fontSize = dpText(12f),
         maxLines = 1,
         color = if (on) CaptureColors.Accent else Color.White.copy(alpha = .7f),
+        style = TextStyle(
+            platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
+            lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+                androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+                androidx.compose.ui.text.style.LineHeightStyle.Trim.Both
+            )
+        ),
+        textAlign = TextAlign.Center,
         modifier = Modifier
             .then(if (width != null) Modifier.width(width) else Modifier)
             .captureClickable(shape = RoundedCornerShape(14.dp)) { onClick() }
-            .padding(horizontal = 10.dp, vertical = 9.dp)
+            .padding(horizontal = 10.dp, vertical = 10.dp)
     )
 }
 
@@ -872,29 +946,60 @@ private fun X14uCellView(
 @Composable
 private fun X14uPhotoRow(
     cells: List<X14uCell>,
+    live: List<X14uCell>,
     selectedKey: String?,
     state: CaptureUiState,
     dispatch: CaptureDispatch,
     enabled: Boolean,
     modifier: Modifier,
-    onTap: (String) -> Unit
+    onTap: (String) -> Unit,
+    onLiveTap: (String) -> Unit
 ) {
     val orientation = state.orientation
     val aperture = cells.firstOrNull { it.key == "f" }
+    val liveShutter = live.firstOrNull { it.key == "ss" }
+    val liveIso = live.firstOrNull { it.key == "iso" }
     Row(modifier.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         X14uAmsiPill(state, dispatch, enabled)
         Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-            Row(Modifier.fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                if (liveShutter != null) X14uLiveValue(liveShutter, orientation, enabled, onLiveTap)
                 cells.filter { it.key != "f" }.forEach { cell ->
                     X14uCellView(cell, cell.key == selectedKey, orientation, compact = false,
                         modifier = Modifier.width(66.dp).fillMaxHeight(), onTap = onTap)
                 }
+                if (liveIso != null) X14uLiveValue(liveIso, orientation, enabled, onLiveTap)
             }
         }
         Box(Modifier.size(1.dp, 22.dp).background(Color.White.copy(alpha = .15f)))
         if (aperture != null) {
             X14uCellView(aperture, aperture.key == selectedKey, orientation, compact = false,
                 modifier = Modifier.width(64.dp).fillMaxHeight(), onTap = onTap)
+        }
+    }
+}
+
+/** A: a value auto exposure picked, dim and a size smaller than EV so it informs without drawing the eye. */
+@Composable
+private fun X14uLiveValue(cell: X14uCell, orientation: Orientation, enabled: Boolean, onTap: (String) -> Unit) {
+    val haptics = LocalCaptureHaptics.current
+    Box(
+        Modifier
+            .width(54.dp)
+            .fillMaxHeight()
+            .captureClickable(shape = CaptureTextRippleShape, enabled = enabled) {
+                haptics.selection()
+                onTap(cell.key)
+            }
+            .semantics { contentDescription = "Auto ${cell.label} ${cell.value}. Tap to set it yourself." },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(Modifier.uprightInLandscape(orientation), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(cell.value, fontFamily = X14uFont, fontSize = dpText(14f), lineHeight = dpText(17f), maxLines = 1,
+                overflow = TextOverflow.Clip, color = Color.White.copy(alpha = .38f))
+            Text(cell.label, fontFamily = X14uFont, fontSize = dpText(10f), lineHeight = dpText(12f), maxLines = 1,
+                color = Color.White.copy(alpha = .25f))
         }
     }
 }
@@ -906,7 +1011,7 @@ private fun X14uAmsiPill(state: CaptureUiState, dispatch: CaptureDispatch, enabl
     val supported = state.capabilities.supportedExposureModes
     val current = state.exposureControl.mode
     Row(
-        Modifier.height(28.dp).background(Color.White.copy(alpha = .08f), RoundedCornerShape(14.dp)).padding(horizontal = 2.dp),
+        Modifier.height(40.dp).background(Color.White.copy(alpha = .08f), RoundedCornerShape(20.dp)).padding(horizontal = 3.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         listOf(ExposureMode.Auto to "A", ExposureMode.Manual to "M", ExposureMode.ShutterPriority to "S", ExposureMode.IsoPriority to "I")
@@ -915,9 +1020,9 @@ private fun X14uAmsiPill(state: CaptureUiState, dispatch: CaptureDispatch, enabl
                 val usable = enabled && mode in supported
                 Box(
                     Modifier
-                        .size(24.dp)
-                        .background(if (on) CaptureColors.Accent.copy(alpha = .22f) else Color.Transparent, CircleShape)
-                        .captureClickable(shape = CircleShape, enabled = usable) {
+                        .size(32.dp, 34.dp)
+                        .background(if (on) CaptureColors.Accent.copy(alpha = .22f) else Color.Transparent, RoundedCornerShape(17.dp))
+                        .captureClickable(shape = RoundedCornerShape(17.dp), enabled = usable) {
                             if (!on) {
                                 haptics.selection()
                                 dispatch(SetExposureMode(mode))
@@ -934,7 +1039,7 @@ private fun X14uAmsiPill(state: CaptureUiState, dispatch: CaptureDispatch, enabl
                         letter,
                         fontFamily = X14uFont,
                         fontWeight = if (on) FontWeight.Medium else FontWeight.Normal,
-                        fontSize = dpText(12.5f),
+                        fontSize = dpText(15f),
                         color = when {
                             on -> CaptureColors.Accent
                             usable -> Color.White.copy(alpha = .75f)
@@ -1125,6 +1230,22 @@ private fun focusLabel(diopters: Float): String {
     if (diopters <= .01f) return "∞"
     val m = 1f / diopters
     return if (m < 1f) "${(m * 100).roundToInt()}cm" else if (m < 10f) "%.1fm".format(m).replace(".0m", "m") else "${m.roundToInt()}m"
+}
+
+private const val PHOTO_FOCUS_KEY = "photo.focus"
+
+/** Photo: AF · AF-L · MF, with the focus ruler under them in MF. */
+private fun photoFocusEditor(state: CaptureUiState, dispatch: CaptureDispatch): X14uEditor {
+    val modes = buildList {
+        add(FocusMode.Af)
+        add(FocusMode.AfLock)
+        if (state.capabilities.manualFocus.supported) add(FocusMode.Mf)
+    }
+    val labels = modes.map { when (it) { FocusMode.Af -> "AF"; FocusMode.AfLock -> "AF-L"; FocusMode.Mf -> "MF" } }
+    val chips = X14uEditor.Chips(labels, modes.indexOf(state.focus.mode)) { i ->
+        if (modes[i] != state.focus.mode) dispatch(SetFocusMode(modes[i]))
+    }
+    return X14uEditor.Stacked(chips, if (state.focus.mode == FocusMode.Mf) focusRuler(state, dispatch) else null)
 }
 
 private fun focusRuler(state: CaptureUiState, dispatch: CaptureDispatch): X14uEditor {
@@ -1350,6 +1471,11 @@ private fun X14uEditorView(editor: X14uEditor, orientation: Orientation) {
             editor.text, fontFamily = X14uFont, fontSize = dpText(12f), color = CaptureColors.Muted,
             textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()
         )
+        is X14uEditor.Stacked -> Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
+            X14uChoiceChips(editor.top.labels, editor.top.selected, editor.top.enabled, orientation,
+                Modifier.fillMaxWidth().height(32.dp), editor.top.onPick)
+            if (editor.below != null) Box(Modifier.fillMaxWidth().weight(1f)) { X14uEditorView(editor.below, orientation) }
+        }
     }
 }
 
