@@ -15,26 +15,28 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
 
       # Explicit packages: the action's default list still names the removed
       # 'tools' package. Versions pinned in app/build.gradle.kts.
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
         with:
           packages: platform-tools ndk;29.0.14206865 cmake;3.31.6
 
       # native/image_scopes embeds its SPIR-V through `uv run`.
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: false
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Unit tests
         run: ./gradlew :app:testDebugUnitTest
@@ -42,7 +44,7 @@ jobs:
       - name: Assemble debug APK
         run: ./gradlew :app:assembleDebug
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: rawr-x14u-${{ github.sha }}
           path: app/build/outputs/apk/debug/*.apk
@@ -61,7 +63,7 @@ jobs:
             --title "Rawr X14U" \
             --notes "Rawr X14U build of ${GITHUB_SHA::8}. Installs alongside Rawr and Rawr Debug."
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: test-reports
