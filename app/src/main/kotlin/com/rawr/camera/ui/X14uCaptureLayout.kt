@@ -288,6 +288,32 @@ internal fun X14uCaptureLayout(
             }
         }
     }
+    // Aperture, per mode and lens: each mode remembers its own f-number; a mode not visited yet this session (and
+    // every mode after a restart) starts at f/2, the main lens's sharpest stop and the camera's own aperture.
+    val apertureRowIndex = apertureRow(lensOptions)
+    val apertureKey = "$uiMode:${lensOptions?.lensId}"
+    val apertureMemory = androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+    var lastApertureKey by remember { mutableStateOf<String?>(null) }
+    val apertureSelected = lensOptions?.options?.getOrNull(apertureRowIndex)?.selected
+    androidx.compose.runtime.SideEffect {
+        if (lastApertureKey == apertureKey && apertureSelected != null) {
+            apertureMemory.value = (memoryOf(apertureMemory.value) + (apertureKey to apertureSelected.toString()))
+                .entries.joinToString(";") { "${it.key}=${it.value}" }
+        }
+    }
+    LaunchedEffect(apertureKey, apertureRowIndex) {
+        if (lastApertureKey == apertureKey) return@LaunchedEffect
+        lastApertureKey = apertureKey
+        val options = lensOptions ?: return@LaunchedEffect
+        val option = options.options.getOrNull(apertureRowIndex) ?: return@LaunchedEffect
+        val target = memoryOf(apertureMemory.value)[apertureKey]?.toIntOrNull()
+            ?: option.choices.indexOfFirst { it.label.trim().equals("f/2", ignoreCase = true) }
+        // A row locked by another choice (50 MP holds f/2) or unused in this mode is left alone.
+        val free = apertureRowIndex !in options.locked && apertureRowIndex !in options.unavailable
+        if (free && target in option.choices.indices && target != option.selected && !recordingLock) {
+            onQuickEvent(CaptureQuickEvent.SelectLensOption(options.lensId, apertureRowIndex, target))
+        }
+    }
     // Photo has no focus control: entering it returns focus to continuous AF.
     LaunchedEffect(simplePhoto) {
         if (simplePhoto && state.focus.mode != FocusMode.Af) dispatch(SetFocusMode(FocusMode.Af))
