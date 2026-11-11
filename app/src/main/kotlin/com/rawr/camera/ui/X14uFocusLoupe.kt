@@ -79,7 +79,8 @@ internal fun X14uFocusLoupe(
             (if (c % 2 == 0) margin else fw - w - margin) to (if (c < 2) margin else fh - h - margin)
         val chosen = run {
             val (x, y) = cornerOrigin(corner)
-            val overlaps = window[2] * fw > x && window[0] * fw < x + w && window[3] * fh > y && window[1] * fh < y + h
+            val overlaps = window[2] * fw.value > x.value && window[0] * fw.value < (x + w).value &&
+                window[3] * fh.value > y.value && window[1] * fh.value < (y + h).value
             if (overlaps) corner xor 1 else corner
         }
         val (ox, oy) = cornerOrigin(chosen)

@@ -2,6 +2,7 @@ package com.rawr.camera.settings.preferences
 
 import com.rawr.camera.settings.model.withLensOverrides
 import com.rawr.camera.settings.model.AgxCatalog
+import com.rawr.camera.settings.model.FocusLoupeSettings
 import com.rawr.camera.settings.model.AgxParameter
 import com.rawr.camera.settings.model.AgxPreset
 import com.rawr.camera.settings.model.AgxValues
