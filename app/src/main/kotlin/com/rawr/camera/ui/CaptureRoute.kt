@@ -58,11 +58,12 @@ fun CaptureRoute(
     var deviceRotationDegrees by androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableIntStateOf(previewCoordinator.captureDeviceRotationDegrees)
     }
+    val surfaceView = androidx.compose.runtime.remember { arrayOfNulls<android.view.SurfaceView>(1) }
     val preview = androidx.compose.runtime.remember(previewCoordinator, deviceRotationDegrees) {
         CapturePreview(
             nativeContent = true,
             deviceRotationDegrees = deviceRotationDegrees,
-            content = { RawPreviewSurface(previewCoordinator, it) },
+            content = { RawPreviewSurface(previewCoordinator, it, onView = { v -> surfaceView[0] = v }) },
             faceOverlay = {
                 val faceFlow = androidx.compose.runtime.remember(controller) {
                     controller.state.map { it.faceDetections }.distinctUntilChanged()
@@ -94,7 +95,8 @@ fun CaptureRoute(
                 previewCoordinator.setScopePresentationState(types, modes, rotations, rects)
             },
             onLoupe = { values, meter -> previewCoordinator.setFocusLoupe(values, meter) },
-            focusMeter = { previewCoordinator.focusMeterValue() }
+            focusMeter = { previewCoordinator.focusMeterValue() },
+            snapshot = { deliver -> copyPreview(surfaceView[0], deliver) }
         )
     }
     DeviceOrientationEffect(
@@ -127,4 +129,17 @@ fun CaptureRoute(
         onToggleVideoRecording = onToggleVideoRecording
     )
     }
+}
+
+/** Half-size copy of the viewfinder surface (Pano ghost); null when it can't be read. */
+private fun copyPreview(view: android.view.SurfaceView?, deliver: (android.graphics.Bitmap?) -> Unit) {
+    val w = (view?.width ?: 0) / 2
+    val h = (view?.height ?: 0) / 2
+    if (view == null || w <= 0 || h <= 0 || !view.holder.surface.isValid) return deliver(null)
+    val bitmap = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+    runCatching {
+        android.view.PixelCopy.request(view, bitmap, { result ->
+            deliver(if (result == android.view.PixelCopy.SUCCESS) bitmap else null)
+        }, android.os.Handler(android.os.Looper.getMainLooper()))
+    }.onFailure { deliver(null) }
 }

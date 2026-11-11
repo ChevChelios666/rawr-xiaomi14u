@@ -11,9 +11,17 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.rawr.camera.integration.RawPreviewCoordinator
 
 @Composable
-internal fun RawPreviewSurface(coordinator: RawPreviewCoordinator, modifier: Modifier = Modifier) {
+internal fun RawPreviewSurface(
+    coordinator: RawPreviewCoordinator,
+    modifier: Modifier = Modifier,
+    onView: (SurfaceView?) -> Unit = {}
+) {
     val context = LocalContext.current
     val view = remember { SurfaceView(context).apply { setZOrderOnTop(false) } }
+    DisposableEffect(view) {
+        onView(view)
+        onDispose { onView(null) }
+    }
     DisposableEffect(view, coordinator) {
         val callback =
             object : SurfaceHolder.Callback {

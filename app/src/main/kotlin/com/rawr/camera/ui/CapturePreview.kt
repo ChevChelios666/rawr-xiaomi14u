@@ -14,5 +14,7 @@ data class CapturePreview(
     /** X14U focus loupe: [x, y, w, h, wx0, wy0, wx1, wy1, corner] in viewfinder fractions; null = off. */
     val onLoupe: (FloatArray?, Boolean) -> Unit = { _, _ -> },
     /** Latest focus meter value (relative; < 0 = none). */
-    val focusMeter: () -> Float = { -1f }
+    val focusMeter: () -> Float = { -1f },
+    /** A copy of what the viewfinder shows now (half size), or null; delivered on the main thread. */
+    val snapshot: ((android.graphics.Bitmap?) -> Unit) -> Unit = { it(null) }
 )

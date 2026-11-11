@@ -20,7 +20,12 @@ data class CaptureExtras(
     val stillsHint: Boolean = false,
     val onStillsHintShown: () -> Unit = {},
     /** Digital zoom crop on top of the lens (1 = none). */
-    val onDigitalZoom: (Float) -> Unit = {}
+    val onDigitalZoom: (Float) -> Unit = {},
+    /** Pano mode (after Video): stills run as Photo with the Pano guide. */
+    val pano: Boolean = false,
+    val onSetPano: (Boolean) -> Unit = {},
+    /** Delete the files of a Pano frame by its name tag. */
+    val onPanoUndo: (String) -> Unit = {}
 )
 
 val LocalCaptureExtras = staticCompositionLocalOf { CaptureExtras() }

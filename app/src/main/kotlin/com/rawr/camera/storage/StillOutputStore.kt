@@ -400,7 +400,7 @@ class StillOutputStore(
 
     private fun captureBaseName(wallClockMillis: Long): String {
         val uniqueMillis = lastNameTimestamp.updateAndGet { previous -> maxOf(wallClockMillis, previous + 1) }
-        return CaptureFileNames.baseName(uniqueMillis)
+        return CaptureFileNames.baseName(uniqueMillis) + CaptureFileNames.stillSuffix
     }
 
     private fun prepareFile(displayName: String, mimeType: String, destination: CaptureSaveLocation): PreparedFile? {

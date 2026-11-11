@@ -362,7 +362,7 @@ internal fun ModeSelectorStrip(
 ) {
     val haptics = LocalCaptureHaptics.current
     val extras = LocalCaptureExtras.current
-    val current = currentX14uMode(state, extras.proUi)
+    val current = currentX14uMode(state, extras.proUi, extras.pano)
     Row(
         modifier
             .testTag(CaptureTestTags.MODE_SELECTOR)
@@ -371,7 +371,7 @@ internal fun ModeSelectorStrip(
         verticalAlignment = Alignment.CenterVertically
     ) {
         // X14U: PRO (new screen) · PHOTO (this classic screen) · VIDEO (new screen).
-        X14uMode.entries.forEach { mode ->
+        X14uMode.entries.filter { it != X14uMode.Pano }.forEach { mode ->
             val isSelected = current == mode
             val label = mode.label.uppercase()
             Box(

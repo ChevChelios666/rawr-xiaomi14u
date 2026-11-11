@@ -100,6 +100,36 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         .distinctUntilChanged()
         .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, latestSettings.x14uProUi)
 
+    /** X14U Pano mode (UI only; stills run as Photo). Not kept across restarts. */
+    private val panoFlow = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val pano: StateFlow<Boolean> = panoFlow
+    fun setPano(on: Boolean) {
+        panoFlow.value = on
+        if (!on) com.rawr.camera.storage.CaptureFileNames.stillSuffix = ""
+    }
+
+    /**
+     * Pano undo: removes the files of the frame tagged [tag] ("_PANO2231_03") that this app saved. A merge may still
+     * be writing them, so it looks again a few times over the next two minutes.
+     */
+    fun deletePanoFrame(tag: String) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            for (wait in longArrayOf(0L, 4_000L, 15_000L, 45_000L, 60_000L)) {
+                kotlinx.coroutines.delay(wait)
+                val removed = runCatching {
+                    app.contentResolver.delete(
+                        android.provider.MediaStore.Files.getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL),
+                        "${android.provider.MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? AND " +
+                            "${android.provider.MediaStore.MediaColumns.OWNER_PACKAGE_NAME} = ?",
+                        arrayOf("%$tag%", app.packageName)
+                    )
+                }.getOrDefault(0)
+                if (removed > 0) refreshLatestGalleryImage()
+            }
+        }
+    }
+
     fun setProUi(pro: Boolean) {
         settingsEditor.update { prev ->
             prev.copy(x14uProUi = pro, stillsSwitched = prev.stillsSwitched || pro != prev.x14uProUi).withModeLookSwitch(prev)
@@ -372,9 +402,10 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             }
         }
         viewModelScope.launch {
-            settingsEditor.values.map { it.photoAspect }.distinctUntilChanged().collect {
-                previewCoordinator.setOutputAspect(it.nativeRatio)
-            }
+            // Pano frames are always full size (the merge wants every pixel).
+            kotlinx.coroutines.flow.combine(settingsEditor.values.map { it.photoAspect }, panoFlow) { aspect, pano ->
+                if (pano) com.rawr.camera.settings.model.PhotoAspect.Native.nativeRatio else aspect.nativeRatio
+            }.distinctUntilChanged().collect { previewCoordinator.setOutputAspect(it) }
         }
         settingsSync.start()
     }

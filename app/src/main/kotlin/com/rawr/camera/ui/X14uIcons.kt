@@ -154,6 +154,17 @@ internal object X14uIcons {
     val ChevronDown: ImageVector by lazy {
         icon("X14u.ChevronDown") { stroke(2.2f) { moveTo(6.5f, 9.5f); lineTo(12f, 15f); lineTo(17.5f, 9.5f) } }
     }
+    /** Undo: a hooked arrow back to the left. */
+    val Undo: ImageVector by lazy {
+        icon("X14u.Undo") {
+            stroke(2f) {
+                moveTo(9f, 14f); lineTo(4.5f, 9.5f); lineTo(9f, 5f)
+                moveTo(4.5f, 9.5f); lineTo(14.5f, 9.5f)
+                arcTo(5f, 5f, 0f, false, true, 14.5f, 19.5f)
+                lineTo(11f, 19.5f)
+            }
+        }
+    }
     val ChevronUp: ImageVector by lazy {
         icon("X14u.ChevronUp") { stroke(2.2f) { moveTo(6.5f, 14.5f); lineTo(12f, 9f); lineTo(17.5f, 14.5f) } }
     }

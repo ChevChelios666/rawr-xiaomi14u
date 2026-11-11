@@ -34,6 +34,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import kotlinx.coroutines.launch
+import androidx.compose.ui.draw.alpha
+import com.rawr.camera.architecture.TriggerCapture
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -141,18 +144,27 @@ internal fun dpText(value: Float): TextUnit = with(LocalDensity.current) { value
 
 /** The mode selector: Pro (new screen, photos), Photo (classic Rawr screen), Video (new screen). */
 /** Photo+ (enum Pro) sits behind Photo: swipe up on the viewfinder, or tap the lit Photo label, to switch. */
-internal enum class X14uMode(val label: String) { Photo("Photo"), Pro("Photo+"), Video("Video") }
+internal enum class X14uMode(val label: String) { Photo("Photo"), Pro("Photo+"), Video("Video"), Pano("Pano") }
 
-internal fun currentX14uMode(state: CaptureUiState, proUi: Boolean): X14uMode = when {
+internal fun currentX14uMode(state: CaptureUiState, proUi: Boolean, pano: Boolean = false): X14uMode = when {
     state.captureMode == CaptureMode.Video -> X14uMode.Video
+    pano -> X14uMode.Pano
     proUi -> X14uMode.Pro
     else -> X14uMode.Photo
 }
 
 internal fun selectX14uMode(target: X14uMode, state: CaptureUiState, dispatch: CaptureDispatch, extras: CaptureExtras) {
     when (target) {
-        X14uMode.Video -> if (state.captureMode != CaptureMode.Video) dispatch(SetCaptureMode(CaptureMode.Video))
+        X14uMode.Video -> {
+            extras.onSetPano(false)
+            if (state.captureMode != CaptureMode.Video) dispatch(SetCaptureMode(CaptureMode.Video))
+        }
+        X14uMode.Pano -> {
+            extras.onSetPano(true)
+            if (state.captureMode != CaptureMode.Photo) dispatch(SetCaptureMode(CaptureMode.Photo))
+        }
         else -> {
+            extras.onSetPano(false)
             extras.onSetProUi(target == X14uMode.Pro)
             if (state.captureMode != CaptureMode.Photo) dispatch(SetCaptureMode(CaptureMode.Photo))
         }
@@ -250,7 +262,7 @@ internal fun X14uCaptureLayout(
     // runs and the rest is a centred crop (viewfinder, metering, JPEG, DNG default crop).
     val zoomChain = LocalCaptureExtras.current.tools.zoomChain
     val chainLens = zoomChain.firstOrNull { it.first == state.selectedLensId }
-    val zoomOn = !isVideo && chainLens != null
+    val zoomOn = !isVideo && !LocalCaptureExtras.current.pano && chainLens != null
     var zoom by remember { mutableStateOf(1f) }
     // A lens chosen some other way (mode, front/back, settings) starts at its own zoom.
     LaunchedEffect(state.selectedLensId, zoomChain) {
@@ -343,7 +355,35 @@ internal fun X14uCaptureLayout(
     }
     val film = state.filmSimEnabled && !isVideo && filmQuick != null
     // Photo (not Pro): the AMSI row instead of the full exposure row.
-    val simplePhoto = !isVideo && !LocalCaptureExtras.current.proUi
+    // Pano runs Photo's simpler row; its set locks the controls that must match frame to frame.
+    val pano = !isVideo && LocalCaptureExtras.current.pano
+    val simplePhoto = !isVideo && (!LocalCaptureExtras.current.proUi || pano)
+    val panoSet = remember { PanoSet() }
+    val panoMotion = rememberPanoMotion(pano)
+    val panoLocked = pano && panoSet.inSet
+    val panoScope = androidx.compose.runtime.rememberCoroutineScope()
+    val panoExtras = LocalCaptureExtras.current
+    val panoState by rememberUpdatedState(state)
+    val panoShoot: () -> Unit = shoot@{
+        if (recordingLock || panoSet.arming) return@shoot
+        val take = {
+            val frame = panoSet.shoot(panoMotion(), dispatch)
+            preview.snapshot { copy -> panoSet.setGhost(frame, copy.toGhost()) }
+        }
+        if (panoSet.frames == 0) {
+            // Frame 1: lock exposure, focus and white balance where they are, let the camera settle, then shoot.
+            panoSet.arming = true
+            panoSet.lock(panoState, dispatch)
+            panoScope.launch {
+                kotlinx.coroutines.delay(400L)
+                take()
+            }
+        } else take()
+    }
+    val panoUndo: () -> Unit = { panoSet.undo(panoState, dispatch)?.let(panoExtras.onPanoUndo) }
+    val panoDone: () -> Unit = { panoSet.end(panoState, dispatch) }
+    // Leaving Pano (another mode, Video) ends the set, keeping its frames.
+    LaunchedEffect(pano) { if (!pano && panoSet.inSet) panoSet.end(panoState, dispatch) }
     // Photo, Pro and Video each remember their own exposure mode (A·M·S·I) and white balance: switching mode saves
     // the one left and restores the one entered (a mode not visited yet keeps the current ones; Photo starts on A).
     val uiMode = when { isVideo -> "video"; simplePhoto -> "photo"; else -> "pro" }
@@ -546,7 +586,7 @@ internal fun X14uCaptureLayout(
                         direction > 0 -> openTools(true)
                         toolsOpen -> openTools(false)
                         // Swipe up: Photo <-> Pro (stills only, not while recording).
-                        !isVideo && !recordingLock -> {
+                        !isVideo && !recordingLock && !pano -> {
                             closeAll()
                             extrasNow.onSetProUi(!extrasNow.proUi)
                             modeFlash = if (extrasNow.proUi) "PHOTO" else "PHOTO+"
@@ -564,7 +604,15 @@ internal fun X14uCaptureLayout(
             Box(Modifier.align(Alignment.TopCenter).offset(y = top).size(frame)) {
                 FrameBrackets(Modifier.fillMaxSize())
                 val tools = LocalCaptureExtras.current.tools
-                if (!isVideo) X14uAspectMask(tools.photoAspect, Modifier.fillMaxSize())
+                if (!isVideo && !pano) X14uAspectMask(tools.photoAspect, Modifier.fillMaxSize())
+                if (pano) X14uPanoOverlay(
+                    set = panoSet,
+                    lensFactor = com.rawr.camera.settings.model.ZoomChain.factorOf(state.selectedLensId) ?: 1f,
+                    motion = panoMotion,
+                    orientation = orientation,
+                    onAutoShoot = panoShoot,
+                    modifier = Modifier.fillMaxSize()
+                )
                 if (tools.level) X14uLevel(Modifier.fillMaxSize())
                 // Photo / Photo+ only: in Video the viewfinder runs past this frame (16:9), so the loupe would sit off.
                 if (loupeOpen && !isVideo) {
@@ -640,7 +688,7 @@ internal fun X14uCaptureLayout(
                     lookTabs = lookTabs(film),
                     lookTab = lookTab,
                     onLookTab = { lookTab = it; panelKey = null },
-                    enabled = !recordingLock,
+                    enabled = !recordingLock && !panoLocked,
                     onTogglePanel = { target ->
                         selected = null
                         panelKey = null
@@ -661,7 +709,8 @@ internal fun X14uCaptureLayout(
                 onToggleTools = { openTools(!toolsOpen) }
             )
             val onCellTap: (String) -> Unit = { key ->
-                if (panel == null) selected = if (selected == key) null else key else panelKey = key
+                if (panoLocked) Unit
+                else if (panel == null) selected = if (selected == key) null else key else panelKey = key
             }
             val rowModifier = Modifier.fillMaxWidth().offset(y = bottom + 6.dp * s).height(48.dp * s)
             if (panel == null && simplePhoto) {
@@ -669,7 +718,7 @@ internal fun X14uCaptureLayout(
                 val live = if (state.exposureControl.mode == ExposureMode.Auto) {
                     exposureCells(state, quick, lensOptions).filter { it.key == "ss" || it.key == "iso" }
                 } else emptyList()
-                X14uPhotoRow(cells, live, currentKey, state, dispatch, enabled = !recordingLock, modifier = rowModifier,
+                X14uPhotoRow(cells, live, currentKey, state, dispatch, enabled = !recordingLock && !panoLocked, modifier = rowModifier,
                     onTap = onCellTap) { key ->
                     val mode = if (key == "ss") ExposureMode.ShutterPriority else ExposureMode.IsoPriority
                     if (mode in state.capabilities.supportedExposureModes) {
@@ -688,14 +737,16 @@ internal fun X14uCaptureLayout(
                 if (key != null) {
                     X14uEditorView(editorFor(key), orientation)
                 } else if (panel == null) {
-                    X14uIdleControlArea(state, dispatch, videoControls, showNumbers, enabled = !recordingLock)
+                    X14uIdleControlArea(state, dispatch, videoControls, showNumbers, enabled = !recordingLock,
+                        panoControls = if (!pano) null else ({ X14uPanoControls(panoSet, enabled = true, onDone = panoDone) }))
                 }
             }
             X14uShutterRow(
                 state, dispatch, quick, latestImageUri, onOpenLatestImage, onOpenRenderer, onOpenFilmSimSettings,
                 onOpenMultiframeSettings, onOpenLensSettings, onQuickEvent, videoControls, onToggleVideoRecording,
                 enabled = !recordingLock,
-                modifier = Modifier.fillMaxWidth().offset(y = shutterCenter - 46.dp).height(92.dp)
+                modifier = Modifier.fillMaxWidth().offset(y = shutterCenter - 46.dp).height(92.dp),
+                pano = if (!pano) null else PanoShutter(panoShoot, if (panoSet.frames > 0) panoUndo else null, panoLocked)
             )
             // Tools panel, stock size and place: full width less 10 dp a side, its bottom 67 dp above the shutter's
             // centre (over the exposure row and mode strip, within thumb reach). Above everything else.
@@ -2018,13 +2069,14 @@ private fun X14uIdleControlArea(
     dispatch: CaptureDispatch,
     video: VideoControlState,
     showNumbers: Boolean,
-    enabled: Boolean
+    enabled: Boolean,
+    panoControls: (@Composable () -> Unit)? = null
 ) {
     val haptics = LocalCaptureHaptics.current
     val extras = LocalCaptureExtras.current
-    val current = currentX14uMode(state, extras.proUi)
-    // The strip shows the stills mode in use (Photo or Pro; swipe up on the viewfinder switches) and Video.
-    val stripModes = listOf(if (extras.proUi) X14uMode.Pro else X14uMode.Photo, X14uMode.Video)
+    val current = currentX14uMode(state, extras.proUi, extras.pano)
+    // The strip shows the stills mode last used (Photo or Photo+; swipe up on the viewfinder switches), Video and Pano.
+    val stripModes = listOf(if (extras.proUi) X14uMode.Pro else X14uMode.Photo, X14uMode.Video, X14uMode.Pano)
     var dismissed by remember { mutableStateOf<VideoTakeSummary?>(null) }
     val take = video.lastTake
     LaunchedEffect(take) {
@@ -2069,12 +2121,17 @@ private fun X14uIdleControlArea(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Box(Modifier.size(20.dp, 3.dp).background(Color.White.copy(alpha = .3f), RoundedCornerShape(2.dp)))
-                Spacer(Modifier.height(10.dp))
+                if (panoControls != null) {
+                    panoControls()
+                    Spacer(Modifier.height(6.dp))
+                } else {
+                    Box(Modifier.size(20.dp, 3.dp).background(Color.White.copy(alpha = .3f), RoundedCornerShape(2.dp)))
+                    Spacer(Modifier.height(10.dp))
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(30.dp), verticalAlignment = Alignment.CenterVertically) {
                     stripModes.forEach { mode ->
                         val isSelected = current == mode
-                        val stills = mode != X14uMode.Video
+                        val stills = mode == X14uMode.Photo || mode == X14uMode.Pro
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             mode.label,
@@ -2210,7 +2267,8 @@ private fun X14uShutterRow(
     videoControls: VideoControlState,
     onToggleVideoRecording: () -> Unit,
     enabled: Boolean,
-    modifier: Modifier
+    modifier: Modifier,
+    pano: PanoShutter? = null
 ) {
     val isVideo = state.captureMode == CaptureMode.Video
     val extras = LocalCaptureExtras.current
@@ -2230,7 +2288,17 @@ private fun X14uShutterRow(
         Row(Modifier.weight(1f), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
             Thumbnail(state = state, imageUri = latestImageUri, onClick = onOpenLatestImage, onLongClick = onOpenRenderer,
                 modifier = turn)
-            X14uRoundButton(
+            // Pano: undo the last frame (during a set) instead of the front camera.
+            if (pano != null) {
+                X14uRoundButton(
+                    X14uIcons.Undo,
+                    "Undo the last pano frame",
+                    orientation,
+                    enabled = enabled && pano.onUndo != null,
+                    size = 48.dp,
+                    iconScale = .56f
+                ) { pano.onUndo?.invoke() }
+            } else X14uRoundButton(
                 X14uIcons.CameraSwitch,
                 if (onFront) "Switch to the back camera" else "Switch to the front camera",
                 orientation,
@@ -2252,7 +2320,9 @@ private fun X14uShutterRow(
             )
         } else {
             Shutter(
-                dispatch = dispatch,
+                dispatch = if (pano == null) dispatch else { action ->
+                    if (action is TriggerCapture) pano.onShoot() else dispatch(action)
+                },
                 modifier = Modifier,
                 countingDown = state.selfTimerRemainingMs != null,
                 longExposure = state.longExposure
@@ -2290,11 +2360,19 @@ private fun X14uShutterRow(
                     DcpSidePill(dcp, { if (enabled) onSelectDcp(it) }, modifier = turn, onOpenLensSettings = { onOpenLensSettings(state.selectedLensId) })
                 }
             } else {
-                PhotoLookToggles(
-                    state, dispatch, onOpenFilmSimSettings, onOpenMultiframeSettings,
-                    trailing = { DcpSidePill(dcp, onSelectDcp, modifier = turn, onOpenLensSettings = { onOpenLensSettings(state.selectedLensId) }) },
-                    pillModifier = turn
-                )
+                // Locked during a pano set: every frame keeps frame 1's merge and look.
+                Box(Modifier.alpha(if (pano?.locked == true) .45f else 1f)) {
+                    PhotoLookToggles(
+                        state, dispatch, onOpenFilmSimSettings, onOpenMultiframeSettings,
+                        trailing = { DcpSidePill(dcp, onSelectDcp, modifier = turn, onOpenLensSettings = { onOpenLensSettings(state.selectedLensId) }) },
+                        pillModifier = turn
+                    )
+                    if (pano?.locked == true) Box(Modifier.matchParentSize().pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial).changes.forEach { it.consume() }
+                        }
+                    })
+                }
             }
         }
     }
