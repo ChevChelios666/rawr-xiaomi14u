@@ -133,11 +133,11 @@ import kotlin.math.roundToInt
 internal enum class X14uPanel { Look, Exposure }
 
 private val Amber = Color(0xFFFFB74D)
-private val X14uFont = FontFamily.Default
+internal val X14uFont = FontFamily.Default
 
 /** Text size in dp (immune to the system font scale). */
 @Composable
-private fun dpText(value: Float): TextUnit = with(LocalDensity.current) { value.dp.toSp() }
+internal fun dpText(value: Float): TextUnit = with(LocalDensity.current) { value.dp.toSp() }
 
 /** The mode selector: Pro (new screen, photos), Photo (classic Rawr screen), Video (new screen). */
 internal enum class X14uMode(val label: String) { Photo("Photo"), Pro("Pro"), Video("Video") }
@@ -190,6 +190,10 @@ private sealed interface X14uEditor {
         val onReset: () -> Unit = {},
         val onDragStart: () -> Unit = {},
         val endIcons: Boolean = false,
+        /** A small text button at the right end (WB: TINT / K); null for none. */
+        val trailing: String? = null,
+        val trailingActive: Boolean = false,
+        val onTrailing: () -> Unit = {},
         val onIndex: (new: Int, old: Int) -> Unit
     ) : X14uEditor
 
@@ -239,16 +243,32 @@ internal fun X14uCaptureLayout(
     var lookTab by remember { mutableStateOf("TONE") }
     var panelKey by remember { mutableStateOf<String?>(null) }
     var showNumbers by remember { mutableStateOf(false) }
+    // WB editor: Kelvin ruler, or tint after TINT.
+    var wbTint by remember { mutableStateOf(false) }
+    // Tools panel (swipe down on the viewfinder / top-bar arrow) and its open choice row.
+    var toolsOpen by remember { mutableStateOf(false) }
+    var toolsChoice by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(state.captureMode, state.selectedLensId) {
         selected = null
         panel = null
     }
+    LaunchedEffect(selected) { if (selected != "wb") wbTint = false }
     val lensOptions = quick.lensOptions.firstOrNull { it.lensId == state.selectedLensId }
     val closeAll: () -> Boolean = {
-        val open = selected != null || panel != null
+        val open = selected != null || panel != null || toolsOpen
         selected = null
         panel = null
+        toolsOpen = false
+        toolsChoice = null
         open
+    }
+    val openTools: (Boolean) -> Unit = { open ->
+        if (open) {
+            selected = null
+            panel = null
+        }
+        toolsOpen = open
+        toolsChoice = null
     }
     val film = state.filmSimEnabled && !isVideo && filmQuick != null
     // Photo (not Pro): the AMSI row instead of the full exposure row.
@@ -350,7 +370,7 @@ internal fun X14uCaptureLayout(
             } else all
             editorFor = { key ->
                 if (key == PHOTO_FOCUS_KEY) photoFocusEditor(state, dispatch)
-                else exposureEditor(key, state, dispatch, lensOptions, recordingLock, onQuickEvent)
+                else exposureEditor(key, state, dispatch, lensOptions, recordingLock, onQuickEvent, wbTint) { wbTint = !wbTint }
             }
         }
         X14uPanel.Exposure -> {
@@ -439,7 +459,8 @@ internal fun X14uCaptureLayout(
                 quick = quick.copy(locked = recordingLock),
                 onQuickEvent = onQuickEvent,
                 x14uClean = true,
-                onViewfinderTap = closeAll
+                onViewfinderTap = closeAll,
+                onViewfinderSwipe = { direction -> openTools(direction > 0) }
             )
             // Controls float over a 16:9 preview that runs past the photo frame.
             if (videoBleed) {
@@ -450,6 +471,9 @@ internal fun X14uCaptureLayout(
             }
             Box(Modifier.align(Alignment.TopCenter).offset(y = top).size(frame)) {
                 FrameBrackets(Modifier.fillMaxSize())
+                val tools = LocalCaptureExtras.current.tools
+                if (!isVideo) X14uAspectMask(tools.photoAspect, Modifier.fillMaxSize())
+                if (tools.level) X14uLevel(Modifier.fillMaxSize())
                 if (isVideo && videoControls.recording) {
                     X14uRecordTimer(
                         video = videoControls,
@@ -484,10 +508,32 @@ internal fun X14uCaptureLayout(
                     modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                         .padding(bottom = (31.dp * s - 18.dp).coerceAtLeast(4.dp), start = 7.dp, end = 7.dp)
                 )
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = toolsOpen,
+                    enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(expandFrom = Alignment.Top),
+                    exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically(shrinkTowards = Alignment.Top),
+                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(6.dp)
+                ) {
+                    val lensName = state.capabilities.lenses.firstOrNull { it.id == state.selectedLensId }?.displayName.orEmpty()
+                    X14uToolsPanel(
+                        state = state,
+                        dispatch = dispatch,
+                        video = isVideo,
+                        frontLens = isFrontLens(state.selectedLensId, lensName),
+                        choice = toolsChoice,
+                        onChoice = { toolsChoice = it },
+                        onOpenSettings = { openTools(false); onOpenSettings() },
+                        onClose = { openTools(false) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
-            CaptureTopBar(state, dispatch, onOpenSettings, videoLocked = recordingLock, showLog = false) {
-                X14uOptionToggles(quick, lensOptions, isVideo, enabled = !recordingLock, orientation, onQuickEvent)
-            }
+            CaptureTopBar(
+                state, dispatch, onOpenSettings, videoLocked = recordingLock, showLog = false,
+                toggles = { X14uOptionToggles(quick, lensOptions, isVideo, enabled = !recordingLock, orientation, onQuickEvent) },
+                toolsOpen = toolsOpen,
+                onToggleTools = { openTools(!toolsOpen) }
+            )
             val onCellTap: (String) -> Unit = { key ->
                 if (panel == null) selected = if (selected == key) null else key else panelKey = key
             }
@@ -855,7 +901,10 @@ private fun exposureCells(state: CaptureUiState, quick: ViewfinderQuickState, op
         X14uCell("f", aperture.replace("f/", "F"), "A", enabled = row >= 0),
         X14uCell("ss", ss, "S", ssManual),
         X14uCell("iso", iso, "ISO", isoManual),
-        X14uCell("wb", if (wbManual) "${state.whiteBalanceTemperatureK}K" else "AWB", "WB", wbManual,
+        X14uCell("wb", if (wbManual) "${state.whiteBalanceTemperatureK}K" else "AWB",
+            // A tint away from 0 shows under the value.
+            if (wbManual && state.whiteBalanceTint != 0) "WB ${if (state.whiteBalanceTint > 0) "+" else ""}${state.whiteBalanceTint}" else "WB",
+            wbManual,
             enabled = state.capabilities.manualWhiteBalanceSupported || wbManual),
         X14uCell("af", if (state.focus.mode == FocusMode.Mf) state.focusDistanceLabel() else af, "F",
             state.focus.mode != FocusMode.Af)
@@ -1092,7 +1141,9 @@ private fun exposureEditor(
     dispatch: CaptureDispatch,
     options: LensOptionsQuickState?,
     recordingLock: Boolean,
-    onQuickEvent: (CaptureQuickEvent) -> Unit
+    onQuickEvent: (CaptureQuickEvent) -> Unit,
+    wbTint: Boolean = false,
+    onToggleWbTint: () -> Unit = {}
 ): X14uEditor = when (key) {
     "ev" -> exposureRuler(ExposureParameter.Ev, state, dispatch)
     "ss" -> exposureRuler(ExposureParameter.Shutter, state, dispatch)
@@ -1109,7 +1160,7 @@ private fun exposureEditor(
             ) { i -> if (i != option.selected) onQuickEvent(CaptureQuickEvent.SelectLensOption(options.lensId, row, i)) }
         }
     }
-    "wb" -> wbRuler(state, dispatch)
+    "wb" -> wbRuler(state, dispatch, wbTint, onToggleWbTint)
     else -> focusRuler(state, dispatch)
 }
 
@@ -1202,12 +1253,39 @@ private fun exposureRuler(parameter: ExposureParameter, state: CaptureUiState, d
     )
 }
 
-private fun wbRuler(state: CaptureUiState, dispatch: CaptureDispatch): X14uEditor {
+private fun wbRuler(
+    state: CaptureUiState,
+    dispatch: CaptureDispatch,
+    tintMode: Boolean = false,
+    onToggleTint: () -> Unit = {}
+): X14uEditor {
     val locked = CaptureTransitions.isWhiteBalanceLocked(state)
     val temp = state.whiteBalanceTemperatureK
     val tint = state.whiteBalanceTint
     val min = WhiteBalanceMode.TEMP_MIN_K
+    // A covers both: auto white balance sets temperature and tint together.
     val toAuto: () -> Unit = { if (locked) dispatch(SetWhiteBalanceMode(WhiteBalanceMode.Auto)) }
+    if (tintMode) {
+        val tMin = WhiteBalanceMode.TINT_MIN
+        return X14uEditor.Ruler(
+            count = WhiteBalanceMode.TINT_MAX - tMin + 1,
+            index = (tint - tMin).coerceIn(0, WhiteBalanceMode.TINT_MAX - tMin),
+            valueText = if (locked) (if (tint > 0) "+$tint" else "$tint") else "AWB",
+            label = { i -> (tMin + i).takeIf { it % 25 == 0 }?.let { v -> if (v > 0) "+$v M" else if (v < 0) "$v G" else "0" } },
+            major = { i -> (tMin + i) % 10 == 0 },
+            spacing = 8.dp,
+            enabled = state.capabilities.manualWhiteBalanceSupported,
+            auto = !locked,
+            onAuto = toAuto,
+            // Double-tap: tint back to 0, Kelvin kept.
+            onReset = { if (locked) dispatch(SetWhiteBalanceTempTint(temp, 0)) },
+            trailing = "K",
+            trailingActive = true,
+            onTrailing = onToggleTint,
+            onDragStart = { if (!locked) dispatch(LockWhiteBalance(temp, tint)) },
+            onIndex = { new, _ -> dispatch(SetWhiteBalanceTempTint(temp, tMin + new)) }
+        )
+    }
     return X14uEditor.Ruler(
         count = (WhiteBalanceMode.TEMP_MAX_K - min) / 100 + 1,
         index = ((temp - min) / 100f).roundToInt(),
@@ -1218,7 +1296,11 @@ private fun wbRuler(state: CaptureUiState, dispatch: CaptureDispatch): X14uEdito
         enabled = state.capabilities.manualWhiteBalanceSupported,
         auto = !locked,
         onAuto = toAuto,
-        onReset = toAuto,
+        // Double-tap: Kelvin back to 5200K, tint kept.
+        onReset = { if (locked) dispatch(SetWhiteBalanceTempTint(WhiteBalanceMode.TEMP_DEFAULT_K, tint)) else Unit },
+        trailing = "TINT",
+        trailingActive = locked && tint != 0,
+        onTrailing = onToggleTint,
         onDragStart = { if (!locked) dispatch(LockWhiteBalance(temp, tint)) },
         onIndex = { new, _ -> dispatch(SetWhiteBalanceTempTint(min + new * 100, tint)) }
     )
@@ -1464,7 +1546,14 @@ private fun X14uEditorView(editor: X14uEditor, orientation: Orientation) {
                 X14uAutoButton(active = editor.auto, enabled = true, orientation = orientation, onClick = editor.onAuto)
                 Spacer(Modifier.width(6.dp))
             }
-            X14uRuler(editor, orientation, Modifier.weight(1f))
+            // Keyed by the scale so swapping rulers (WB Kelvin <-> tint) starts the new one fresh.
+            androidx.compose.runtime.key(editor.count, editor.spacing) {
+                X14uRuler(editor, orientation, Modifier.weight(1f))
+            }
+            if (editor.trailing != null) {
+                Spacer(Modifier.width(6.dp))
+                X14uTextRoundButton(editor.trailing, editor.trailingActive, orientation, editor.onTrailing)
+            }
         }
         is X14uEditor.Chips -> X14uChoiceChips(editor.labels, editor.selected, editor.enabled, orientation, Modifier.fillMaxWidth(), editor.onPick)
         is X14uEditor.Message -> Text(
@@ -1476,6 +1565,28 @@ private fun X14uEditorView(editor: X14uEditor, orientation: Orientation) {
                 Modifier.fillMaxWidth().height(32.dp), editor.top.onPick)
             if (editor.below != null) Box(Modifier.fillMaxWidth().weight(1f)) { X14uEditorView(editor.below, orientation) }
         }
+    }
+}
+
+@Composable
+private fun X14uTextRoundButton(text: String, active: Boolean, orientation: Orientation, onClick: () -> Unit) {
+    val haptics = LocalCaptureHaptics.current
+    Box(
+        Modifier
+            .size(36.dp)
+            .background(if (active) CaptureColors.Accent.copy(alpha = .22f) else Color.White.copy(alpha = .12f), CircleShape)
+            .captureClickable(shape = CircleShape) {
+                haptics.selection()
+                onClick()
+            }
+            .semantics { contentDescription = text },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text, fontFamily = X14uFont, fontWeight = FontWeight.Medium, fontSize = dpText(if (text.length > 2) 9.5f else 12f),
+            maxLines = 1, color = if (active) CaptureColors.Accent else Color.White.copy(alpha = .85f),
+            modifier = Modifier.uprightInLandscape(orientation)
+        )
     }
 }
 

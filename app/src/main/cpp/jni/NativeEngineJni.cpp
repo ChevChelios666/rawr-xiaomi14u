@@ -1,3 +1,4 @@
+#include "encoding/OutputAspect.h"
 #include <android/asset_manager_jni.h>
 #include <android/log.h>
 #include <sys/system_properties.h>
@@ -122,6 +123,7 @@ rawrcam::encoding::dng::DngCaptureContext makeDngContext(jint fd, jint rotation,
     rawrcam::encoding::dng::DngCaptureContext out{};
     out.outputFd = rawrcam::encoding::OutputFd(fd);
     out.deviceRotationDegrees = rotation;
+    out.cropAspect = rawrcam::encoding::outputAspect().load(std::memory_order_relaxed);
     out.wallClockUnixMillis = wallClockMillis;
     out.utcOffsetMinutes = utcOffsetMinutes;
     out.deviceMake = std::move(make);
@@ -158,6 +160,7 @@ void fillJpegContext(JNIEnv* env, rawrcam::capture::JpegCaptureRequest& jpeg, ji
     jpeg.output.deviceModel = model;
     jpeg.output.displayName = jString(env, displayName);
     jpeg.output.quality = quality;
+    jpeg.output.cropAspect = rawrcam::encoding::outputAspect().load(std::memory_order_relaxed);
     jpeg.develop = rawrcam::jni::readCaptureDevelopSettings(
         {pipelineDiagnosticsEnabled, colorRenderProfile, jString(env, importedLutProfileId), dualAutoContrast,
          dualContrastPercent, fccSteps, defringeEnabled, defringeStrength, defringeEdgeThreshold, defringeLumaFloor,
@@ -172,6 +175,13 @@ void fillJpegContext(JNIEnv* env, rawrcam::capture::JpegCaptureRequest& jpeg, ji
     jpeg.output.ultraHdr.gainmapQuality = std::clamp(static_cast<int>(ultraHdrGainmapQuality), 1, 100);
 }
 }  // namespace
+
+// X14U: photo aspect ratio (long:short; 0 = native) for the next captures.
+extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setOutputAspect(JNIEnv*, jobject,
+                                                                                                       jfloat aspect) {
+    rawrcam::encoding::outputAspect().store(std::isfinite(aspect) && aspect >= 1.0f ? float(aspect) : 0.0f,
+                                            std::memory_order_relaxed);
+}
 
 extern "C" JNIEXPORT jlong JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_create(
     JNIEnv* env, jobject, jstring filesDir, jstring nativeLibraryDir, jstring customDriverPath) {
@@ -484,7 +494,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreview
             state.placements[i].width = finiteUnit(rv[i * 5 + 2]);
             state.placements[i].height = finiteUnit(rv[i * 5 + 3]);
             state.placements[i].cornerRadius = std::clamp(finiteUnit(rv[i * 5 + 4]), 0.0f, 0.5f);
-            state.placements[i].variant = static_cast<uint32_t>(std::clamp(static_cast<int>(mv[i]), 0, 1));
+            state.placements[i].variant = static_cast<uint32_t>(std::clamp(static_cast<int>(mv[i]), 0, 2));
             state.placements[i].presentationQuarterTurns =
                 static_cast<uint32_t>(((static_cast<int>(qv[i]) % 4) + 4) % 4);
         }

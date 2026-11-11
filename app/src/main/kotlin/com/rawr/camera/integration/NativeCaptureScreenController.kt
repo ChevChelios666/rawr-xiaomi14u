@@ -273,7 +273,7 @@ class NativeCaptureScreenController(
 
     private fun PresentationCaptureAction.isDurableCapturePreference(): Boolean = when (this) {
         CycleOutputFormat, ToggleWaveformMode -> true
-        is ToggleOverlayArmed, is ToggleFalseColor, is ToggleScope -> true
+        is ToggleOverlayArmed, is ToggleFalseColor, is ToggleScope, is SetGrid, is SetSingleScope -> true
         ToggleFilmSim, ToggleMultiframe -> true
         is SetCaptureLayout -> true
         is SetCaptureMode, CycleVideoResolution, CycleVideoFps, ToggleVideoLog -> true

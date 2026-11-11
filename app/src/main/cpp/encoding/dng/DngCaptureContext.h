@@ -37,6 +37,8 @@ struct DngCaptureContext {
     // Owned destination; moves to DngCaptureWriter, which closes it on every outcome.
     OutputFd outputFd;
     int deviceRotationDegrees = 0;    // physical device rotation: 0/90/180/270
+    // Photo aspect ratio (long:short) written as the default crop; 0 = the full active area.
+    float cropAspect = 0.0f;
     int64_t wallClockUnixMillis = 0;  // shutter-request wall clock
     int16_t utcOffsetMinutes = 0;
     std::string deviceMake;

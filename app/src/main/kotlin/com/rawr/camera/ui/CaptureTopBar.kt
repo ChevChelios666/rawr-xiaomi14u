@@ -50,7 +50,13 @@ internal fun CaptureTopBar(
     /** X14U: LOG lives in the shutter row of the new capture screen. */
     showLog: Boolean = true,
     /** X14U: lens option toggles (DCG, 50 MP), before Settings. */
-    toggles: @Composable RowScope.() -> Unit = {}
+    toggles: @Composable RowScope.() -> Unit = {},
+    /**
+     * X14U tools panel: non-null shows its arrow in the eye's place (accent, pointing up, while open) and drops the
+     * WB and Settings buttons, which live in the panel.
+     */
+    toolsOpen: Boolean? = null,
+    onToggleTools: () -> Unit = {}
 ) {
     val haptics = LocalCaptureHaptics.current
     Row(
@@ -156,7 +162,7 @@ internal fun CaptureTopBar(
                 )
             }
         }
-        TopBarSlot {
+        if (toolsOpen == null) TopBarSlot {
             IconToggleButton(
                 checked =
                     state.whiteBalancePanelOpen ||
@@ -180,7 +186,27 @@ internal fun CaptureTopBar(
                 )
             }
         }
-        TopBarSlot {
+        if (toolsOpen != null) TopBarSlot {
+            Box(
+                Modifier
+                    .size(44.dp, 26.dp)
+                    .background(androidx.compose.ui.graphics.Color.White.copy(alpha = .1f), androidx.compose.foundation.shape.RoundedCornerShape(13.dp))
+                    .captureClickable(shape = androidx.compose.foundation.shape.RoundedCornerShape(13.dp), enabled = !videoLocked) {
+                        haptics.selection()
+                        onToggleTools()
+                    }
+                    .testTag("capture_topbar_tools")
+                    .semantics { contentDescription = if (toolsOpen) "Close tools" else "Open tools" },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    if (toolsOpen) X14uIcons.ChevronUp else X14uIcons.ChevronDown,
+                    contentDescription = null,
+                    tint = if (toolsOpen) CaptureColors.Accent else CaptureColors.Muted,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        } else TopBarSlot {
             IconToggleButton(
                 checked = state.monitorPanelOpen || state.armedOverlays.isNotEmpty() ||
                     state.falseColorManual || state.activeScopes.isNotEmpty(),
@@ -204,7 +230,7 @@ internal fun CaptureTopBar(
             }
         }
         toggles()
-        TopBarSlot {
+        if (toolsOpen == null) TopBarSlot {
             IconButton(
                 enabled = !videoLocked,
                 onClick = {

@@ -1,3 +1,4 @@
+#include "encoding/OutputAspect.h"
 #include "encoding/dng/DngMetadataAdapter.h"
 
 #include <algorithm>
@@ -283,10 +284,16 @@ std::optional<TinyDngWriteParams> makeTinyDngWriteParams(const rawrcam::imaging:
     raw.active_area[2] = gm->activeBottom;
     raw.active_area[3] = gm->activeRight;
     raw.has_crop = 1;
-    raw.crop_origin[0] = 0;
-    raw.crop_origin[1] = 0;
-    raw.crop_size[0] = double(gm->activeRight - gm->activeLeft);
-    raw.crop_size[1] = double(gm->activeBottom - gm->activeTop);
+    {
+        // X14U aspect ratio: every pixel stays; the default crop (which Lightroom applies) frames the ratio.
+        const auto crop = rawrcam::encoding::aspectCrop(uint32_t(gm->activeRight - gm->activeLeft),
+                                                        uint32_t(gm->activeBottom - gm->activeTop),
+                                                        captureContext.cropAspect);
+        raw.crop_origin[0] = double(crop.x);
+        raw.crop_origin[1] = double(crop.y);
+        raw.crop_size[0] = double(crop.width);
+        raw.crop_size[1] = double(crop.height);
+    }
     raw.has_default_scale = 1;
     raw.default_scale[0] = 1.0;
     raw.default_scale[1] = 1.0;

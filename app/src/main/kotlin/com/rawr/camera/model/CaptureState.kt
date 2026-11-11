@@ -34,7 +34,8 @@ enum class OverlayMode { Peaking, RawHighlights, TonemapShadows, FalseColor }
 
 enum class ScopeType { Waveform, Vectorscope }
 
-enum class WaveformMode { Luma, RgbOverlay }
+/** Waveform scope look; [Histogram] draws the luma measurement as a plain histogram. Names are persisted. */
+enum class WaveformMode { Luma, RgbOverlay, Histogram }
 
 enum class TargetStatus { Hidden, Settling, Settled, Failed }
 

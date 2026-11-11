@@ -87,7 +87,7 @@ bool sameHeaders(const unsigned char* a, const Layout& la, const unsigned char* 
            std::memcmp(a + la.sofHeight + 2, b + lb.sofHeight + 2, la.scanStart - la.sofHeight - 2) == 0;
 }
 
-void encodeStrip(const unsigned char* rgba, int width, int quality, int subsamp, Strip* s) {
+void encodeStrip(const unsigned char* rgba, int width, int pitch, int quality, int subsamp, Strip* s) {
     tjhandle h = tj3Init(TJINIT_COMPRESS);
     if (!h) {
         s->error = "tj3Init failed";
@@ -98,7 +98,7 @@ void encodeStrip(const unsigned char* rgba, int width, int quality, int subsamp,
         tj3Set(h, TJPARAM_PROGRESSIVE, 0) != 0 || tj3Set(h, TJPARAM_ARITHMETIC, 0) != 0 ||
         tj3Set(h, TJPARAM_RESTARTBLOCKS, 0) != 0 || tj3Set(h, TJPARAM_RESTARTROWS, 0) != 0) {
         s->error = tj3GetErrorStr(h);
-    } else if (tj3Compress8(h, rgba + static_cast<std::size_t>(s->y) * static_cast<std::size_t>(width) * 4u, width, 0,
+    } else if (tj3Compress8(h, rgba + static_cast<std::size_t>(s->y) * static_cast<std::size_t>(pitch), width, pitch,
                             s->rows, TJPF_RGBA, &s->jpeg, &s->size) != 0) {
         s->error = tj3GetErrorStr(h);
     }
@@ -125,8 +125,9 @@ std::size_t StripJpeg::byteSize() const noexcept { return impl_ ? impl_->bytes :
 int StripJpeg::stripsUsed() const noexcept { return impl_ ? static_cast<int>(impl_->strips.size()) : 0; }
 
 bool StripJpeg::encodeRgba8(const unsigned char* rgba, int width, int height, int quality, int tjSubsamp,
-                           std::string* error) {
+                           std::string* error, int pitch) {
     reset();
+    if (pitch <= 0) pitch = width * 4;
     if (!rgba || width <= 0 || height <= 0 || width > 65535 || height > 65535 ||
         quality < 1 || quality > 100 || tjSubsamp < 0 || tjSubsamp >= TJ_NUMSAMP) {
         *error = "invalid arguments";
@@ -165,7 +166,7 @@ bool StripJpeg::encodeRgba8(const unsigned char* rgba, int width, int height, in
         // Background priority, as the caller's encode thread: never preempt camera or preview work.
         ::setpriority(PRIO_PROCESS, 0, 10);
         for (int i = next.fetch_add(1); i < stripCount; i = next.fetch_add(1))
-            encodeStrip(rgba, width, quality, tjSubsamp, &strips[i]);
+            encodeStrip(rgba, width, pitch, quality, tjSubsamp, &strips[i]);
     };
     {
         std::vector<std::thread> pool;
@@ -248,12 +249,12 @@ bool StripJpeg::writeTo(const Sink& sink) const {
 }
 
 bool encodeStripsRgba8(const unsigned char* rgba, int width, int height, int quality, int tjSubsamp,
-                       unsigned char** jpeg, std::size_t* jpegSize, int* stripsUsed, std::string* error) {
+                       unsigned char** jpeg, std::size_t* jpegSize, int* stripsUsed, std::string* error, int pitch) {
     *jpeg = nullptr;
     *jpegSize = 0;
     if (stripsUsed) *stripsUsed = 1;
     StripJpeg encoded;
-    if (!encoded.encodeRgba8(rgba, width, height, quality, tjSubsamp, error)) return false;
+    if (!encoded.encodeRgba8(rgba, width, height, quality, tjSubsamp, error, pitch)) return false;
     auto* output = static_cast<unsigned char*>(tj3Alloc(encoded.byteSize()));
     if (!output) {
         *error = "tj3Alloc failed";

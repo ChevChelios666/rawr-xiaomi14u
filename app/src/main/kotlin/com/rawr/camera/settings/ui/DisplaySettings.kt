@@ -18,8 +18,7 @@ import com.rawr.camera.settings.model.*
 internal fun DisplayControlsSettings(state: SettingsUiState, dispatch: SettingsDispatch) {
     SettingsPageContainer(testTag = SettingsTestTags.sectionRoot("DisplayControls")) {
         SettingsGroup {
-            GridModeSettingsRow(state.values.gridMode) { dispatch.invoke(SetGridMode(it)) }
-            SettingDivider()
+            // X14U: the grid lives in the capture screen's tools panel.
             ViewfinderResolutionRow(state.values.viewfinderDivisor) { dispatch.invoke(SetViewfinderDivisor(it)) }
             SettingDivider()
             SettingsRow(
@@ -82,57 +81,6 @@ internal fun ControlStyleSettings(state: SettingsUiState, dispatch: SettingsDisp
                 }
             )
         }
-    }
-}
-
-/** Grid families in menu order; a family with variants lists once and gets an Orientation row. */
-private val gridFamilies: List<Pair<String, List<GridMode>>> = listOf(
-    "Off" to listOf(GridMode.Off),
-    "Rule of thirds" to listOf(GridMode.Thirds),
-    "Thirds intersections" to listOf(GridMode.ThirdsPoints),
-    "Golden ratio (phi grid)" to listOf(GridMode.GoldenRatio),
-    "Golden spiral" to listOf(GridMode.SpiralBottomLeft, GridMode.SpiralBottomRight, GridMode.SpiralTopLeft, GridMode.SpiralTopRight),
-    "Golden triangles" to listOf(GridMode.GoldenTriangles, GridMode.GoldenTrianglesMirrored),
-    "Diagonals (45°)" to listOf(GridMode.Diagonals),
-    "4 × 4" to listOf(GridMode.FourByFour),
-    "Crosshair" to listOf(GridMode.Cross)
-)
-
-private fun gridVariantLabel(mode: GridMode): String = when (mode) {
-    GridMode.SpiralBottomLeft -> "Eye bottom left"
-    GridMode.SpiralBottomRight -> "Eye bottom right"
-    GridMode.SpiralTopLeft -> "Eye top left"
-    GridMode.SpiralTopRight -> "Eye top right"
-    GridMode.GoldenTriangles -> "Diagonal top left to bottom right"
-    GridMode.GoldenTrianglesMirrored -> "Diagonal top right to bottom left"
-    else -> ""
-}
-
-@Composable
-private fun GridModeSettingsRow(selected: GridMode, onSelect: (GridMode) -> Unit) {
-    val expanded = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-    val family = gridFamilies.firstOrNull { selected in it.second } ?: gridFamilies[1]
-    Box {
-        SettingsRow("Grid", family.first, onClick = { expanded.value = true })
-        DropdownMenu(expanded = expanded.value, onDismissRequest = { expanded.value = false }) {
-            gridFamilies.forEach { (label, modes) ->
-                DropdownMenuItem(
-                    text = { Text(label) },
-                    onClick = {
-                        if (selected !in modes) onSelect(modes.first())
-                        expanded.value = false
-                    }
-                )
-            }
-        }
-    }
-    if (family.second.size > 1) {
-        SettingDivider()
-        // Tap cycles the spiral's eye corner / the triangles' diagonal.
-        SettingsRow("Orientation", gridVariantLabel(selected), onClick = {
-            val modes = family.second
-            onSelect(modes[(modes.indexOf(selected) + 1) % modes.size])
-        })
     }
 }
 

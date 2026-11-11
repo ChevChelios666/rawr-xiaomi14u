@@ -524,6 +524,8 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
             captureControlLayout = enumOrDefault(p[Keys.captureControlLayout], d.captureControlLayout),
             x14uProUi = p[Keys.x14uProUi] ?: d.x14uProUi,
             x14uModeLooks = ModeLookCodec.decode(p[Keys.x14uModeLooks]) { decodeAgxValues(it) },
+            photoAspect = enumOrDefault(p[Keys.photoAspect], d.photoAspect),
+            viewfinderLevel = p[Keys.viewfinderLevel] ?: d.viewfinderLevel,
             jpegEnabled = p[Keys.jpegEnabled] ?: d.jpegEnabled,
             dngEnabled = (p[Keys.dngEnabled] ?: true) || p[Keys.jpegEnabled] == false,
             dngCompressionId =
@@ -770,6 +772,8 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
         p[Keys.captureControlLayout] = v.captureControlLayout.name
         p[Keys.x14uProUi] = v.x14uProUi
         p[Keys.x14uModeLooks] = ModeLookCodec.encode(v.x14uModeLooks) { encodeAgxValues(it) }
+        p[Keys.photoAspect] = v.photoAspect.name
+        p[Keys.viewfinderLevel] = v.viewfinderLevel
         p[Keys.jpegEnabled] = v.jpegEnabled
         p[Keys.dngEnabled] = v.dngEnabled || !v.jpegEnabled
         p[Keys.dngCompressionId] = v.dngCompressionId
@@ -1078,6 +1082,8 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
         val captureControlLayout = stringPreferencesKey("capture_control_layout")
         val x14uProUi = booleanPreferencesKey("x14u_pro_ui")
         val x14uModeLooks = stringPreferencesKey("x14u_mode_looks")
+        val photoAspect = stringPreferencesKey("x14u_photo_aspect")
+        val viewfinderLevel = booleanPreferencesKey("x14u_viewfinder_level")
         val jpegEnabled = booleanPreferencesKey("capture_jpeg_enabled")
         val dngEnabled = booleanPreferencesKey("capture_dng_enabled")
         val dngCompressionId = stringPreferencesKey("capture_dng_compression_id")

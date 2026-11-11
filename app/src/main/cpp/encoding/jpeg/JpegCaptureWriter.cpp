@@ -1,3 +1,4 @@
+#include "encoding/OutputAspect.h"
 #include "encoding/jpeg/JpegCaptureWriter.h"
 #include "encoding/jpeg/JpegExif.h"
 
@@ -164,7 +165,8 @@ bool writeUltraHdrFallback(int fd, const unsigned char* baseJpeg, std::size_t ba
 // The strip-parallel encoder (pixels identical to one tj3Compress8 with these settings); false = encode on one
 // thread as before. The output, like tj3Compress8's, is released with tj3Free.
 bool encodeParallel(const unsigned char* pixels, std::uint32_t width, std::uint32_t height, int quality, int subsamp,
-                    std::uint64_t requestId, unsigned char** jpeg, std::size_t* size, StripJpeg* segmented = nullptr) {
+                    std::uint64_t requestId, unsigned char** jpeg, std::size_t* size, StripJpeg* segmented = nullptr,
+                    int pitch = 0) {
     // `adb shell setprop debug.rawr.jpeg_strips 0` encodes on one thread (A/B checks of the strip encoder).
     char prop[PROP_VALUE_MAX] = {};
     if (__system_property_get("debug.rawr.jpeg_strips", prop) > 0 && prop[0] == '0') {
@@ -175,9 +177,10 @@ bool encodeParallel(const unsigned char* pixels, std::uint32_t width, std::uint3
     int strips = 0;
     std::string why;
     const bool encoded = segmented
-        ? segmented->encodeRgba8(pixels, static_cast<int>(width), static_cast<int>(height), quality, subsamp, &why)
+        ? segmented->encodeRgba8(pixels, static_cast<int>(width), static_cast<int>(height), quality, subsamp, &why,
+                                 pitch)
         : encodeStripsRgba8(pixels, static_cast<int>(width), static_cast<int>(height), quality, subsamp, jpeg, size,
-                            &strips, &why);
+                            &strips, &why, pitch);
     if (encoded) {
         if (segmented) {
             strips = segmented->stripsUsed();
@@ -222,9 +225,15 @@ bool JpegCaptureWriter::start(std::uint64_t requestId, const void* rgba8, std::s
         busy_ = true;
     }
     joinWorker();
-    const auto* pixels = static_cast<const unsigned char*>(rgba8);
+    // X14U aspect ratio: encode the centred crop in place (row pitch stays the full width).
+    const int pitch = static_cast<int>(width * 4u);
+    const auto crop = aspectCrop(width, height, context.cropAspect);
+    const auto* pixels = static_cast<const unsigned char*>(rgba8) +
+                         (static_cast<std::size_t>(crop.y) * width + crop.x) * 4u;
+    width = crop.width;
+    height = crop.height;
     try {
-        worker_ = std::thread([this, requestId, pixels, width, height, context = std::move(context)]() mutable {
+        worker_ = std::thread([this, requestId, pixels, width, height, pitch, context = std::move(context)]() mutable {
             // Background priority: file encoding must never preempt camera or
             // preview threads, especially on throttled silicon.
             ::setpriority(PRIO_PROCESS, 0, 10);
@@ -256,9 +265,9 @@ bool JpegCaptureWriter::start(std::uint64_t requestId, const void* rgba8, std::s
                            tj3Set(handle, TJPARAM_FASTDCT, 0) != 0) {
                     done.error = tj3GetErrorStr(handle);
                 } else if (!encodeParallel(pixels, width, height, context.quality, tjSubsampling(context.subsampling),
-                                           requestId, &jpegBuf, &jpegSize, streamStrips ? &segmented : nullptr) &&
-                           tj3Compress8(handle, pixels, static_cast<int>(width), 0, static_cast<int>(height), TJPF_RGBA,
-                                        &jpegBuf, &jpegSize) != 0) {
+                                           requestId, &jpegBuf, &jpegSize, streamStrips ? &segmented : nullptr, pitch) &&
+                           tj3Compress8(handle, pixels, static_cast<int>(width), pitch, static_cast<int>(height),
+                                        TJPF_RGBA, &jpegBuf, &jpegSize) != 0) {
                     done.error = tj3GetErrorStr(handle);
                 } else if (jpegSize < 2 || (!segmented.byteSize() &&
                            (!jpegBuf || jpegBuf[0] != 0xFFu || jpegBuf[1] != 0xD8u))) {
@@ -399,6 +408,38 @@ bool JpegCaptureWriter::startUltraHdr(std::uint64_t requestId, const void* rgba8
             diagnostics::RuntimeTraceRecorder::instance().record(diagnostics::RuntimeTraceStage::JpegEncodeBegin, 0,
                                                                  requestId);
             const auto t0 = std::chrono::steady_clock::now();
+            // X14U aspect ratio: the gain-map fit reads base and map as whole images, so cut both into
+            // contiguous copies (the map at its own scale, both planes when it carries capture colour).
+            std::vector<unsigned char> croppedBase;
+            std::vector<unsigned char> croppedMap;
+            if (const auto crop = aspectCrop(width, height, context.cropAspect); !crop.full(width, height)) {
+                const auto copyRect = [](const unsigned char* src, std::uint32_t srcW, std::uint32_t x, std::uint32_t y,
+                                         std::uint32_t w, std::uint32_t h, unsigned char* dst) {
+                    for (std::uint32_t row = 0; row < h; ++row)
+                        std::memcpy(dst + std::size_t(row) * w * 4u, src + (std::size_t(y + row) * srcW + x) * 4u,
+                                    std::size_t(w) * 4u);
+                };
+                croppedBase.resize(std::size_t(crop.width) * crop.height * 4u);
+                copyRect(pixels, width, crop.x, crop.y, crop.width, crop.height, croppedBase.data());
+                const auto mx = std::uint32_t(std::uint64_t(crop.x) * mapWidth / width);
+                const auto my = std::uint32_t(std::uint64_t(crop.y) * mapHeight / height);
+                const auto mw = std::clamp<std::uint32_t>(std::uint32_t(std::uint64_t(crop.width) * mapWidth / width), 1u,
+                                                          mapWidth - mx);
+                const auto mh = std::clamp<std::uint32_t>(std::uint32_t(std::uint64_t(crop.height) * mapHeight / height),
+                                                          1u, mapHeight - my);
+                const std::size_t plane = std::size_t(mw) * mh * 4u;
+                croppedMap.resize(plane * (hasCaptureColor ? 2u : 1u));
+                copyRect(mapPixels, mapWidth, mx, my, mw, mh, croppedMap.data());
+                if (hasCaptureColor)
+                    copyRect(mapPixels + std::size_t(mapWidth) * mapHeight * 4u, mapWidth, mx, my, mw, mh,
+                             croppedMap.data() + plane);
+                pixels = croppedBase.data();
+                width = crop.width;
+                height = crop.height;
+                mapPixels = croppedMap.data();
+                mapWidth = mw;
+                mapHeight = mh;
+            }
             tjhandle baseHandle = tj3Init(TJINIT_COMPRESS);
             tjhandle mapHandle = tj3Init(TJINIT_COMPRESS);
             unsigned char* baseBuf = nullptr;

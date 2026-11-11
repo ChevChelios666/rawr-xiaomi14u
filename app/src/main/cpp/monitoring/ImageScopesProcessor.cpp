@@ -240,6 +240,8 @@ void ImageScopesProcessor::record(VkCommandBuffer command, uint32_t frameSlot, V
             info.samplingMode = sampling;
             info.render.mode = state_.placements[i].variant == 1u ? image_scopes::WaveformMode::RgbOverlay
                                                                   : image_scopes::WaveformMode::Luma;
+            // Variant 2: the luma measurement drawn as a histogram.
+            info.render.histogram = state_.placements[i].variant == 2u;
             // The input remains the native WxH display buffer. Only waveform positional X
             // needs the authoritative sensor->display mapping; vectorscope never does.
             // This does not rotate/reallocate the source image or change measurement geometry.

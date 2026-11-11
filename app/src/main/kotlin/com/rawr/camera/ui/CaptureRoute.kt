@@ -78,8 +78,11 @@ fun CaptureRoute(
                 val rects = FloatArray(15)
                 scopes.take(3).forEachIndexed { index, scope ->
                     types[index] = if (scope.type == com.rawr.camera.model.ScopeType.Waveform) 1 else 2
-                    modes[index] = if (scope.type == com.rawr.camera.model.ScopeType.Waveform &&
-                        scope.mode == com.rawr.camera.model.WaveformMode.RgbOverlay) 1 else 0
+                    modes[index] = if (scope.type != com.rawr.camera.model.ScopeType.Waveform) 0 else when (scope.mode) {
+                        com.rawr.camera.model.WaveformMode.RgbOverlay -> 1
+                        com.rawr.camera.model.WaveformMode.Histogram -> 2
+                        com.rawr.camera.model.WaveformMode.Luma -> 0
+                    }
                     rotations[index] = scope.quarterTurns
                     rects[index * 5] = scope.x
                     rects[index * 5 + 1] = scope.y

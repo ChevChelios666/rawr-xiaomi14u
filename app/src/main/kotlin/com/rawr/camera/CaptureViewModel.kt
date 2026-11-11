@@ -103,6 +103,59 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         settingsEditor.update { prev -> prev.copy(x14uProUi = pro).withModeLookSwitch(prev) }
     }
 
+    /** X14U tools panel: what its tiles show (lens names whose image is mirrored, for the front camera's tile). */
+    data class ToolsState(
+        val photoAspect: com.rawr.camera.settings.model.PhotoAspect = com.rawr.camera.settings.model.PhotoAspect.Native,
+        val level: Boolean = false,
+        val location: Boolean = false,
+        val mirroredLenses: Set<String> = emptySet()
+    )
+    val tools: StateFlow<ToolsState> = settingsEditor.state
+        .map { v ->
+            ToolsState(
+                v.photoAspect, v.viewfinderLevel, v.locationTagging,
+                v.effectiveLensProfiles(DeviceLensDefaults.lenses)
+                    .filter { it.image.mirror != com.rawr.camera.settings.model.LensMirror.None }.map { it.name }.toSet()
+            )
+        }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, ToolsState())
+
+    fun setPhotoAspect(aspect: com.rawr.camera.settings.model.PhotoAspect) {
+        settingsEditor.update { it.copy(photoAspect = aspect) }
+    }
+    fun toggleLevel() {
+        settingsEditor.update { it.copy(viewfinderLevel = !it.viewfinderLevel) }
+    }
+    fun setLocationTagging(on: Boolean) {
+        settingsEditor.update { it.copy(locationTagging = on) }
+    }
+
+    /**
+     * Mirror front: flips the lens image left-right as seen (viewfinder, photo, video; DNG by orientation). The lens
+     * mirror is in the sensor frame, so a sensor mounted at 90° / 270° mirrors on its vertical axis.
+     */
+    fun toggleLensMirror(lensId: String) {
+        settingsEditor.update { v ->
+            v.copy(lensProfiles = v.effectiveLensProfiles(DeviceLensDefaults.lenses).map { lens ->
+                if (lens.name != lensId) lens else {
+                    val next = if (lens.image.mirror != com.rawr.camera.settings.model.LensMirror.None) {
+                        com.rawr.camera.settings.model.LensMirror.None
+                    } else {
+                        val id = lens.camera.physical.ifEmpty { lens.camera.id }
+                        val sensor = runCatching {
+                            getApplication<Application>().getSystemService(android.hardware.camera2.CameraManager::class.java)
+                                .getCameraCharacteristics(id).get(android.hardware.camera2.CameraCharacteristics.SENSOR_ORIENTATION)
+                        }.getOrNull() ?: 270
+                        if (sensor % 180 == 90) com.rawr.camera.settings.model.LensMirror.Vertical
+                        else com.rawr.camera.settings.model.LensMirror.Horizontal
+                    }
+                    lens.copy(image = lens.image.copy(mirror = next))
+                }
+            })
+        }
+    }
+
     /** X14U: the AUDIO button (tap: mute / unmute). */
     fun toggleAudioMuted() {
         settingsEditor.update { it.copy(videoEncoder = it.videoEncoder.copy(audioMuted = !it.videoEncoder.audioMuted)) }
@@ -260,6 +313,11 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 before.selectedFilmPresetId == after.selectedFilmPresetId &&
                     before.filmSimLook == after.filmSimLook && before.filmPresets == after.filmPresets
             }.collect { mutableFilmSimQuick.value = it.toFilmSimQuickState() }
+        }
+        viewModelScope.launch {
+            settingsEditor.values.map { it.photoAspect }.distinctUntilChanged().collect {
+                previewCoordinator.setOutputAspect(it.nativeRatio)
+            }
         }
         settingsSync.start()
     }

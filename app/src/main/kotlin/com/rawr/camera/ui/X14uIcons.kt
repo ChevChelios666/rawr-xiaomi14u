@@ -71,6 +71,93 @@ internal object X14uIcons {
         }
     }
 
+    /** Tools panel: 3 × 3 grid. */
+    val Grid: ImageVector by lazy {
+        icon("X14u.Grid") {
+            stroke(1.6f) {
+                moveTo(4f, 4f); lineTo(20f, 4f); lineTo(20f, 20f); lineTo(4f, 20f); close()
+                moveTo(9.33f, 4f); lineTo(9.33f, 20f); moveTo(14.67f, 4f); lineTo(14.67f, 20f)
+                moveTo(4f, 9.33f); lineTo(20f, 9.33f); moveTo(4f, 14.67f); lineTo(20f, 14.67f)
+            }
+        }
+    }
+
+    /** Tools panel: level (a line with a centre tick, tilted). */
+    val Level: ImageVector by lazy {
+        icon("X14u.Level") {
+            stroke(1.8f) { moveTo(3f, 14f); lineTo(21f, 10f) }
+            stroke(1.4f) { moveTo(12f, 7f); lineTo(12f, 17f) }
+        }
+    }
+
+    /** Tools panel: histogram bars. */
+    val Histogram: ImageVector by lazy {
+        icon("X14u.Histogram") {
+            stroke(1.6f) {
+                moveTo(3.5f, 20f); lineTo(20.5f, 20f)
+                moveTo(6f, 20f); lineTo(6f, 15f); moveTo(9f, 20f); lineTo(9f, 9f); moveTo(12f, 20f); lineTo(12f, 5f)
+                moveTo(15f, 20f); lineTo(15f, 11f); moveTo(18f, 20f); lineTo(18f, 16f)
+            }
+        }
+    }
+
+    /** Tools panel: raw highlights (sun). */
+    val Sun: ImageVector by lazy {
+        icon("X14u.Sun") {
+            stroke(1.6f) { circle(12f, 12f, 4f) }
+            stroke(1.6f) {
+                for (i in 0 until 8) {
+                    val a = Math.toRadians(i * 45.0)
+                    moveTo(12f + 6.5f * kotlin.math.cos(a).toFloat(), 12f + 6.5f * kotlin.math.sin(a).toFloat())
+                    lineTo(12f + 9f * kotlin.math.cos(a).toFloat(), 12f + 9f * kotlin.math.sin(a).toFloat())
+                }
+            }
+        }
+    }
+
+    /** Tools panel: tonemap shadows (moon). */
+    val Moon: ImageVector by lazy {
+        icon("X14u.Moon") {
+            stroke(1.6f) {
+                moveTo(15.5f, 4.5f)
+                arcTo(8f, 8f, 0f, true, false, 19.5f, 15.5f)
+                arcTo(6.2f, 6.2f, 0f, false, true, 15.5f, 4.5f)
+                close()
+            }
+        }
+    }
+
+    /** Tools panel: location pin. */
+    val Pin: ImageVector by lazy {
+        icon("X14u.Pin") {
+            stroke(1.6f) {
+                moveTo(12f, 21f)
+                curveTo(7f, 15.5f, 5.5f, 12.5f, 5.5f, 9.5f)
+                arcTo(6.5f, 6.5f, 0f, false, true, 18.5f, 9.5f)
+                curveTo(18.5f, 12.5f, 17f, 15.5f, 12f, 21f)
+                close()
+            }
+            stroke(1.6f) { circle(12f, 9.5f, 2.3f) }
+        }
+    }
+
+    /** Tools panel: mirror (a shape and its reflection across a dashed axis). */
+    val Mirror: ImageVector by lazy {
+        icon("X14u.Mirror") {
+            stroke(1.6f) { moveTo(10f, 5f); lineTo(3.5f, 19f); lineTo(10f, 19f); close() }
+            stroke(1.6f) { moveTo(14f, 5f); lineTo(20.5f, 19f); lineTo(14f, 19f); close() }
+            stroke(1.4f) { moveTo(12f, 3f); lineTo(12f, 5f); moveTo(12f, 8f); lineTo(12f, 10f); moveTo(12f, 13f); lineTo(12f, 15f); moveTo(12f, 18f); lineTo(12f, 21f) }
+        }
+    }
+
+    /** Tools panel arrow (closed: down, open: up). */
+    val ChevronDown: ImageVector by lazy {
+        icon("X14u.ChevronDown") { stroke(2.2f) { moveTo(6.5f, 9.5f); lineTo(12f, 15f); lineTo(17.5f, 9.5f) } }
+    }
+    val ChevronUp: ImageVector by lazy {
+        icon("X14u.ChevronUp") { stroke(2.2f) { moveTo(6.5f, 14.5f); lineTo(12f, 9f); lineTo(17.5f, 14.5f) } }
+    }
+
     /** Microphone. */
     val Mic: ImageVector by lazy {
         icon("X14u.Mic") {

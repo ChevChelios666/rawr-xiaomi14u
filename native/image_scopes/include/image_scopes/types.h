@@ -119,6 +119,9 @@ struct WaveformRenderParams {
 
     bool showGrid = true;
     bool showBackground = true;
+    // Render the luma measurement as a plain histogram (levels across, counts up) instead of a waveform.
+    // Measurement is unchanged (Luma); only the presentation differs.
+    bool histogram = false;
 };
 
 struct RawWaveformRenderParams {

@@ -38,6 +38,8 @@ struct JpegCaptureContext {
     std::optional<tinydng_gps> gps;
     std::optional<std::array<uint8_t, 4>> sourceExifVersion;
     int quality = 98;
+    // Photo aspect ratio (long:short); 0 = uncropped. See encoding/OutputAspect.h.
+    float cropAspect = 0.0f;
     ChromaSubsampling subsampling = ChromaSubsampling::Yuv420;
     rawrcam::color::UltraHdrParams ultraHdr;
     std::string rendererDisplayName;

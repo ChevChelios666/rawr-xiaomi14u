@@ -176,6 +176,14 @@ object CaptureReducer {
             state.toggleScope(action.scope)
         }
 
+        is SetGrid -> state.copy(grid = action.mode)
+
+        is SetSingleScope -> state.copy(
+            activeScopes = listOfNotNull(action.scope),
+            expandedScope = null,
+            waveformMode = action.waveformMode
+        )
+
         ToggleWaveformMode -> {
             state.copy(
                 waveformMode =

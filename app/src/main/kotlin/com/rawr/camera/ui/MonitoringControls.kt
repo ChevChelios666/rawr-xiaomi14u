@@ -59,7 +59,11 @@ internal fun ScopeLayer(state: CaptureUiState, dispatch: CaptureDispatch, previe
                 nativeContent = preview.nativeContent,
                 variantLabel =
                     when (scope) {
-                        ScopeType.Waveform -> if (state.waveformMode == WaveformMode.RgbOverlay) "RGB" else "LUMA"
+                        ScopeType.Waveform -> when (state.waveformMode) {
+                            WaveformMode.RgbOverlay -> "RGB"
+                            WaveformMode.Histogram -> "HIST"
+                            WaveformMode.Luma -> "LUMA"
+                        }
                         ScopeType.Vectorscope -> null
                     },
                 orientation = state.orientation,

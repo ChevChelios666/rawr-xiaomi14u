@@ -54,10 +54,13 @@ internal fun CaptureViewfinder(
     /** X14U: a clean viewfinder (no strips or rail; the controls live below it). */
     x14uClean: Boolean = false,
     /** X14U: a tap first closes an open control or panel; true when it did (no focus then). */
-    onViewfinderTap: () -> Boolean = { false }
+    onViewfinderTap: () -> Boolean = { false },
+    /** X14U: a vertical swipe on the viewfinder (+1 down, -1 up). */
+    onViewfinderSwipe: ((Int) -> Unit)? = null
 ) {
     val haptics = LocalCaptureHaptics.current
     val latestViewfinderTap by rememberUpdatedState(onViewfinderTap)
+    val latestSwipe by rememberUpdatedState(onViewfinderSwipe)
     Box(
         modifier
             .background(Color(0xFF263039))
@@ -113,7 +116,22 @@ internal fun CaptureViewfinder(
                                     }
                                 }
                             )
-                        }
+                        }.then(
+                            if (onViewfinderSwipe == null) Modifier else Modifier.pointerInput(Unit) {
+                                var travel = 0f
+                                androidx.compose.foundation.gestures.detectVerticalDragGestures(
+                                    onDragStart = { travel = 0f },
+                                    onDragEnd = {
+                                        val threshold = 48.dp.toPx()
+                                        if (travel > threshold) latestSwipe?.invoke(1)
+                                        else if (travel < -threshold) latestSwipe?.invoke(-1)
+                                    }
+                                ) { change, dy ->
+                                    travel += dy
+                                    change.consume()
+                                }
+                            }
+                        )
                     } else {
                         Modifier
                     }

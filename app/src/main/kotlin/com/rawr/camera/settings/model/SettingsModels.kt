@@ -1183,7 +1183,11 @@ data class SettingsValues(
     /** X14U: photo mode on the new (Pro) capture screen; false = the classic Rawr Photo screen. */
     val x14uProUi: Boolean = true,
     /** X14U: the Look / Exposure set of each mode not active now (ModeLooks), see ModeLook. */
-    val x14uModeLooks: Map<String, ModeLook> = emptyMap()
+    val x14uModeLooks: Map<String, ModeLook> = emptyMap(),
+    /** X14U: photo aspect ratio (tools panel). */
+    val photoAspect: PhotoAspect = PhotoAspect.Native,
+    /** X14U: horizon level / flat bubble on the viewfinder (tools panel). */
+    val viewfinderLevel: Boolean = false
 ) {
     val isVideo: Boolean get() = captureModeId == "video"
     val isLogActive: Boolean get() = isVideo && videoLogEnabled

@@ -19,8 +19,9 @@ class StripJpeg final {
     StripJpeg(const StripJpeg&) = delete;
     StripJpeg& operator=(const StripJpeg&) = delete;
 
+    // pitch: bytes per row of rgba (0 = width * 4).
     bool encodeRgba8(const unsigned char* rgba, int width, int height, int quality, int tjSubsamp,
-                     std::string* error);
+                     std::string* error, int pitch = 0);
     bool writeTo(const Sink& sink) const;
     std::size_t byteSize() const noexcept;
     int stripsUsed() const noexcept;
@@ -44,6 +45,7 @@ class StripJpeg final {
 // strip fails: the caller then encodes on one thread as before. On success *jpeg is allocated with tj3Alloc and must
 // be released with tj3Free.
 bool encodeStripsRgba8(const unsigned char* rgba, int width, int height, int quality, int tjSubsamp,
-                       unsigned char** jpeg, std::size_t* jpegSize, int* stripsUsed, std::string* error);
+                       unsigned char** jpeg, std::size_t* jpegSize, int* stripsUsed, std::string* error,
+                       int pitch = 0);
 
 }  // namespace rawrcam::encoding::jpeg

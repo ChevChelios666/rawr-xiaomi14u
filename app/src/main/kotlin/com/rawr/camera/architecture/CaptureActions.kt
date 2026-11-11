@@ -74,6 +74,12 @@ data object ToggleFalseColor : PresentationCaptureAction
 
 data class ToggleScope(val scope: ScopeType) : PresentationCaptureAction
 
+/** X14U tools panel: the composition grid. */
+data class SetGrid(val mode: GridMode) : PresentationCaptureAction
+
+/** X14U tools panel Histogram tile: one scope (null = none), with the waveform look it uses. */
+data class SetSingleScope(val scope: ScopeType?, val waveformMode: WaveformMode) : PresentationCaptureAction
+
 data class ToggleScopeExpanded(val scope: ScopeType) : PresentationCaptureAction
 
 data object ToggleWaveformMode : PresentationCaptureAction

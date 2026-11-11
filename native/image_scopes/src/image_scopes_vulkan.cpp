@@ -566,7 +566,7 @@ struct ImageScopes::Impl {
     void renderWaveformWithSampleCount(VkCommandBuffer c, std::uint32_t s, const WaveformRenderParams& rp,
                                        const ScopeRenderTarget& target, std::uint32_t sampled) {
         WaveRenderPush wrp{static_cast<std::uint32_t>(rp.mode), rp.densityGain, rp.opacity, rp.showGrid ? 1u : 0u,
-                           rp.showBackground ? 1u : 0u,         sampled,        0u,         0u};
+                           rp.showBackground ? 1u : 0u,         sampled,        rp.histogram ? 1u : 0u, 0u};
         auto& b = wave[s];
         render(c, s, WaveRender, waveRender, {b.b, 0, b.size}, target, &wrp);
     }

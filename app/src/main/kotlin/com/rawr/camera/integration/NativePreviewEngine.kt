@@ -27,6 +27,9 @@ class NativePreviewEngine {
 
     external fun create(filesDir: String, nativeLibraryDir: String, customDriverPath: String): Long
 
+    /** X14U photo aspect ratio (long:short; 0 = the sensor's own) for the next captures. */
+    external fun setOutputAspect(aspect: Float)
+
     external fun destroy(handle: Long)
 
     external fun setSurface(handle: Long, surface: Surface?, displayRotationDegrees: Int): Boolean
