@@ -546,25 +546,6 @@ internal fun X14uCaptureLayout(
                     modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                         .padding(bottom = (31.dp * s - 18.dp).coerceAtLeast(4.dp), start = 7.dp, end = 7.dp)
                 )
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = toolsOpen,
-                    enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(expandFrom = Alignment.Top),
-                    exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically(shrinkTowards = Alignment.Top),
-                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(6.dp)
-                ) {
-                    val lensName = state.capabilities.lenses.firstOrNull { it.id == state.selectedLensId }?.displayName.orEmpty()
-                    X14uToolsPanel(
-                        state = state,
-                        dispatch = dispatch,
-                        video = isVideo,
-                        frontLens = isFrontLens(state.selectedLensId, lensName),
-                        choice = toolsChoice,
-                        onChoice = { toolsChoice = it },
-                        onOpenSettings = { openTools(false); onOpenSettings() },
-                        onClose = { openTools(false) },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
             }
             CaptureTopBar(
                 state, dispatch, onOpenSettings, videoLocked = recordingLock, showLog = false,
@@ -609,6 +590,33 @@ internal fun X14uCaptureLayout(
                 enabled = !recordingLock,
                 modifier = Modifier.fillMaxWidth().offset(y = shutterCenter - 46.dp).height(92.dp)
             )
+            // Tools panel, stock size and place: full width less 10 dp a side, its bottom 67 dp above the shutter's
+            // centre (over the exposure row and mode strip, within thumb reach). Above everything else.
+            Box(
+                Modifier.fillMaxWidth().height(shutterCenter - 67.dp * s).padding(horizontal = 10.dp),
+                contentAlignment = Alignment.BottomCenter
+            ) {
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = toolsOpen,
+                    enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(expandFrom = Alignment.Bottom),
+                    exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically(shrinkTowards = Alignment.Bottom),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    val lensName = state.capabilities.lenses.firstOrNull { it.id == state.selectedLensId }?.displayName.orEmpty()
+                    X14uToolsPanel(
+                        state = state,
+                        dispatch = dispatch,
+                        video = isVideo,
+                        frontLens = isFrontLens(state.selectedLensId, lensName),
+                        choice = toolsChoice,
+                        onChoice = { toolsChoice = it },
+                        onOpenSettings = { openTools(false); onOpenSettings() },
+                        onClose = { openTools(false) },
+                        modifier = Modifier.fillMaxWidth(),
+                        tileHeight = 86.dp * s
+                    )
+                }
+            }
         }
     }
 }

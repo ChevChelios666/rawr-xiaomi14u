@@ -133,7 +133,9 @@ internal fun X14uToolsPanel(
     onChoice: (String?) -> Unit,
     onOpenSettings: () -> Unit,
     onClose: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Stock-sized tiles: 87 dp rows at the stock reference height. */
+    tileHeight: androidx.compose.ui.unit.Dp = 86.dp
 ) {
     val extras = LocalCaptureExtras.current
     val tools = extras.tools
@@ -188,7 +190,7 @@ internal fun X14uToolsPanel(
         }
     }
     val rows = tiles.chunked(4)
-    val shape = RoundedCornerShape(12.dp)
+    val shape = RoundedCornerShape(14.dp)
     Column(
         modifier
             .background(Color(0xF2282421), shape)
@@ -210,7 +212,7 @@ internal fun X14uToolsPanel(
             Row(Modifier.fillMaxWidth()) {
                 (0 until 4).forEach { c ->
                     val tile = row.getOrNull(c)
-                    Box(Modifier.weight(1f).height(56.dp)) {
+                    Box(Modifier.weight(1f).height(tileHeight)) {
                         if (tile != null) X14uTileView(tile, open = tile.key == choice, orientation = orientation) {
                             haptics.selection()
                             tile.onTap()
@@ -238,7 +240,7 @@ internal fun X14uToolsPanel(
                 else -> Triple(WbPresets.map { it.label }, WbPresets.indexOf(wb)) { i: Int -> dispatch(SetWhiteBalanceMode(WbPresets[i])) }
             }
             Row(
-                Modifier.fillMaxWidth().height(56.dp).horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
+                Modifier.fillMaxWidth().height(tileHeight).horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
@@ -248,7 +250,7 @@ internal fun X14uToolsPanel(
                         label,
                         fontFamily = X14uFont,
                         fontWeight = if (on) FontWeight.Medium else FontWeight.Normal,
-                        fontSize = dpText(13.5f),
+                        fontSize = dpText(16f),
                         maxLines = 1,
                         color = if (on) CaptureColors.Accent else Color.White.copy(alpha = .9f),
                         modifier = Modifier
@@ -283,20 +285,20 @@ private fun X14uTileView(tile: X14uTile, open: Boolean, orientation: Orientation
     ) {
         Column(Modifier.uprightInLandscape(orientation), horizontalAlignment = Alignment.CenterHorizontally) {
             if (tile.text != null) {
-                Text(tile.text, fontFamily = X14uFont, fontWeight = FontWeight.Medium, fontSize = dpText(14f), maxLines = 1, color = color)
+                Text(tile.text, fontFamily = X14uFont, fontSize = dpText(21f), maxLines = 1, color = color)
             } else if (tile.icon != null) {
-                Icon(tile.icon, contentDescription = null, tint = color, modifier = Modifier.size(19.dp))
+                Icon(tile.icon, contentDescription = null, tint = color, modifier = Modifier.size(26.dp))
             }
             val label = if (tile.value != null) "${tile.label} · ${tile.value}" else tile.label
             Text(
                 label,
                 fontFamily = X14uFont,
-                fontSize = dpText(9.5f),
-                lineHeight = dpText(11f),
+                fontSize = dpText(12.5f),
+                lineHeight = dpText(15f),
                 maxLines = 2,
                 textAlign = TextAlign.Center,
                 color = if (tile.on || open) CaptureColors.Accent else Color.White.copy(alpha = .75f),
-                modifier = Modifier.padding(top = 3.dp)
+                modifier = Modifier.padding(top = 7.dp, start = 4.dp, end = 4.dp)
             )
         }
     }
