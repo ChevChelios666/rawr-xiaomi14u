@@ -26,6 +26,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -34,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rawr.camera.model.ExposureFormat
+import com.rawr.camera.model.GridGuides
 import com.rawr.camera.model.GridMode
 import com.rawr.camera.model.LongExposureUiState
 import com.rawr.camera.model.Orientation
@@ -84,54 +86,39 @@ internal fun ViewfinderFixture(modifier: Modifier) {
 @Composable
 internal fun GridOverlay(mode: GridMode, modifier: Modifier) {
     if (mode == GridMode.Off) return
+    val shapes = remember(mode) { GridGuides.shapes(mode) }
     Canvas(modifier) {
-        val color = Color.White.copy(alpha = .20f)
-        when (mode) {
-            GridMode.Thirds -> {
-                listOf(1f / 3f, 2f / 3f).forEach { fraction ->
-                    drawLine(color, Offset(size.width * fraction, 0f), Offset(size.width * fraction, size.height), 1f)
-                    drawLine(color, Offset(0f, size.height * fraction), Offset(size.width, size.height * fraction), 1f)
-                }
-            }
-
-            GridMode.FourByFour -> {
-                (1..3).forEach { index ->
-                    val fraction = index / 4f
-                    drawLine(
-                        color.copy(alpha = .15f),
-                        Offset(size.width * fraction, 0f),
-                        Offset(size.width * fraction, size.height),
-                        1f
+        val color = Color.White.copy(alpha = if (mode == GridMode.FourByFour) .15f else .22f)
+        val stroke = 1.dp.toPx().coerceAtLeast(1f)
+        val aspect = size.width / size.height
+        // Diagonals and triangles depend on the frame's real shape.
+        val drawn = when (mode) {
+            GridMode.Diagonals -> GridGuides.diagonals45(aspect)
+            GridMode.GoldenTriangles, GridMode.GoldenTrianglesMirrored -> GridGuides.triangles(aspect)
+            else -> shapes
+        }
+        val (flipX, flipY) = GridGuides.flips(mode)
+        withTransform({ scale(if (flipX) -1f else 1f, if (flipY) -1f else 1f, pivot = center) }) {
+            drawn.forEach { shape ->
+                when (shape) {
+                    is GridGuides.Line -> drawLine(
+                        color, Offset(shape.x0 * size.width, shape.y0 * size.height),
+                        Offset(shape.x1 * size.width, shape.y1 * size.height), stroke
                     )
-                    drawLine(
-                        color.copy(alpha = .15f),
-                        Offset(0f, size.height * fraction),
-                        Offset(
-                            size.width,
-                            size.height * fraction
-                        ),
-                        1f
+                    is GridGuides.Arc -> drawArc(
+                        color, shape.startDeg, shape.sweepDeg, useCenter = false,
+                        topLeft = Offset((shape.cx - shape.rx) * size.width, (shape.cy - shape.ry) * size.height),
+                        size = Size(2 * shape.rx * size.width, 2 * shape.ry * size.height),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(stroke)
                     )
+                    is GridGuides.Point -> {
+                        val c = Offset(shape.x * size.width, shape.y * size.height)
+                        val arm = 7.dp.toPx()
+                        val strong = color.copy(alpha = .45f)
+                        drawLine(strong, Offset(c.x - arm, c.y), Offset(c.x + arm, c.y), stroke)
+                        drawLine(strong, Offset(c.x, c.y - arm), Offset(c.x, c.y + arm), stroke)
+                    }
                 }
-            }
-
-            GridMode.Cross -> {
-                drawLine(
-                    color,
-                    Offset(size.width / 2f, size.height * .2f),
-                    Offset(size.width / 2f, size.height * .8f),
-                    1f
-                )
-                drawLine(
-                    color,
-                    Offset(size.width * .2f, size.height / 2f),
-                    Offset(size.width * .8f, size.height / 2f),
-                    1f
-                )
-            }
-
-            GridMode.Off -> {
-                Unit
             }
         }
     }

@@ -19,7 +19,16 @@ enum class Orientation { Portrait, Landscape }
 
 enum class CaptureMode { Photo, Video }
 
-enum class GridMode { Off, Thirds, FourByFour, Cross }
+/**
+ * Viewfinder composition guides. Names are persisted: add, don't rename. Golden spiral and golden triangles have
+ * orientation variants (the spiral's eye corner; which diagonal the triangles use).
+ */
+enum class GridMode {
+    Off, Thirds, FourByFour, Cross,
+    ThirdsPoints, GoldenRatio, Diagonals,
+    GoldenTriangles, GoldenTrianglesMirrored,
+    SpiralBottomLeft, SpiralBottomRight, SpiralTopLeft, SpiralTopRight
+}
 
 enum class OverlayMode { Peaking, RawHighlights, TonemapShadows, FalseColor }
 
