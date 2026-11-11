@@ -2,6 +2,7 @@ package com.rawr.camera.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -119,7 +120,7 @@ internal fun CaptureViewfinder(
                         }.then(
                             if (onViewfinderSwipe == null) Modifier else Modifier.pointerInput(Unit) {
                                 var travel = 0f
-                                androidx.compose.foundation.gestures.detectVerticalDragGestures(
+                                detectVerticalDragGestures(
                                     onDragStart = { travel = 0f },
                                     onDragEnd = {
                                         val threshold = 48.dp.toPx()
