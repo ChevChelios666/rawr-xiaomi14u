@@ -193,21 +193,12 @@ extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreview
 // called straight from the sensor thread.
 extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setHorizonLock(JNIEnv*, jobject,
                                                                                                       jfloat roll,
-                                                                                                      jfloat scale) {
+                                                                                                      jfloat scale,
+                                                                                                      jboolean natural) {
+    rawrcam::geometry::horizonNaturalView().store(natural == JNI_TRUE, std::memory_order_relaxed);
     rawrcam::geometry::horizonRoll().store(std::isfinite(roll) ? float(roll) : 0.0f, std::memory_order_relaxed);
     rawrcam::geometry::horizonScale().store(std::isfinite(scale) ? std::clamp(float(scale), 1.0f, 3.0f) : 1.0f,
                                             std::memory_order_relaxed);
-}
-
-// X14U horizon lock diagnostics: [viewfinder route, record route, record angle x10] (route 0 off, 1 lens, 2 pinhole).
-extern "C" JNIEXPORT jintArray JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_horizonLockDebug(JNIEnv* env,
-                                                                                                           jobject) {
-    const jint values[3] = {rawrcam::geometry::horizonViewfinderRoute().load(std::memory_order_relaxed),
-                            rawrcam::geometry::horizonRecordRoute().load(std::memory_order_relaxed),
-                            rawrcam::geometry::horizonRecordAngle().load(std::memory_order_relaxed)};
-    jintArray out = env->NewIntArray(3);
-    if (out) env->SetIntArrayRegion(out, 0, 3, values);
-    return out;
 }
 
 // X14U: photo aspect ratio (long:short; 0 = native) for the next captures.

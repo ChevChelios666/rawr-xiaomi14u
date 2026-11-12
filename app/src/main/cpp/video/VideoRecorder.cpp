@@ -143,7 +143,6 @@ void VideoRecorder::record(VkCommandBuffer command, uint32_t frameSlot, uint32_t
     // X14U horizon lock: rotate the output about the centre and zoom in by the lock's fixed crop. Without a lens
     // profile (or with correction off) a plain pinhole model carries it; its focal length cancels out.
     if (const auto lock = rawrcam::geometry::horizonSampling(); lock.active) {
-        int route = lensCorrection.enabled ? 1 : 2;
         if (!lensCorrection.enabled) {
             rawrcam::geometry::LensDistortionModel pinhole;
             pinhole.width = rawWidth;
@@ -158,14 +157,7 @@ void VideoRecorder::record(VkCommandBuffer command, uint32_t frameSlot, uint32_t
             lensCorrection.outputFocal[1] *= lock.scale;
             lensCorrection.rollCos = lock.cosA;
             lensCorrection.rollSin = lock.sinA;
-        } else {
-            route = 0;
         }
-        rawrcam::geometry::horizonRecordRoute().store(route, std::memory_order_relaxed);
-        rawrcam::geometry::horizonRecordAngle().store(
-            int(std::lround(std::atan2(lock.sinA, lock.cosA) * 1800.0 / 3.14159265358979)), std::memory_order_relaxed);
-    } else {
-        rawrcam::geometry::horizonRecordRoute().store(0, std::memory_order_relaxed);
     }
     lensCorrection.mirror = lensMirror;
     stage.record(command, resources_.demosaic_->outputImage(frameSlot), resources_.demosaic_->outputView(frameSlot),

@@ -78,7 +78,23 @@ void main(){
     vec2 s=sourceUv(q);
     if((pc.lensMirror & 1u) != 0u) s.x=1.0-s.x;
     if((pc.lensMirror & 2u) != 0u) s.y=1.0-s.y;
-    if(pc.lensWarp != 0u) s=lensSource(s);
+    if(pc.lensWarp != 0u){
+        s=lensSource(s);
+        // X14U horizon lock while recording: outside the recorded (turned) frame stays dark.
+        // The recorded frame's edge gets a thin light outline (about 2 px, whatever the zoom).
+        if(pc.lensWarp == 2u){
+            vec2 px=max(fwidth(s),vec2(1e-6));
+            if(s.x < 0.0 || s.x > 1.0 || s.y < 0.0 || s.y > 1.0){
+                outColor=vec4(0.04,0.04,0.04,1.0);
+                return;
+            }
+            vec2 edge=min(s,1.0-s)/px;
+            if(min(edge.x,edge.y) < 2.0){
+                outColor=vec4(0.93,0.93,0.93,1.0);
+                return;
+            }
+        }
+    }
 
     // 100+ is an application-owned auxiliary texture (scope). The same
     // aspect-fit mapping is used so waveform grids and vectorscope circles are

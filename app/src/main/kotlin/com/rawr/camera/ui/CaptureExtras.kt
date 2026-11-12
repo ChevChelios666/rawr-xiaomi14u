@@ -14,10 +14,8 @@ data class CaptureExtras(
     val tools: com.rawr.camera.CaptureViewModel.ToolsState = com.rawr.camera.CaptureViewModel.ToolsState(),
     val onSetPhotoAspect: (com.rawr.camera.settings.model.PhotoAspect) -> Unit = {},
     val onToggleLevel: () -> Unit = {},
-    /** Temporary horizon lock diagnostics shown on the LEVEL LOCK badge. */
-    val horizonDebug: String = "",
-    /** Video horizon lock (Level + lock); turning it on shows the level too. */
-    val onSetHorizonLock: (Boolean) -> Unit = {},
+    /** Video horizon Lock / Follow (the Level tile); either shows the level too. */
+    val onSetHorizonMode: (lock: Boolean, follow: Boolean) -> Unit = { _, _ -> },
     val onSetLocationTagging: (Boolean) -> Unit = {},
     val onToggleLensMirror: (String) -> Unit = {},
     /** Show the one-time "Swipe up for Photo+" hint (until switched once, at most twice). */

@@ -502,8 +502,16 @@ enum class HorizonLockRange(val label: String, val degrees: Int) {
             return (kotlin.math.cos(r) + a * kotlin.math.sin(r)).toFloat()
         }
 
-    /** The range on a lens of [factor] (0.5 for the ultra-wide). */
-    fun resolved(factor: Float): HorizonLockRange = if (this != Auto) this else if (factor < .9f) Full else Deg15
+    /** The range on a lens of [factor]: Auto is Full on every lens (level at any angle, ~2x crop). */
+    @Suppress("UNUSED_PARAMETER")
+    fun resolved(factor: Float): HorizonLockRange = if (this != Auto) this else Full
+}
+
+/** X14U horizon Follow: how slowly the video follows the phone's tilt (seconds; a gimbal's roll smoothing). */
+enum class HorizonSmoothing(val label: String, val seconds: Float) {
+    Light("Light", .3f),
+    Medium("Medium", 1f),
+    Heavy("Heavy", 2f)
 }
 
 enum class MultiframeBaseFrameMode(val nativeId: Int, val label: String) {
@@ -1221,6 +1229,9 @@ data class SettingsValues(
     /** X14U video horizon lock (Level tile: Level + lock) and how far it holds the horizon. */
     val videoHorizonLock: Boolean = false,
     val horizonLockRange: HorizonLockRange = HorizonLockRange.Auto,
+    /** X14U video horizon Follow (Level tile: Follow): the video follows tilt, smoothed like a gimbal's roll. */
+    val videoHorizonFollow: Boolean = false,
+    val horizonSmoothing: HorizonSmoothing = HorizonSmoothing.Medium,
     /** X14U digital zoom: the multiframe merge for zoomed shots; null = the usual merge. */
     val zoomMergeAlgorithm: MultiframeMergeAlgorithm? = MultiframeMergeAlgorithm.Wronski,
     /** X14U: the in-sensor-zoom lenses (2x) were turned off once, so zoom crops the main camera; they can be re-enabled. */

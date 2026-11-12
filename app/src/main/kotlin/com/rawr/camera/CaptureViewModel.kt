@@ -145,8 +145,10 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         val focusLoupe: com.rawr.camera.settings.model.FocusLoupeSettings = com.rawr.camera.settings.model.FocusLoupeSettings(),
         /** Digital zoom chain: lens name to its zoom factor, widest first. */
         val zoomChain: List<Pair<String, Float>> = emptyList(),
-        /** Video horizon lock (the Level tile's "Level + lock"). */
-        val horizonLock: Boolean = false
+        /** Video horizon lock (the Level tile's Lock). */
+        val horizonLock: Boolean = false,
+        /** Video horizon Follow (the Level tile's Follow). */
+        val horizonFollow: Boolean = false
     )
     val tools: StateFlow<ToolsState> = settingsEditor.state
         .map { v ->
@@ -156,7 +158,8 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                     .filter { it.image.mirror != com.rawr.camera.settings.model.LensMirror.None }.map { it.name }.toSet(),
                 v.focusLoupe,
                 com.rawr.camera.settings.model.ZoomChain.of(v.effectiveLensProfiles(DeviceLensDefaults.lenses)),
-                v.videoHorizonLock
+                v.videoHorizonLock,
+                v.videoHorizonFollow
             )
         }
         .distinctUntilChanged()
@@ -183,30 +186,31 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         settingsEditor.update { it.copy(stillsHintCount = it.stillsHintCount + 1) }
     }
 
-    fun setHorizonLock(on: Boolean) {
-        settingsEditor.update { it.copy(videoHorizonLock = on, viewfinderLevel = it.viewfinderLevel || on) }
+    /** The Level tile in Video: Lock and Follow are exclusive, and either shows the level too. */
+    fun setHorizonMode(lock: Boolean, follow: Boolean) {
+        settingsEditor.update {
+            it.copy(
+                videoHorizonLock = lock,
+                videoHorizonFollow = follow && !lock,
+                viewfinderLevel = it.viewfinderLevel || lock || follow
+            )
+        }
     }
 
     fun toggleLevel() {
-        // Level off is lock off too (the tile's Off).
+        // Level off is lock / follow off too (the tile's Off).
         settingsEditor.update {
-            it.copy(viewfinderLevel = !it.viewfinderLevel, videoHorizonLock = it.videoHorizonLock && !it.viewfinderLevel)
+            it.copy(
+                viewfinderLevel = !it.viewfinderLevel,
+                videoHorizonLock = it.videoHorizonLock && !it.viewfinderLevel,
+                videoHorizonFollow = it.videoHorizonFollow && !it.viewfinderLevel
+            )
         }
     }
 
-    /** Temporary: horizon lock diagnostics for the LEVEL LOCK badge (sensor, viewfinder route, record route). */
-    val horizonDebug: StateFlow<String> = kotlinx.coroutines.flow.flow {
-        while (true) {
-            val d = previewCoordinator.horizonLockDebug()
-            fun route(r: Int) = when (r) { 1 -> "lens"; 2 -> "pin"; else -> "off" }
-            emit("${horizonSensor.debugText} vf:${route(d[0])} rec:${route(d[1])} ${d[2] / 10f}°")
-            kotlinx.coroutines.delay(250L)
-        }
-    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(1000L), "")
-
     /** X14U video horizon lock: gravity in, roll and crop out to the native viewfinder and recorder. */
-    private val horizonSensor = com.rawr.camera.integration.HorizonLockSensor(application) { roll, crop ->
-        previewCoordinator.setHorizonLock(roll, crop)
+    private val horizonSensor = com.rawr.camera.integration.HorizonLockSensor(application) { roll, crop, natural ->
+        previewCoordinator.setHorizonLock(roll, crop, natural)
     }
     fun setLocationTagging(on: Boolean) {
         settingsEditor.update { it.copy(locationTagging = on) }
@@ -450,16 +454,22 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         // Video horizon lock: on in Video with the setting, range by lens; Full freezes its framing while recording.
         viewModelScope.launch {
             kotlinx.coroutines.flow.combine(
-                settingsEditor.values.map { it.videoHorizonLock to it.horizonLockRange }.distinctUntilChanged(),
+                settingsEditor.values.map {
+                    Triple(it.videoHorizonLock, it.horizonLockRange,
+                        if (it.videoHorizonFollow) it.horizonSmoothing.seconds else 0f)
+                }.distinctUntilChanged(),
                 controller.state.map { (it.captureMode == com.rawr.camera.model.CaptureMode.Video) to it.selectedLensId }
                     .distinctUntilChanged(),
                 recording.state.map { it.recording }.distinctUntilChanged()
-            ) { (on, range), (video, lens), rec ->
-                val resolved = range.resolved(com.rawr.camera.settings.model.ZoomChain.factorOf(lens) ?: 1f)
-                val degrees = if (on && video) resolved.degrees else 0
-                Triple(degrees, resolved.crop, rec to com.rawr.camera.ui.isFrontLens(lens, lens))
-            }.distinctUntilChanged().collect { (degrees, crop, recFront) ->
-                horizonSensor.configure(degrees, crop, recording = recFront.first, front = recFront.second)
+            ) { (on, range, follow), (video, lens), rec ->
+                // Follow uses ±15° (about 1.4x); Lock the chosen range (Auto: Full on every lens).
+                val resolved = if (follow > 0f) com.rawr.camera.settings.model.HorizonLockRange.Deg15
+                    else range.resolved(com.rawr.camera.settings.model.ZoomChain.factorOf(lens) ?: 1f)
+                val degrees = if ((on || follow > 0f) && video) resolved.degrees else 0
+                HorizonConfig(degrees, resolved.crop, rec, com.rawr.camera.ui.isFrontLens(lens, lens), follow)
+            }.distinctUntilChanged().collect { c ->
+                horizonSensor.configure(c.degrees, c.crop, recording = c.recording, front = c.front,
+                    followSeconds = c.followSeconds)
             }
         }
         settingsSync.start()
@@ -598,3 +608,11 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 }
+
+private data class HorizonConfig(
+    val degrees: Int,
+    val crop: Float,
+    val recording: Boolean,
+    val front: Boolean,
+    val followSeconds: Float
+)

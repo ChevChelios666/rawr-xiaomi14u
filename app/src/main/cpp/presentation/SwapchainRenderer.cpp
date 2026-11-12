@@ -1,3 +1,5 @@
+#include "geometry/HorizonLock.h"
+#include <optional>
 #include "presentation/SwapchainRenderer.h"
 
 #include <algorithm>
@@ -184,6 +186,27 @@ void SwapchainRenderer::record(VkCommandBuffer command, uint32_t frameSlot, uint
     info.exifOrientation = exifOrientation;
     info.diagnosticMode = diagnosticMode;
     info.lensWarp = videoSource ? nullptr : lensWarp;
+    // X14U horizon lock while recording: the recorded frames are level, so on the hand-held screen they would turn
+    // with the phone. Turn them back by the lock's angle (and shrink by its crop) so the view stays natural, like
+    // the lens without the lock; outside the recorded frame stays dark.
+    std::optional<rawrcam::geometry::LensDistortionModel> unlock;
+    if (videoSource && diagnosticMode == 0u && previewWidth >= 2 && previewHeight >= 2 &&
+        rawrcam::geometry::horizonNaturalView().load(std::memory_order_relaxed)) {
+        if (const auto lock = rawrcam::geometry::horizonSampling(); lock.active) {
+            rawrcam::geometry::LensDistortionModel m;
+            m.width = previewWidth;
+            m.height = previewHeight;
+            m.fx = m.fy = double(previewWidth);
+            m.cx = (double(previewWidth) - 1.0) * 0.5;
+            m.cy = (double(previewHeight) - 1.0) * 0.5;
+            m.rollCos = lock.cosA;
+            m.rollSin = -lock.sinA;
+            m.rollScale = 1.0 / lock.scale;
+            m.darkOutside = true;
+            unlock = m;
+            info.lensWarp = &*unlock;
+        }
+    }
     // Video-source frames were mirrored by the recorder.
     info.lensMirror = videoSource ? 0u : lensMirror;
     if (!videoSource) {

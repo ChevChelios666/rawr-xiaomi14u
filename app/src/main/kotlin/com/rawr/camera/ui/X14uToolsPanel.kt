@@ -158,10 +158,12 @@ internal fun X14uToolsPanel(
             add(X14uTile("aspect", "Aspect", tools.photoAspect != PhotoAspect.Native,
                 text = if (tools.photoAspect == PhotoAspect.Native) "4:3" else tools.photoAspect.label) { toggleChoice("aspect") })
         }
-        // Video: Off · Level · Level + lock (horizon lock); stills just toggle the level.
+        // Video: Off · Level · Lock · Follow (horizon); stills just toggle the level.
         if (video) {
-            add(X14uTile("level", "Level", tools.level || tools.horizonLock, X14uIcons.Level,
-                value = if (tools.horizonLock) "lock" else null) { toggleChoice("level") })
+            add(X14uTile("level", "Level", tools.level || tools.horizonLock || tools.horizonFollow, X14uIcons.Level,
+                value = if (tools.horizonLock) "lock" else if (tools.horizonFollow) "follow" else null) {
+                toggleChoice("level")
+            })
         } else add(X14uTile("level", "Level", tools.level, X14uIcons.Level) { extras.onToggleLevel() })
         val histogram = state.histogramChoice()
         add(X14uTile("hist", "Histogram", histogram != HistogramChoice.Off, X14uIcons.Histogram,
@@ -232,12 +234,13 @@ internal fun X14uToolsPanel(
                 "aspect" -> Triple(PhotoAspect.entries.map { it.label }, tools.photoAspect.ordinal) { i: Int ->
                     extras.onSetPhotoAspect(PhotoAspect.entries[i])
                 }
-                "level" -> Triple(listOf("Off", "Level", "Level + lock"),
-                    if (tools.horizonLock) 2 else if (tools.level) 1 else 0) { i: Int ->
+                "level" -> Triple(listOf("Off", "Level", "Lock", "Follow"),
+                    if (tools.horizonFollow) 3 else if (tools.horizonLock) 2 else if (tools.level) 1 else 0) { i: Int ->
                     when (i) {
-                        0 -> { extras.onSetHorizonLock(false); if (tools.level) extras.onToggleLevel() }
-                        1 -> { extras.onSetHorizonLock(false); if (!tools.level) extras.onToggleLevel() }
-                        else -> extras.onSetHorizonLock(true)
+                        0 -> { extras.onSetHorizonMode(false, false); if (tools.level) extras.onToggleLevel() }
+                        1 -> { extras.onSetHorizonMode(false, false); if (!tools.level) extras.onToggleLevel() }
+                        2 -> extras.onSetHorizonMode(true, false)
+                        else -> extras.onSetHorizonMode(false, true)
                     }
                 }
                 "hist" -> Triple(HistogramChoice.entries.map { it.label }, state.histogramChoice().ordinal) { i: Int ->

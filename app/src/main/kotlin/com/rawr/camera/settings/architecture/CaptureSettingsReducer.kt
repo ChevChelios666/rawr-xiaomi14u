@@ -83,6 +83,10 @@ internal fun reduceCaptureSettings(
         state.withValues(state.values.copy(horizonLockRange = action.value))
     }
 
+    is SetHorizonSmoothing -> {
+        state.withValues(state.values.copy(horizonSmoothing = action.value))
+    }
+
     is SetZoomMergeAlgorithm -> {
         state.withValues(state.values.copy(zoomMergeAlgorithm = action.value))
     }

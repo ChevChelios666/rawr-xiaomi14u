@@ -612,10 +612,10 @@ internal fun X14uCaptureLayout(
                     modifier = Modifier.fillMaxSize()
                 )
                 if (tools.level) X14uLevel(Modifier.fillMaxSize())
-                // Video horizon lock on: a small badge, so the fixed crop isn't a surprise.
-                if (isVideo && tools.horizonLock) {
+                // Video horizon Lock / Follow on: a small badge, so the fixed crop isn't a surprise.
+                if (isVideo && (tools.horizonLock || tools.horizonFollow)) {
                     Text(
-                        "LEVEL LOCK " + LocalCaptureExtras.current.horizonDebug,
+                        if (tools.horizonFollow) "LEVEL FOLLOW" else "LEVEL LOCK",
                         fontFamily = X14uFont,
                         fontSize = dpText(10.5f),
                         color = CaptureColors.Accent,

@@ -31,10 +31,7 @@ class NativePreviewEngine {
     external fun setDigitalZoom(handle: Long, crop: Float, upscale: Boolean)
 
     /** X14U video horizon lock: roll past the kept framing (radians, clockwise in the camera's image) and crop (1 = off). */
-    external fun setHorizonLock(roll: Float, scale: Float)
-
-    /** Temporary horizon lock diagnostics: viewfinder route, record route (0 off, 1 lens, 2 pinhole), angle x10. */
-    external fun horizonLockDebug(): IntArray
+    external fun setHorizonLock(roll: Float, scale: Float, natural: Boolean)
 
     /** X14U photo aspect ratio (long:short; 0 = the sensor's own) for the next captures. */
     external fun setOutputAspect(aspect: Float)

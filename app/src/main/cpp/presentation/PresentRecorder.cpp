@@ -123,7 +123,7 @@ void PresentRecorder::record(const RecordInfo& i) {
     if (i.lensWarp && i.exifOrientation == 0u && i.diagnosticMode == 0u) {
         const auto& m = *i.lensWarp;
         // Pixel-index model -> source UV (pixel i covers [i, i + 1) / size).
-        pcWarp.lensWarp = 1u;
+        pcWarp.lensWarp = m.darkOutside ? 2u : 1u;
         pcWarp.lensCx = float((m.cx + 0.5) / m.width);
         pcWarp.lensCy = float((m.cy + 0.5) / m.height);
         pcWarp.lensFx = float(m.fx / m.width);

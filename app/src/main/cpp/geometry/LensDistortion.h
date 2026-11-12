@@ -28,6 +28,8 @@ struct LensDistortionModel {
     double outputScale = 1.0;
     // X14U video horizon lock (viewfinder only): output -> source rotation about the centre and its zoom-in.
     double rollCos = 1.0, rollSin = 0.0, rollScale = 1.0;
+    // Samples outside the source show dark instead of the edge (the recorded frame turned back for display).
+    bool darkOutside = false;
 };
 
 [[nodiscard]] bool isValid(const LensDistortionModel& model) noexcept;

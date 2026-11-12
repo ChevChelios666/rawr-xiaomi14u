@@ -44,10 +44,10 @@ internal fun VideoEncoderSettings(state: SettingsUiState, dispatch: SettingsDisp
         }
         SettingsGroup(
             title = "Horizon Lock",
-            description = "Keeps the horizon level while you move (Level tile → Level + lock, Video only). The picture is " +
-                "zoomed in by a fixed amount so the turned frame stays full: the wider the range, the more it crops. " +
-                "Past the range the horizon follows the phone. Auto: Full on the 0.5x (about a 1x view stays), ±15° " +
-                "on the other lenses."
+            description = "Lock keeps the saved video level while you move (Level tile → Lock, Video only); the " +
+                "viewfinder stays natural with an outline of what's recorded. The picture is zoomed in by a fixed " +
+                "amount so the turned frame stays full: the wider the range, the more it crops. Past the range the " +
+                "horizon follows the phone. Auto: Full on every lens."
         ) {
             com.rawr.camera.settings.model.HorizonLockRange.entries.forEachIndexed { index, range ->
                 if (index > 0) SettingDivider()
@@ -57,6 +57,21 @@ internal fun VideoEncoderSettings(state: SettingsUiState, dispatch: SettingsDisp
                     selected = state.values.horizonLockRange == range,
                     enabled = true
                 ) { dispatch.invoke(com.rawr.camera.settings.architecture.SetHorizonLockRange(range)) }
+            }
+        }
+        SettingsGroup(
+            title = "Horizon Follow",
+            description = "Follow (Level tile → Follow): the video follows your tilt slowly, like a gimbal's roll, so " +
+                "shake goes and deliberate turns come through as smooth rolls. The viewfinder shows the recorded " +
+                "frame. Crops about 1.4x."
+        ) {
+            com.rawr.camera.settings.model.HorizonSmoothing.entries.forEachIndexed { index, smoothing ->
+                if (index > 0) SettingDivider()
+                SettingsSelectionRow(
+                    title = "${smoothing.label} · ${smoothing.seconds} s",
+                    selected = state.values.horizonSmoothing == smoothing,
+                    enabled = true
+                ) { dispatch.invoke(com.rawr.camera.settings.architecture.SetHorizonSmoothing(smoothing)) }
             }
         }
         SettingsGroup(

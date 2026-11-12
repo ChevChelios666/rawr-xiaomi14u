@@ -17,18 +17,10 @@ inline std::atomic<float>& horizonScale() noexcept {
     return value;
 }
 
-// Diagnostics (temporary): how the last viewfinder frame / recorded frame applied the lock.
-// 0 not applied, 1 on the lens profile, 2 on a plain pinhole model; and the angle used (degrees x10).
-inline std::atomic<int>& horizonViewfinderRoute() noexcept {
-    static std::atomic<int> value{0};
-    return value;
-}
-inline std::atomic<int>& horizonRecordRoute() noexcept {
-    static std::atomic<int> value{0};
-    return value;
-}
-inline std::atomic<int>& horizonRecordAngle() noexcept {
-    static std::atomic<int> value{0};
+// Lock (true): the viewfinder stays natural and shows the recorded frame only as an outline. Follow (false): the
+// viewfinder shows the recorded frame itself, turning with it.
+inline std::atomic<bool>& horizonNaturalView() noexcept {
+    static std::atomic<bool> value{true};
     return value;
 }
 

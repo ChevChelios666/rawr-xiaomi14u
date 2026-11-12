@@ -18,10 +18,14 @@ import kotlin.math.roundToInt
  * only once the phone is clearly turned (60° past the current one, so it never flickers near a diagonal); during a
  * recording it stays the one the take started with, since the video's orientation is fixed then. Past a limited
  * range the correction eases into its limit and the horizon follows the phone from there, with no jump.
+ *
+ * Follow (a gimbal's roll-follow): instead of a fixed framing, the video follows a slowly smoothed copy of the tilt
+ * (time constant [configure]'s followSeconds), so shake is taken out and deliberate turns come through as smooth
+ * rolls; the viewfinder shows the recorded frame. Lock keeps the viewfinder natural (see SwapchainRenderer).
  */
 internal class HorizonLockSensor(
     context: Context,
-    private val apply: (rollRadians: Float, crop: Float) -> Unit
+    private val apply: (rollRadians: Float, crop: Float, natural: Boolean) -> Unit
 ) : SensorEventListener {
     private val manager = context.getSystemService(SensorManager::class.java)
     private val gravity = manager?.getDefaultSensor(Sensor.TYPE_GRAVITY)
@@ -31,6 +35,10 @@ internal class HorizonLockSensor(
     @Volatile private var crop = 1f
     @Volatile private var recording = false
     @Volatile private var front = false
+    /** 0 = Lock; otherwise Follow's smoothing in seconds. */
+    @Volatile private var followSeconds = 0f
+    private var smoothed = 0f
+    private var lastNanos = 0L
     private var listening = false
     private var gx = 0f
     private var gy = 0f
@@ -38,13 +46,15 @@ internal class HorizonLockSensor(
     private var frozenBase: Float? = null
     private var currentBase: Float? = null
     private var lastOut = 0f
-    /** Temporary diagnostics for the badge: the sensor's roll, base and the correction sent (degrees). */
-    @Volatile var debugText: String = ""
-        private set
 
-    /** Lock with [range] degrees (0 off, >= 90 full) and its [cropFactor]; [front] lenses see the roll mirrored. */
+    /**
+     * Lock with [range] degrees (0 off, >= 90 full) and its [cropFactor]; [front] lenses see the roll mirrored.
+     * [followSeconds] > 0 is Follow with that smoothing.
+     */
     @Synchronized
-    fun configure(range: Int, cropFactor: Float, recording: Boolean, front: Boolean) {
+    fun configure(range: Int, cropFactor: Float, recording: Boolean, front: Boolean, followSeconds: Float = 0f) {
+        if ((followSeconds > 0f) != (this.followSeconds > 0f)) primed = false
+        this.followSeconds = followSeconds
         this.rangeDegrees = range
         this.crop = if (range > 0) cropFactor.coerceAtLeast(1f) else 1f
         if (!recording) frozenBase = null
@@ -60,7 +70,7 @@ internal class HorizonLockSensor(
         }
         if (!want) {
             currentBase = null
-            apply(0f, 1f)
+            apply(0f, 1f, true)
         }
     }
 
@@ -73,7 +83,8 @@ internal class HorizonLockSensor(
         // wraps.
         val x = event.values[0]
         val y = event.values[1]
-        if (!primed) {
+        val fresh = !primed
+        if (fresh) {
             gx = x
             gy = y
             primed = true
@@ -83,6 +94,24 @@ internal class HorizonLockSensor(
         }
         // Clockwise roll (as the user sees the screen): 0 upright, 90 turned onto the right side.
         val theta = Math.toDegrees(atan2(-gx, gy).toDouble()).toFloat()
+        val follow = followSeconds
+        if (follow > 0f) {
+            // Follow: correct only the difference from a slowly smoothed tilt (unwrapped, so turning past 180° is
+            // smooth), kept within the range the crop covers.
+            if (fresh) smoothed = theta
+            else {
+                val dt = ((event.timestamp - lastNanos) / 1e9f).coerceIn(0f, .2f)
+                val k = 1f - kotlin.math.exp(-dt / follow)
+                smoothed = wrap180(smoothed + k * wrap180(theta - smoothed))
+            }
+            lastNanos = event.timestamp
+            var residual = softLimit(wrap180(theta - smoothed), range.toFloat().coerceAtMost(89f))
+            // Never leave the correction past the crop: pull the smoothed tilt along instead.
+            if (abs(wrap180(theta - smoothed)) > range) smoothed = wrap180(theta - residual)
+            if (front) residual = -residual
+            apply(Math.toRadians(residual.toDouble()).toFloat(), crop, false)
+            return
+        }
         val held = currentBase
         val idleBase = if (held == null || abs(wrap180(theta - held)) > 60f) (theta / 90f).roundToInt() * 90f else held
         currentBase = idleBase
@@ -93,10 +122,9 @@ internal class HorizonLockSensor(
             residual = if (abs(residual) > range + 45f) lastOut else softLimit(residual, range.toFloat())
             lastOut = residual
         }
-        debugText = "%.0f°/%.0f→%.1f".format(theta, base, residual)
         // The front camera looks back at the user, so the same roll turns its picture the other way.
         if (front) residual = -residual
-        apply(Math.toRadians(residual.toDouble()).toFloat(), crop)
+        apply(Math.toRadians(residual.toDouble()).toFloat(), crop, true)
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
