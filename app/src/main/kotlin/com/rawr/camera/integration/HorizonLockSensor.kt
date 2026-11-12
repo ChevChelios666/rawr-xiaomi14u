@@ -5,6 +5,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.roundToInt
 
@@ -13,8 +14,10 @@ import kotlin.math.roundToInt
  * being kept level, with the fixed crop for the range. The viewfinder and the recording rotate the picture back by
  * that much (see geometry/HorizonLock.h).
  *
- * Framing kept level: the nearest upright or sideways hold (multiple of 90°). With Full range it is frozen when a
- * recording starts, so the horizon stays level however the phone turns during the take.
+ * Framing kept level: an upright or sideways hold (multiple of 90°). Before recording it follows the phone, switching
+ * only once the phone is clearly turned (60° past the current one, so it never flickers near a diagonal); during a
+ * recording it stays the one the take started with, since the video's orientation is fixed then. Past a limited
+ * range the correction eases into its limit and the horizon follows the phone from there, with no jump.
  */
 internal class HorizonLockSensor(
     context: Context,
@@ -33,6 +36,7 @@ internal class HorizonLockSensor(
     private var gy = 0f
     private var primed = false
     private var frozenBase: Float? = null
+    private var currentBase: Float? = null
 
     /** Lock with [range] degrees (0 off, >= 90 full) and its [cropFactor]; [front] lenses see the roll mirrored. */
     @Synchronized
@@ -50,7 +54,10 @@ internal class HorizonLockSensor(
             manager?.unregisterListener(this)
             listening = false
         }
-        if (!want) apply(0f, 1f)
+        if (!want) {
+            currentBase = null
+            apply(0f, 1f)
+        }
     }
 
     fun close() = configure(0, 1f, recording = false, front = false)
@@ -72,16 +79,28 @@ internal class HorizonLockSensor(
         }
         // Clockwise roll (as the user sees the screen): 0 upright, 90 turned onto the right side.
         val theta = Math.toDegrees(atan2(-gx, gy).toDouble()).toFloat()
-        val nearest = (theta / 90f).roundToInt() * 90f
-        val base = if (range >= 90 && recording) frozenBase ?: nearest.also { frozenBase = it } else nearest
+        val held = currentBase
+        val idleBase = if (held == null || abs(wrap180(theta - held)) > 60f) (theta / 90f).roundToInt() * 90f else held
+        currentBase = idleBase
+        val base = if (recording) frozenBase ?: idleBase.also { frozenBase = it } else idleBase
         var residual = wrap180(theta - base)
-        if (range < 90) residual = residual.coerceIn(-range.toFloat(), range.toFloat())
+        if (range < 90) residual = softLimit(residual, range.toFloat())
         // The front camera looks back at the user, so the same roll turns its picture the other way.
         if (front) residual = -residual
         apply(Math.toRadians(residual.toDouble()).toFloat(), crop)
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+
+    /** [r] up to near [limit], then easing into it over the last few degrees (never past it). */
+    private fun softLimit(r: Float, limit: Float): Float {
+        val knee = minOf(5f, limit * .3f)
+        val start = limit - knee
+        val m = abs(r)
+        if (m <= start) return r
+        val eased = start + knee * kotlin.math.tanh(((m - start) / knee).toDouble()).toFloat()
+        return if (r < 0f) -eased else eased
+    }
 
     private fun wrap180(a: Float): Float {
         var v = a % 360f
