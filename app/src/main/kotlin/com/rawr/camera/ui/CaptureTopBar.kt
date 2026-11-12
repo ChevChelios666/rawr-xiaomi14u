@@ -51,6 +51,8 @@ internal fun CaptureTopBar(
     showLog: Boolean = true,
     /** X14U: lens option toggles (DCG, 50 MP), before Settings. */
     toggles: @Composable RowScope.() -> Unit = {},
+    /** How many slots [toggles] fills, so the video chevron can be centred. */
+    toggleCount: Int = 0,
     /**
      * X14U tools panel: non-null shows its arrow in the eye's place (accent, pointing up, while open) and drops the
      * WB and Settings buttons, which live in the panel.
@@ -66,7 +68,12 @@ internal fun CaptureTopBar(
             .height(CaptureDimens.TopBarHeight),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // X14U video: the chevron is centred, so both sides get the same number of slots (empty ones fill the
+        // shorter side): left resolution, fps (and LOG), right the timer and the lens toggles.
+        val videoLeftSlots = 2 + (if (showLog) 1 else 0)
+        val videoRightSlots = 1 + toggleCount
         if (state.captureMode == CaptureMode.Video) {
+            if (toolsOpen != null) repeat((videoRightSlots - videoLeftSlots).coerceAtLeast(0)) { TopBarSlot {} }
             TopBarSlot {
                 VideoTopBarChoice(
                     icon = state.videoResolution.topBarIcon(),
@@ -222,7 +229,7 @@ internal fun CaptureTopBar(
                         orientation = state.orientation
                     )
                 }
-                repeat((if (showLog) 3 else 2) - 1) { TopBarSlot {} }
+                repeat((videoLeftSlots - videoRightSlots).coerceAtLeast(0)) { TopBarSlot {} }
             }
         } else TopBarSlot {
             IconToggleButton(

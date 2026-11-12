@@ -741,6 +741,7 @@ internal fun X14uCaptureLayout(
             CaptureTopBar(
                 state, dispatch, onOpenSettings, videoLocked = recordingLock, showLog = false,
                 toggles = { X14uOptionToggles(quick, lensOptions, isVideo, enabled = !recordingLock, orientation, onQuickEvent) },
+                toggleCount = x14uOptionToggleCount(quick, lensOptions, isVideo),
                 toolsOpen = toolsOpen,
                 onToggleTools = { openTools(!toolsOpen) }
             )
@@ -848,6 +849,13 @@ private fun FrameBrackets(modifier: Modifier) {
 }
 
 // ---- Top bar toggles -------------------------------------------------------------------------------------------
+
+/** How many top-bar slots [X14uOptionToggles] fills (video shows only the lens's available toggles). */
+private fun x14uOptionToggleCount(quick: ViewfinderQuickState, options: LensOptionsQuickState?, video: Boolean): Int =
+    lensOptionSlots(quick.lensOptions).filter { it.second.toggle }.count { (name, _) ->
+        val row = options?.options?.indexOfFirst { it.name.trim().equals(name, ignoreCase = true) } ?: -1
+        !video || (options != null && row >= 0 && row !in options.unavailable)
+    }
 
 /** DCG and 50 MP (every on/off option row) as plain text: accent when on, struck through when off or absent. */
 @Composable
