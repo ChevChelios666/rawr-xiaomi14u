@@ -616,10 +616,13 @@ internal fun X14uCaptureLayout(
                         fontFamily = X14uFont,
                         fontSize = dpText(10.5f),
                         color = CaptureColors.Accent,
-                        modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
+                        // Top-left as the phone is held (landscape turns the badge and its slot).
+                        modifier = Modifier
+                            .align(if (orientation == Orientation.Landscape) Alignment.TopEnd else Alignment.TopStart)
+                            .padding(8.dp)
+                            .uprightLayoutInLandscape(orientation)
                             .background(Color.Black.copy(alpha = .5f), RoundedCornerShape(6.dp))
                             .padding(horizontal = 6.dp, vertical = 3.dp)
-                            .uprightInLandscape(orientation)
                     )
                 }
                 // Photo / Photo+ only: in Video the viewfinder runs past this frame (16:9), so the loupe would sit off.

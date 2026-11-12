@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -123,6 +124,26 @@ internal fun CompactTopBarPalette(
 
 internal fun Modifier.uprightInLandscape(orientation: Orientation): Modifier =
     if (orientation == Orientation.Landscape) graphicsLayer(rotationZ = 90f) else this
+
+/**
+ * Like [uprightInLandscape], but the layout turns too: the element takes its rotated size, so a wide badge stands
+ * tall in landscape (background and all) instead of overhanging its slot. Put it before background / padding.
+ */
+internal fun Modifier.uprightLayoutInLandscape(orientation: Orientation): Modifier =
+    if (orientation != Orientation.Landscape) this else layout { measurable, constraints ->
+        val placeable = measurable.measure(
+            androidx.compose.ui.unit.Constraints(
+                minWidth = constraints.minHeight, maxWidth = constraints.maxHeight,
+                minHeight = constraints.minWidth, maxHeight = constraints.maxWidth
+            )
+        )
+        layout(placeable.height, placeable.width) {
+            // Centre the turned element in the swapped box.
+            placeable.placeWithLayer((placeable.height - placeable.width) / 2, (placeable.width - placeable.height) / 2) {
+                rotationZ = 90f
+            }
+        }
+    }
 
 @Composable
 internal fun CaptureTopPanel(

@@ -487,9 +487,9 @@ private fun PanoBadge(text: String, color: Color, orientation: Orientation) {
         color = color,
         maxLines = 1,
         modifier = Modifier
+            .uprightLayoutInLandscape(orientation)
             .background(Color.Black.copy(alpha = .55f), RoundedCornerShape(6.dp))
             .padding(horizontal = 7.dp, vertical = 3.dp)
-            .uprightInLandscape(orientation)
     )
 }
 
