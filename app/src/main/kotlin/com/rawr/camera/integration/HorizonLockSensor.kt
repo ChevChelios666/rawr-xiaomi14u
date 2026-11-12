@@ -21,7 +21,8 @@ import kotlin.math.roundToInt
  *
  * Follow (a gimbal's roll-follow): instead of a fixed framing, the video follows a slowly smoothed copy of the tilt
  * (time constant [configure]'s followSeconds), so shake is taken out and deliberate turns come through as smooth
- * rolls; the viewfinder shows the recorded frame. Lock keeps the viewfinder natural (see SwapchainRenderer).
+ * rolls. In both modes the viewfinder shows exactly what's recorded (natural = false; the natural-viewfinder path in
+ * SwapchainRenderer stays available but unused).
  */
 internal class HorizonLockSensor(
     context: Context,
@@ -124,7 +125,7 @@ internal class HorizonLockSensor(
         }
         // The front camera looks back at the user, so the same roll turns its picture the other way.
         if (front) residual = -residual
-        apply(Math.toRadians(residual.toDouble()).toFloat(), crop, true)
+        apply(Math.toRadians(residual.toDouble()).toFloat(), crop, false)
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit

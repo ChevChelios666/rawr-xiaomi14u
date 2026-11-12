@@ -44,8 +44,8 @@ internal fun VideoEncoderSettings(state: SettingsUiState, dispatch: SettingsDisp
         }
         SettingsGroup(
             title = "Horizon Lock",
-            description = "Lock keeps the saved video level while you move (Level tile → Lock, Video only); the " +
-                "viewfinder stays natural with an outline of what's recorded. The picture is zoomed in by a fixed " +
+            description = "Lock keeps the horizon level while you move (Level tile → Lock, Video only), in the " +
+                "viewfinder and the saved video alike. The picture is zoomed in by a fixed " +
                 "amount so the turned frame stays full: the wider the range, the more it crops. Past the range the " +
                 "horizon follows the phone. Auto: Full on every lens."
         ) {
