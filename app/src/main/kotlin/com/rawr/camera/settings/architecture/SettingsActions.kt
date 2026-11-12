@@ -75,6 +75,8 @@ data class SetHorizonSmoothing(val value: com.rawr.camera.settings.model.Horizon
 data class SetVideoStabilize(val value: com.rawr.camera.settings.model.VideoStabilize) : SettingsApplicationAction
 data class SetVideoShutterAngle(val value: Boolean) : SettingsApplicationAction
 data class SetPanoMerge(val value: Boolean) : SettingsApplicationAction
+data class SetPanoKeepFrames(val value: Boolean) : SettingsApplicationAction
+data class SetPanoProjection(val value: com.rawr.camera.settings.model.PanoProjection) : SettingsApplicationAction
 /** X14U: merge for digitally zoomed multiframe shots (null = the usual merge). */
 data class SetZoomMergeAlgorithm(val value: com.rawr.camera.settings.model.MultiframeMergeAlgorithm?) : SettingsApplicationAction
 

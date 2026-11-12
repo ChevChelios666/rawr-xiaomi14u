@@ -14,6 +14,7 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/stitching.hpp>
+#include <opencv2/stitching/warpers.hpp>
 
 namespace {
 
@@ -92,7 +93,7 @@ std::string statusText(cv::Stitcher::Status status) {
 // to outFd (closed here). Returns "" on success, otherwise why it failed.
 extern "C" JNIEXPORT jstring JNICALL Java_com_rawr_camera_pano_PanoStitcherNative_stitch(
     JNIEnv* env, jobject, jintArray fdsArray, jintArray rotationsArray, jfloat composeMegapixels, jint outFd,
-    jint quality, jboolean crop) {
+    jint quality, jboolean crop, jint projection, jfloat spanDegrees) {
     std::vector<jint> fds(static_cast<size_t>(env->GetArrayLength(fdsArray)));
     std::vector<jint> rotations(static_cast<size_t>(env->GetArrayLength(rotationsArray)), 0);
     env->GetIntArrayRegion(fdsArray, 0, jsize(fds.size()), fds.data());
@@ -119,6 +120,16 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_rawr_camera_pano_PanoStitcherNativ
             error = "fewer than two frames could be read";
         } else {
             auto stitcher = cv::Stitcher::create(cv::Stitcher::PANORAMA);
+            // Projection: 0 Auto (Rectilinear up to ~100° across, else Cylindrical), 1 Rectilinear, 2 Cylindrical,
+            // 3 Panini, 4 Spherical (OpenCV's default).
+            int p = projection;
+            if (p == 0) p = (spanDegrees > 0.0f && spanDegrees <= 100.0f) ? 1 : 2;
+            if (p == 1) stitcher->setWarper(cv::makePtr<cv::PlaneWarper>());
+            else if (p == 2) stitcher->setWarper(cv::makePtr<cv::CylindricalWarper>());
+            else if (p == 3) stitcher->setWarper(cv::makePtr<cv::PaniniWarper>(1.5f, 1.0f));
+            else stitcher->setWarper(cv::makePtr<cv::SphericalWarper>());
+            __android_log_print(ANDROID_LOG_INFO, kTag, "PANO_PROJECTION chosen=%d asked=%d span=%.1f", p, int(projection),
+                                double(spanDegrees));
             const double frameMp = double(frames[0].total()) / 1e6;
             if (composeMegapixels > 0.0f && composeMegapixels < frameMp) stitcher->setCompositingResol(composeMegapixels);
             cv::Mat pano;

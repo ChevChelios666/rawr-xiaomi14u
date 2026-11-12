@@ -150,13 +150,19 @@ internal object LensOptionsCodec {
      * their own); in [video] mode a lens with a video lens runs as it, under its own id, with its option picks carried
      * over by row name and choice label (rows the video lens lacks are dropped). Then every lens's options resolve.
      */
-    fun forCamera(lenses: List<LensProfile>, video: Boolean, onError: (LensProfile, Throwable) -> Unit = { _, _ -> })
-        : List<LensProfile> {
+    fun forCamera(
+        lenses: List<LensProfile>,
+        video: Boolean,
+        onError: (LensProfile, Throwable) -> Unit = { _, _ -> },
+        /** X14U: false keeps a lens on its own setup while a choice names a run-as lens (that lens is for the shot). */
+        runAs: Boolean = true
+    ): List<LensProfile> {
         fun named(name: String?) = name?.trim()?.takeIf { it.isNotEmpty() }
             ?.let { n -> lenses.firstOrNull { it.name.trim().equals(n, ignoreCase = true) } }
         val hidden = hiddenLensNames(lenses)
         return lenses.filterNot { it.name.trim().lowercase() in hidden }.map { lens ->
             val target = if (video) named(lens.videoLens)?.takeIf { it.videoLens == null }
+            else if (!runAs) null
             else named(lens.runAsTarget())?.takeIf { it.videoLens == null && it.runAsTarget() == null }
             val source = target?.let { videoTarget(lens, it, video) } ?: lens
             val resolved = runCatching { resolve(source) }.onFailure { onError(lens, it) }

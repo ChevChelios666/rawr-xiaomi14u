@@ -240,6 +240,18 @@ class RawPreviewCoordinator(application: Application) : AutoCloseable {
         pushLensProfiles(lenses, video)
     }
 
+    // X14U: a run-as lens (50 MP) runs only for the shot; the viewfinder stays on the lens's own 12 MP setup, where
+    // AF and MF work (the full-size mode doesn't drive the focus motor; the lens keeps its position across the switch).
+    @Volatile private var runAsForShot = false
+
+    /** Runs the lenses as their run-as lens (true, for a 50 MP shot) or as themselves (false); restarts the camera. */
+    fun setRunAsForShot(on: Boolean) {
+        if (runAsForShot == on) return
+        runAsForShot = on
+        val (lenses, video) = synchronized(lensSync) { lensProfiles to lensVideoMode }
+        pushLensProfiles(lenses, video)
+    }
+
     // X14U: lenses with a video lens run as it in video mode, so the profile follows the capture mode.
     private val lensSync = Any()
     private var lensProfiles: List<LensProfile>? = null
@@ -248,9 +260,9 @@ class RawPreviewCoordinator(application: Application) : AutoCloseable {
     private fun pushLensProfiles(lenses: List<LensProfile>?, video: Boolean) {
         val json = lenses?.let { list ->
             // Lens options: the camera runs each lens with its selected choices applied (keeps the lens id).
-            val resolved = com.rawr.camera.settings.preferences.LensOptionsCodec.forCamera(list, video) { lens, error ->
+            val resolved = com.rawr.camera.settings.preferences.LensOptionsCodec.forCamera(list, video, { lens, error ->
                 Log.e(TAG, "lens options of ${lens.name} not applied", error)
-            }
+            }, runAs = runAsForShot)
             LensProfileCodec.encode(resolved, enabledOnly = true, dcpDir = dcpDir)
         }
         postNative { native.setCameraProfile(nativeHandle, json ?: native.builtInCameraProfile()) }

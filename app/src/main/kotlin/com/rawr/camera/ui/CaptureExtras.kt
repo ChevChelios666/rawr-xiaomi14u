@@ -31,9 +31,12 @@ data class CaptureExtras(
     /** Delete the files of a Pano frame by its name tag. */
     val onPanoUndo: (String) -> Unit = {},
     /** A Pano set ended: merge its frames (tag, frame count, start time) when the setting is on. */
-    val onPanoMerge: (tag: String, frames: Int, startedAtMillis: Long) -> Unit = { _, _, _ -> },
+    val onPanoMerge: (tag: String, frames: Int, startedAtMillis: Long, spanDegrees: Float) -> Unit = { _, _, _, _ -> },
     /** Pano merge progress / result for the viewfinder (null = nothing to show). */
-    val panoStatus: String? = null
+    val panoStatus: String? = null,
+    /** The lens's 50 mp choice is on: the shutter takes the shot on the run-as lens (12 MP viewfinder keeps AF). */
+    val fullSizeShot: Boolean = false,
+    val onFullSizeShot: () -> Unit = {}
 )
 
 val LocalCaptureExtras = staticCompositionLocalOf { CaptureExtras() }

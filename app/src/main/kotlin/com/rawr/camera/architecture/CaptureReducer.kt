@@ -40,9 +40,10 @@ object CaptureReducer {
         CycleOutputFormat -> {
             // A DNG-only lens shows DNG; the saved choice returns on other lenses.
             if (state.capabilities.dngOnly) state
-            else CaptureOutputFormat.from(state.dngEnabled, state.jpegEnabled).next().let {
-                state.copy(dngEnabled = it.dng, jpegEnabled = it.jpeg)
-            }
+            else CaptureOutputFormat.from(state.dngEnabled, state.jpegEnabled).next()
+                // X14U: Pano with the merge on needs JPEG frames, so DNG only is skipped.
+                .let { if (it == CaptureOutputFormat.Dng && CaptureOutputFormat.jpegRequired) it.next() else it }
+                .let { state.copy(dngEnabled = it.dng, jpegEnabled = it.jpeg) }
         }
 
         ToggleMonitorPanel -> {

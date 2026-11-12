@@ -24,7 +24,9 @@ internal object PanoStitcherNative {
         composeMegapixels: Float,
         outFd: Int,
         quality: Int,
-        crop: Boolean
+        crop: Boolean,
+        projection: Int,
+        spanDegrees: Float
     ): String
 }
 
@@ -38,7 +40,15 @@ internal class PanoMerger(private val context: Context) {
     private data class Frame(val uri: Uri, val name: String, val relativePath: String, val taken: Long)
 
     /** [status] gets short messages for the viewfinder (null clears it). */
-    suspend fun merge(tag: String, frames: Int, startedAtMillis: Long, status: (String?) -> Unit) = lock.withLock {
+    suspend fun merge(
+        tag: String,
+        frames: Int,
+        startedAtMillis: Long,
+        spanDegrees: Float,
+        projection: com.rawr.camera.settings.model.PanoProjection,
+        keepFrames: Boolean,
+        status: (String?) -> Unit
+    ) = lock.withLock {
         withContext(Dispatchers.IO) {
             if (!PanoStitcherNative.available) {
                 status("Pano merge isn't available")
@@ -52,9 +62,10 @@ internal class PanoMerger(private val context: Context) {
             }
             status("Merging pano (${found.size} frames)…")
             val started = System.currentTimeMillis()
-            val error = runCatching { stitch(found) }.getOrElse { it.message ?: "stitch failed" }
+            val error = runCatching { stitch(found, projection.ordinal, spanDegrees) }.getOrElse { it.message ?: "stitch failed" }
             if (error.isEmpty()) {
                 status("Pano saved (${(System.currentTimeMillis() - started) / 1000} s)")
+                if (!keepFrames) deleteFrames(tag, startedAtMillis)
             } else {
                 status("Pano merge failed: $error")
             }
@@ -105,7 +116,22 @@ internal class PanoMerger(private val context: Context) {
         Regex("_(\\d+)\\.jpe?g$", RegexOption.IGNORE_CASE).find(name)?.groupValues?.get(1)?.toIntOrNull() ?: 0
 
     /** "" on success. */
-    private fun stitch(frames: List<Frame>): String {
+    /** The set's frames (JPEG and DNG) this app saved; DNGs can land late, so it looks a few times. */
+    private suspend fun deleteFrames(tag: String, startedAtMillis: Long) {
+        for (wait in longArrayOf(0L, 5_000L, 20_000L, 60_000L)) {
+            delay(wait)
+            runCatching {
+                context.contentResolver.delete(
+                    MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL),
+                    "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? AND ${MediaStore.MediaColumns.OWNER_PACKAGE_NAME} = ? " +
+                        "AND ${MediaStore.MediaColumns.DATE_ADDED} >= ?",
+                    arrayOf("%_PANO${tag}_%", context.packageName, ((startedAtMillis / 1000L) - 5L).toString())
+                )
+            }
+        }
+    }
+
+    private fun stitch(frames: List<Frame>, projection: Int, spanDegrees: Float): String {
         val resolver = context.contentResolver
         val rotations = frames.map { frame ->
             resolver.openFileDescriptor(frame.uri, "r")?.use { pfd ->
@@ -143,7 +169,9 @@ internal class PanoMerger(private val context: Context) {
                 composeMp,
                 outFd,
                 quality = 92,
-                crop = true
+                crop = true,
+                projection = projection,
+                spanDegrees = spanDegrees
             )
             readable.forEach { fds[it] = -1 } // closed natively
             if (error.isNotEmpty()) {

@@ -195,6 +195,7 @@ class MainActivity : ComponentActivity() {
             val proUi by captureViewModel.proUi.collectAsStateWithLifecycle()
             val pano by captureViewModel.pano.collectAsStateWithLifecycle()
             val panoStatus by captureViewModel.panoStatus.collectAsStateWithLifecycle()
+            val fullSizeShot by captureViewModel.fullSizeShot.collectAsStateWithLifecycle()
             val tools by captureViewModel.tools.collectAsStateWithLifecycle()
             val stillsHint by captureViewModel.stillsHint.collectAsStateWithLifecycle()
             androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -264,6 +265,8 @@ class MainActivity : ComponentActivity() {
                     onPanoUndo = captureViewModel::deletePanoFrame,
                     onPanoMerge = captureViewModel::mergePano,
                     panoStatus = panoStatus,
+                    fullSizeShot = fullSizeShot,
+                    onFullSizeShot = captureViewModel::shootFullSize,
                     onToggleAudioMuted = captureViewModel::toggleAudioMuted,
                     onOpenVideoSettings = {
                         startActivity(
@@ -432,6 +435,8 @@ class MainActivity : ComponentActivity() {
     private fun triggerShutter() {
         if (captureViewModel.controller.state.value.captureMode == CaptureMode.Video) {
             toggleVideoRecording()
+        } else if (captureViewModel.fullSizeShot.value) {
+            captureViewModel.shootFullSize()
         } else {
             captureViewModel.controller.dispatch(TriggerCapture)
         }

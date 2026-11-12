@@ -370,7 +370,9 @@ internal fun X14uCaptureLayout(
     val panoState by rememberUpdatedState(state)
     val panoDone: () -> Unit = {
         // A finished set (stop or complete) is merged on the phone when that's on (Settings → JPEG).
-        if (panoSet.frames >= 2) panoExtras.onPanoMerge(panoSet.tag, panoSet.frames, panoSet.startedAtMillis)
+        if (panoSet.frames >= 2) {
+            panoExtras.onPanoMerge(panoSet.tag, panoSet.frames, panoSet.startedAtMillis, panoSet.spanDegrees)
+        }
         panoSet.end(panoState, dispatch)
     }
     // The shutter starts a set (frame 1 after the locks settle) and stops it; the frames between take themselves.
@@ -2395,8 +2397,11 @@ private fun X14uShutterRow(
             )
         } else {
             Shutter(
-                dispatch = if (pano == null) dispatch else { action ->
-                    if (action is TriggerCapture) pano.onShoot() else dispatch(action)
+                dispatch = when {
+                    pano != null -> { action -> if (action is TriggerCapture) pano.onShoot() else dispatch(action) }
+                    // 50 mp on: the shot runs on the 50 MP lens (the viewfinder stays 12 MP with AF).
+                    extras.fullSizeShot -> { action -> if (action is TriggerCapture) extras.onFullSizeShot() else dispatch(action) }
+                    else -> dispatch
                 },
                 modifier = Modifier,
                 countingDown = state.selfTimerRemainingMs != null,

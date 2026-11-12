@@ -8,6 +8,9 @@ enum class CaptureOutputFormat(val dng: Boolean, val jpeg: Boolean, val label: S
 
     fun next() = entries[(ordinal + 1) % entries.size]
     companion object {
+        /** X14U: Pano with the merge on (DNG only isn't offered then). */
+        @Volatile var jpegRequired = false
+
         fun from(dng: Boolean, jpeg: Boolean) = when {
             !jpeg -> Dng
             dng -> DngAndJpeg

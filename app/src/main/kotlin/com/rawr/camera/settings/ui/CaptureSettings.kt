@@ -267,6 +267,26 @@ internal fun JpegSettings(state: SettingsUiState, dispatch: SettingsDispatch) {
                 else "Pano frames are kept for merging elsewhere (Lightroom Photo Merge)",
                 onCheckedChange = { dispatch.invoke(com.rawr.camera.settings.architecture.SetPanoMerge(it)) }
             )
+            if (state.values.panoMerge) {
+                SettingDivider()
+                SettingsSwitchRow(
+                    title = "Keep the pano frames",
+                    checked = state.values.panoKeepFrames,
+                    supportingText = if (state.values.panoKeepFrames) "The frames stay next to the panorama"
+                    else "The frames are deleted once the panorama is saved (kept if the merge fails)",
+                    onCheckedChange = { dispatch.invoke(com.rawr.camera.settings.architecture.SetPanoKeepFrames(it)) }
+                )
+                SettingDivider()
+                DropdownChoiceRow(
+                    title = "Pano projection",
+                    selected = state.values.panoProjection,
+                    values = com.rawr.camera.settings.model.PanoProjection.entries,
+                    label = { it.label },
+                    supportingText = state.values.panoProjection.note,
+                    optionText = { it.note },
+                    onSelect = { dispatch.invoke(com.rawr.camera.settings.architecture.SetPanoProjection(it)) }
+                )
+            }
         }
     }
 }

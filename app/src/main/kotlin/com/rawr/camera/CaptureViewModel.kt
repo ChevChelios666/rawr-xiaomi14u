@@ -10,6 +10,7 @@ import com.rawr.camera.architecture.SyncToneControls
 import com.rawr.camera.integration.DeviceLensDefaults
 import com.rawr.camera.settings.model.effectiveLensProfiles
 import com.rawr.camera.settings.model.selectOption
+import com.rawr.camera.settings.model.runAsTarget
 import com.rawr.camera.integration.NativeCaptureScreenController
 import com.rawr.camera.integration.RawPreviewCoordinator
 import com.rawr.camera.integration.StillCaptureCoordinator
@@ -114,10 +115,11 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     private val panoMerger by lazy { com.rawr.camera.pano.PanoMerger(getApplication()) }
     private var panoStatusClear: kotlinx.coroutines.Job? = null
 
-    fun mergePano(tag: String, frames: Int, startedAtMillis: Long) {
-        if (!latestSettings.panoMerge || frames < 2 || tag.isEmpty()) return
+    fun mergePano(tag: String, frames: Int, startedAtMillis: Long, spanDegrees: Float) {
+        val settings = latestSettings
+        if (!settings.panoMerge || frames < 2 || tag.isEmpty()) return
         viewModelScope.launch {
-            panoMerger.merge(tag, frames, startedAtMillis) { message ->
+            panoMerger.merge(tag, frames, startedAtMillis, spanDegrees, settings.panoProjection, settings.panoKeepFrames) { message ->
                 panoStatusClear?.cancel()
                 panoStatusFlow.value = message
                 // Progress stays; a result clears after a few seconds.
@@ -127,6 +129,72 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                         panoStatusFlow.value = null
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * X14U 50 MP shot: a lens whose chosen option runs as another lens (1x "50 mp" → 50MP) keeps its 12 MP viewfinder,
+     * where AF and MF work; the shutter switches to the run-as lens, takes the shot and switches back. The full-size
+     * mode doesn't move the focus motor, so the lens keeps the focus the viewfinder found.
+     */
+    // Lazy: the controller is created further down.
+    val fullSizeShot: StateFlow<Boolean> by lazy { kotlinx.coroutines.flow.combine(
+        settingsEditor.values.map { it.effectiveLensProfiles(DeviceLensDefaults.lenses) },
+        controller.state.map { Triple(it.selectedLensId, it.captureMode == com.rawr.camera.model.CaptureMode.Video, Unit) },
+        panoFlow
+    ) { lenses, (lensId, video, _), pano ->
+        !video && !pano && lenses.firstOrNull { it.name.trim().equals(lensId.trim(), ignoreCase = true) }
+            ?.runAsTarget() != null
+    }.distinctUntilChanged().stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, false) }
+
+    private var fullSizeJob: kotlinx.coroutines.Job? = null
+
+    private fun cameraSnapshot(): com.rawr.camera.integration.NativeCameraUiSnapshot? =
+        runCatching { com.rawr.camera.integration.NativeCameraUiSnapshot.parse(previewCoordinator.cameraControlSnapshot()) }
+            .getOrNull()
+
+    /** The 50 MP shot (see [fullSizeShot]); a press while one runs is ignored. */
+    fun shootFullSize() {
+        if (fullSizeJob?.isActive == true) return
+        fullSizeJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            fun status(message: String?) {
+                panoStatusClear?.cancel()
+                panoStatusFlow.value = message
+            }
+            try {
+                status("50 MP…")
+                val before = cameraSnapshot()?.generation ?: -1L
+                previewCoordinator.setRunAsForShot(true)
+                // The 50 MP session is up once its own frames arrive.
+                val started = kotlinx.coroutines.withTimeoutOrNull(8_000L) {
+                    while (true) {
+                        val s = cameraSnapshot()
+                        if (s != null && s.generation != before && s.livePreviewGeneration == s.generation &&
+                            s.livePreviewTimestamp > 0L && !s.lensUnavailable) break
+                        kotlinx.coroutines.delay(40L)
+                    }
+                } != null
+                if (!started) {
+                    status("50 MP didn't start")
+                    kotlinx.coroutines.delay(2_500L)
+                    return@launch
+                }
+                // A moment for exposure to settle on the new mode.
+                kotlinx.coroutines.delay(450L)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    controller.dispatch(com.rawr.camera.architecture.TriggerCapture)
+                }
+                // The press holds the camera from when native takes it (after any self-timer) until its frames are in.
+                kotlinx.coroutines.withTimeoutOrNull(12_000L) {
+                    while (!previewCoordinator.stillCaptureHoldsCamera()) kotlinx.coroutines.delay(30L)
+                }
+                kotlinx.coroutines.withTimeoutOrNull(25_000L) {
+                    while (previewCoordinator.stillCaptureHoldsCamera()) kotlinx.coroutines.delay(50L)
+                }
+            } finally {
+                previewCoordinator.setRunAsForShot(false)
+                status(null)
             }
         }
     }
@@ -486,6 +554,26 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             kotlinx.coroutines.flow.combine(settingsEditor.values.map { it.photoAspect }, panoFlow) { aspect, pano ->
                 if (pano) com.rawr.camera.settings.model.PhotoAspect.Native.nativeRatio else aspect.nativeRatio
             }.distinctUntilChanged().collect { previewCoordinator.setOutputAspect(it) }
+        }
+        // Pano with the merge on needs JPEG frames: DNG only becomes DNG + JPEG there (and comes back after).
+        viewModelScope.launch {
+            var restoreDngOnly = false
+            kotlinx.coroutines.flow.combine(panoFlow, settingsEditor.values.map { it.panoMerge }) { pano, merge -> pano && merge }
+                .distinctUntilChanged()
+                .collect { required ->
+                    com.rawr.camera.model.CaptureOutputFormat.jpegRequired = required
+                    val state = controller.state.value
+                    val format = com.rawr.camera.model.CaptureOutputFormat.from(state.dngEnabled, state.jpegEnabled)
+                    if (required && format == com.rawr.camera.model.CaptureOutputFormat.Dng) {
+                        controller.dispatch(com.rawr.camera.architecture.CycleOutputFormat)
+                        restoreDngOnly = true
+                    } else if (!required && restoreDngOnly) {
+                        restoreDngOnly = false
+                        if (format == com.rawr.camera.model.CaptureOutputFormat.DngAndJpeg) {
+                            repeat(2) { controller.dispatch(com.rawr.camera.architecture.CycleOutputFormat) }
+                        }
+                    }
+                }
         }
         // Video shutter display (time or angle) for the shutter labels.
         viewModelScope.launch {

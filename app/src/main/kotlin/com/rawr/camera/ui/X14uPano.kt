@@ -178,6 +178,20 @@ internal class PanoSet {
         }
     }
 
+    /** How wide the frames taken so far reach (degrees, the larger of across and up), for the merge's projection. */
+    val spanDegrees: Float
+        get() {
+            val taken = targets.take(frames.coerceAtLeast(1))
+            if (taken.isEmpty()) return 0f
+            if (shape == PanoShape.Grid) {
+                val xs = taken.map { it.first }
+                val ys = taken.map { it.second }
+                return maxOf(xs.max() - xs.min() + fovX, ys.max() - ys.min() + fovY)
+            }
+            val along = taken.maxOf { kotlin.math.abs(it.first) } + if (vertical) fovY else fovX
+            return maxOf(along, if (vertical) fovX else fovY)
+        }
+
     /** The next frame's place, or null when the set is complete. */
     val nextTarget: Pair<Float, Float>? get() = targets.getOrNull(frames)
 

@@ -99,6 +99,14 @@ internal fun reduceCaptureSettings(
         state.withValues(state.values.copy(panoMerge = action.value))
     }
 
+    is SetPanoKeepFrames -> {
+        state.withValues(state.values.copy(panoKeepFrames = action.value))
+    }
+
+    is SetPanoProjection -> {
+        state.withValues(state.values.copy(panoProjection = action.value))
+    }
+
     is SetZoomMergeAlgorithm -> {
         state.withValues(state.values.copy(zoomMergeAlgorithm = action.value))
     }

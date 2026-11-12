@@ -517,6 +517,15 @@ enum class VideoStabilize(val label: String, val short: String, val crop: Float,
     Strong("Strong", "strong", 1.3f, 1f)
 }
 
+/** X14U Pano merge projection (OpenCV warper); Auto = Rectilinear under ~100°, else Cylindrical. */
+enum class PanoProjection(val label: String, val note: String) {
+    Auto("Auto", "Rectilinear up to about 100°, Cylindrical beyond"),
+    Rectilinear("Rectilinear", "All straight lines straight; wide sets stretch at the edges"),
+    Cylindrical("Cylindrical", "Verticals straight; wide horizontal sweeps"),
+    Panini("Panini", "Verticals and lines through the centre straight; architecture"),
+    Spherical("Spherical", "Very wide sets, up to 360°")
+}
+
 /** X14U horizon Follow: how slowly the video follows the phone's tilt (seconds; a gimbal's roll smoothing). */
 enum class HorizonSmoothing(val label: String, val seconds: Float) {
     Light("Light", .3f),
@@ -1248,6 +1257,10 @@ data class SettingsValues(
     val videoShutterAngle: Boolean = false,
     /** X14U Pano: merge a finished set's JPEG frames into one panorama on the phone (OpenCV stitcher). */
     val panoMerge: Boolean = true,
+    /** X14U Pano merge: keep the set's frames next to the panorama (off deletes them after a good merge). */
+    val panoKeepFrames: Boolean = true,
+    /** X14U Pano merge projection. */
+    val panoProjection: PanoProjection = PanoProjection.Auto,
     /** X14U digital zoom: the multiframe merge for zoomed shots; null = the usual merge. */
     val zoomMergeAlgorithm: MultiframeMergeAlgorithm? = MultiframeMergeAlgorithm.Wronski,
     /** X14U: the in-sensor-zoom lenses (2x) were turned off once, so zoom crops the main camera; they can be re-enabled. */
