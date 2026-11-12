@@ -253,7 +253,10 @@ internal fun X14uCaptureLayout(
     val orientation = state.orientation
     var selected by remember { mutableStateOf<String?>(null) }
     var panel by remember { mutableStateOf<X14uPanel?>(null) }
-    var lookTab by remember { mutableStateOf("TONE") }
+    // Look and Exposure panels open where they were last left (kept across launches): the Look tab, and the setting
+    // last picked in each tab / in Exposure. First time: Profile, and Rawr / Device AE.
+    val panelMemory = rememberPanelMemory()
+    var lookTab by remember { mutableStateOf(panelMemory.lookTab) }
     var panelKey by remember { mutableStateOf<String?>(null) }
     var showNumbers by remember { mutableStateOf(false) }
     // WB editor: Kelvin ruler, or tint after TINT.
@@ -486,7 +489,7 @@ internal fun X14uCaptureLayout(
         }
         X14uPanel.Look -> {
             val tabs = lookTabs(film)
-            val tab = lookTab.takeIf { it in tabs } ?: "TONE"
+            val tab = lookTab.takeIf { it in tabs } ?: "PROFILE"
             when (tab) {
                 "PROFILE" -> {
                     val label = renderProfiles.options.firstOrNull { it.id == renderProfiles.selectedId }?.label ?: "RAWR NTRL"
@@ -705,12 +708,20 @@ internal fun X14uCaptureLayout(
                     panel = panel,
                     lookTabs = lookTabs(film),
                     lookTab = lookTab,
-                    onLookTab = { lookTab = it; panelKey = null },
+                    onLookTab = {
+                        lookTab = it
+                        panelMemory.lookTab = it
+                        panelKey = panelMemory.keyFor("look.$it")
+                    },
                     enabled = !recordingLock && !panoLocked,
                     onTogglePanel = { target ->
                         selected = null
-                        panelKey = null
                         panel = if (panel == target) null else target
+                        panelKey = when (panel) {
+                            X14uPanel.Look -> panelMemory.keyFor("look.$lookTab")
+                            X14uPanel.Exposure -> panelMemory.keyFor("exposure")
+                            null -> null
+                        }
                     },
                     onOpenLensSettings = onOpenLensSettings,
                     zoomLabel = zoomLabel,
@@ -728,7 +739,11 @@ internal fun X14uCaptureLayout(
             )
             val onCellTap: (String) -> Unit = { key ->
                 if (panoLocked) Unit
-                else if (panel == null) selected = if (selected == key) null else key else panelKey = key
+                else if (panel == null) selected = if (selected == key) null else key
+                else {
+                    panelKey = key
+                    panelMemory.remember(if (panel == X14uPanel.Look) "look.$lookTab" else "exposure", key)
+                }
             }
             val rowModifier = Modifier.fillMaxWidth().offset(y = bottom + 6.dp * s).height(48.dp * s)
             if (panel == null && simplePhoto) {
@@ -1001,7 +1016,7 @@ private fun X14uLensRow(
         ) {
             when (panel) {
                 X14uPanel.Look -> lookTabs.forEach { tab ->
-                    val on = tab == lookTab || (tab == "TONE" && lookTab !in lookTabs)
+                    val on = tab == lookTab || (tab == "PROFILE" && lookTab !in lookTabs)
                     PillItem(if (tab == "HL") "HIGHLIGHTS" else tab, on, orientation, width = null) {
                         haptics.selection()
                         onLookTab(tab)
@@ -2395,4 +2410,21 @@ private fun X14uShutterRow(
             }
         }
     }
+}
+
+/** Where the Look / Exposure panels were left: the Look tab and the last setting picked per tab (SharedPreferences). */
+private class PanelMemory(private val prefs: android.content.SharedPreferences) {
+    var lookTab: String
+        get() = prefs.getString("lookTab", "PROFILE") ?: "PROFILE"
+        set(value) = prefs.edit().putString("lookTab", value).apply()
+
+    fun keyFor(panel: String): String? = prefs.getString("key.$panel", null)
+
+    fun remember(panel: String, key: String) = prefs.edit().putString("key.$panel", key).apply()
+}
+
+@Composable
+private fun rememberPanelMemory(): PanelMemory {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    return remember { PanelMemory(context.getSharedPreferences("x14u_panels", android.content.Context.MODE_PRIVATE)) }
 }
