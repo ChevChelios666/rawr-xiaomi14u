@@ -218,11 +218,11 @@ internal fun PhotoLookToggles(
     onOpenMultiframeSettings: () -> Unit,
     /** X14U: each pill turns in place in landscape. */
     pillModifier: Modifier = Modifier,
-    /** Extra buttons after FILM. */
-    trailing: @Composable () -> Unit = {},
     /** X14U: spread across its side of the shutter row, mirroring the left side. */
     modifier: Modifier = Modifier,
-    arrangement: Arrangement.Horizontal = Arrangement.spacedBy(0.dp)
+    arrangement: Arrangement.Horizontal = Arrangement.spacedBy(0.dp),
+    /** Extra buttons after FILM (last, so callers can pass it as a trailing lambda). */
+    trailing: @Composable () -> Unit = {}
 ) {
     Row(
         modifier,
