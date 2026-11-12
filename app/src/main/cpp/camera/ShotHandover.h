@@ -38,18 +38,23 @@ public:
     void setHold(bool on) {
         holdStartGeneration_.store(lastGeneration_.load(std::memory_order_relaxed), std::memory_order_relaxed);
         newFrames_.store(0, std::memory_order_relaxed);
+        newFullSizeFrames_.store(0, std::memory_order_relaxed);
         hold_.store(on, std::memory_order_relaxed);
     }
     bool hold() const { return hold_.load(std::memory_order_relaxed); }
     // Every frame; true when it must not be shown.
-    bool noteFrame(uint64_t generation) {
+    bool noteFrame(uint64_t generation, uint64_t rawPixels) {
         lastGeneration_.store(generation, std::memory_order_relaxed);
         if (!hold_.load(std::memory_order_relaxed)) return false;
-        if (generation != holdStartGeneration_.load(std::memory_order_relaxed))
+        if (generation != holdStartGeneration_.load(std::memory_order_relaxed)) {
             newFrames_.fetch_add(1, std::memory_order_relaxed);
+            // Full size: well above the 12.5 MP viewfinder modes.
+            if (rawPixels > 30'000'000ull) newFullSizeFrames_.fetch_add(1, std::memory_order_relaxed);
+        }
         return true;
     }
     int64_t newFrames() const { return newFrames_.load(std::memory_order_relaxed); }
+    int64_t newFullSizeFrames() const { return newFullSizeFrames_.load(std::memory_order_relaxed); }
 
 private:
     mutable std::mutex mutex_;
@@ -59,6 +64,7 @@ private:
     std::atomic<uint64_t> lastGeneration_{0};
     std::atomic<uint64_t> holdStartGeneration_{0};
     std::atomic<int64_t> newFrames_{0};
+    std::atomic<int64_t> newFullSizeFrames_{0};
 };
 
 inline ShotHandover& shotHandover() noexcept {

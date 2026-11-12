@@ -150,26 +150,32 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
 
     private var fullSizeJob: kotlinx.coroutines.Job? = null
 
+    /** A 50 MP shot is running: the capture screen locks the lens row and controls until it's back. */
+    private val fullSizeBusyFlow = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val fullSizeBusy: StateFlow<Boolean> = fullSizeBusyFlow
+
     /** The 50 MP shot (see [fullSizeShot]); a press while one runs is ignored. */
     fun shootFullSize() {
         if (fullSizeJob?.isActive == true) return
+        fullSizeBusyFlow.value = true
         fullSizeJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             fun status(message: String?) {
                 panoStatusClear?.cancel()
                 panoStatusFlow.value = message
             }
-            // The viewfinder holds its last 12 MP frame, and the shot keeps the 12 MP view's white balance (a new
-            // session would start its own auto white balance cold: the ultra-wide's especially, at 12 fps).
-            suspend fun newSessionFrames(count: Long, timeoutMs: Long) = kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
-                while (previewCoordinator.heldNewFrames() < count) kotlinx.coroutines.delay(30L)
+            suspend fun waitFor(timeoutMs: Long, ready: () -> Boolean) = kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
+                while (!ready()) kotlinx.coroutines.delay(30L)
             } != null
             try {
                 status("50 MP…")
+                // The viewfinder holds its last 12 MP frame, and the shot keeps the 12 MP view's white balance (a new
+                // session would start its own auto white balance cold: the ultra-wide's especially, at 12 fps).
                 previewCoordinator.setViewfinderHold(true)
                 previewCoordinator.setCarryWhiteBalance(true)
                 previewCoordinator.setRunAsForShot(true)
-                // The 50 MP session is up once its own frames arrive; a few for exposure to settle.
-                if (!newSessionFrames(3, 8_000L)) {
+                // Shoot only on the full-size session's own frames (never a 12 MP session on the way); a few of them
+                // for exposure to settle.
+                if (!waitFor(8_000L) { previewCoordinator.heldNewFullSizeFrames() >= 3 }) {
                     status("50 MP didn't start")
                     kotlinx.coroutines.delay(2_500L)
                     return@launch
@@ -179,20 +185,22 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                     controller.dispatch(com.rawr.camera.architecture.TriggerCapture)
                 }
                 // The press holds the camera from when native takes it (after any self-timer) until its frames are in.
-                kotlinx.coroutines.withTimeoutOrNull(12_000L) {
-                    while (!previewCoordinator.stillCaptureHoldsCamera()) kotlinx.coroutines.delay(30L)
-                }
-                kotlinx.coroutines.withTimeoutOrNull(25_000L) {
-                    while (previewCoordinator.stillCaptureHoldsCamera()) kotlinx.coroutines.delay(50L)
-                }
+                waitFor(12_000L) { previewCoordinator.stillCaptureHoldsCamera() }
+                waitFor(25_000L) { !previewCoordinator.stillCaptureHoldsCamera() }
             } finally {
-                // Back to 12 MP: still held (and on the carried white balance) until its first frames are in.
-                previewCoordinator.setViewfinderHold(true)
-                previewCoordinator.setRunAsForShot(false)
-                newSessionFrames(2, 4_000L)
-                previewCoordinator.setCarryWhiteBalance(false)
-                previewCoordinator.setViewfinderHold(false)
-                status(null)
+                // Always back to 12 MP, even if the job was cancelled: held (on the carried white balance) until the
+                // 12 MP session's own frames are in, then live again.
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    previewCoordinator.setViewfinderHold(true)
+                    previewCoordinator.setRunAsForShot(false)
+                    waitFor(4_000L) {
+                        previewCoordinator.heldNewFrames() - previewCoordinator.heldNewFullSizeFrames() >= 2
+                    }
+                    previewCoordinator.setCarryWhiteBalance(false)
+                    previewCoordinator.setViewfinderHold(false)
+                    status(null)
+                    fullSizeBusyFlow.value = false
+                }
             }
         }
     }

@@ -42,6 +42,9 @@ class NativePreviewEngine {
     /** Frames from camera sessions started since the hold was set. */
     external fun heldNewFrames(): Long
 
+    /** Of those, full-size (50 MP) frames. */
+    external fun heldNewFullSizeFrames(): Long
+
     /** X14U video stabilisation on/off, with the lens's focal length over the sensor width. */
     external fun setStabilizer(enabled: Boolean, focalNorm: Float)
 

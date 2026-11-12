@@ -241,6 +241,12 @@ extern "C" JNIEXPORT jlong JNICALL Java_com_rawr_camera_integration_NativePrevie
     return jlong(rawrcam::camera::shotHandover().newFrames());
 }
 
+// Of those, full-size frames (the 50 MP session itself, not a 12 MP restart on the way).
+extern "C" JNIEXPORT jlong JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_heldNewFullSizeFrames(JNIEnv*,
+                                                                                                              jobject) {
+    return jlong(rawrcam::camera::shotHandover().newFullSizeFrames());
+}
+
 // X14U: photo aspect ratio (long:short; 0 = native) for the next captures.
 extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setOutputAspect(JNIEnv*, jobject,
                                                                                                        jfloat aspect) {

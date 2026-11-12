@@ -36,6 +36,8 @@ data class CaptureExtras(
     val panoStatus: String? = null,
     /** The lens's 50 mp choice is on: the shutter takes the shot on the run-as lens (12 MP viewfinder keeps AF). */
     val fullSizeShot: Boolean = false,
+    /** A 50 MP shot is running: lens row and controls are locked until it's back. */
+    val fullSizeBusy: Boolean = false,
     val onFullSizeShot: () -> Unit = {}
 )
 

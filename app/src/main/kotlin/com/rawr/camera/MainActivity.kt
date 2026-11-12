@@ -196,6 +196,7 @@ class MainActivity : ComponentActivity() {
             val pano by captureViewModel.pano.collectAsStateWithLifecycle()
             val panoStatus by captureViewModel.panoStatus.collectAsStateWithLifecycle()
             val fullSizeShot by captureViewModel.fullSizeShot.collectAsStateWithLifecycle()
+            val fullSizeBusy by captureViewModel.fullSizeBusy.collectAsStateWithLifecycle()
             val tools by captureViewModel.tools.collectAsStateWithLifecycle()
             val stillsHint by captureViewModel.stillsHint.collectAsStateWithLifecycle()
             androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -266,6 +267,7 @@ class MainActivity : ComponentActivity() {
                     onPanoMerge = captureViewModel::mergePano,
                     panoStatus = panoStatus,
                     fullSizeShot = fullSizeShot,
+                    fullSizeBusy = fullSizeBusy,
                     onFullSizeShot = captureViewModel::shootFullSize,
                     onToggleAudioMuted = captureViewModel::toggleAudioMuted,
                     onOpenVideoSettings = {

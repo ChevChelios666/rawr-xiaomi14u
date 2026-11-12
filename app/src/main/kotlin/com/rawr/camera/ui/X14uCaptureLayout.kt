@@ -249,7 +249,8 @@ internal fun X14uCaptureLayout(
 ) {
     val isVideo = state.captureMode == CaptureMode.Video
     val videoLocked = videoControls.busy || videoControls.recording
-    val recordingLock = isVideo && videoLocked
+    // Video recording, or a 50 MP shot running (its camera switch must not meet a lens change).
+    val recordingLock = (isVideo && videoLocked) || LocalCaptureExtras.current.fullSizeBusy
     val videoBleed = isVideo && state.videoResolution != VideoResolutionMode.OPEN_GATE
     val orientation = state.orientation
     var selected by remember { mutableStateOf<String?>(null) }
