@@ -201,7 +201,9 @@ void SwapchainRenderer::record(VkCommandBuffer command, uint32_t frameSlot, uint
             m.cy = (double(previewHeight) - 1.0) * 0.5;
             m.rollCos = lock.cosA;
             m.rollSin = -lock.sinA;
-            m.rollScale = 1.0 / lock.scale;
+            // Same zoom as the recording (and the idle viewfinder): only the turn is undone, so the corners the
+            // level frame doesn't cover show dark while the phone is tilted.
+            m.rollScale = 1.0;
             m.darkOutside = true;
             unlock = m;
             info.lensWarp = &*unlock;

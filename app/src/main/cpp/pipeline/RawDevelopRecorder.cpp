@@ -668,11 +668,11 @@ RawDevelopRecordResult RawDevelopRecorder::record(const RawDevelopRecordInput& i
             presented.lensWarp = &*cropWarp;
         }
     }
-    // X14U video horizon lock: Lock keeps the idle viewfinder natural (the capture screen draws the turned outline
-    // of what will be recorded); Follow shows the recorded frame itself, turned and zoomed like the recording.
+    // X14U video horizon lock, zoomed by the recording's fixed crop: Lock keeps the viewfinder natural (unturned,
+    // like a stock camera); Follow shows the recorded frame itself, turned like the recording.
     std::optional<rawrcam::geometry::LensDistortionModel> horizonWarp;
-    if (in.diagnosticMode == 0u && in.previewWidth >= 2 && in.previewHeight >= 2 &&
-        !rawrcam::geometry::horizonNaturalView().load(std::memory_order_relaxed)) {
+    if (in.diagnosticMode == 0u && in.previewWidth >= 2 && in.previewHeight >= 2) {
+        const bool natural = rawrcam::geometry::horizonNaturalView().load(std::memory_order_relaxed);
         if (const auto lock = rawrcam::geometry::horizonSampling(); lock.active) {
             rawrcam::geometry::LensDistortionModel m;
             if (presented.lensWarp) {
@@ -684,8 +684,8 @@ RawDevelopRecordResult RawDevelopRecorder::record(const RawDevelopRecordInput& i
                 m.cx = (double(in.previewWidth) - 1.0) * 0.5;
                 m.cy = (double(in.previewHeight) - 1.0) * 0.5;
             }
-            m.rollCos = lock.cosA;
-            m.rollSin = lock.sinA;
+            m.rollCos = natural ? 1.0 : lock.cosA;
+            m.rollSin = natural ? 0.0 : lock.sinA;
             m.rollScale = lock.scale;
             horizonWarp = m;
             presented.lensWarp = &*horizonWarp;
