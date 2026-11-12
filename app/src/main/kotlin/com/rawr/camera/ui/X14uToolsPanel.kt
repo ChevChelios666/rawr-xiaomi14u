@@ -220,25 +220,8 @@ internal fun X14uToolsPanel(
             }
             .testTag("x14u_tools_panel")
     ) {
-        // A choice row replaces the last row of tiles, as on stock.
-        val shownRows = if (choice != null && rows.size > 1) rows.dropLast(1) else rows
-        shownRows.forEachIndexed { r, row ->
-            Row(Modifier.fillMaxWidth()) {
-                (0 until 4).forEach { c ->
-                    val tile = row.getOrNull(c)
-                    // Vertical hairlines between columns, matching the horizontal ones between rows.
-                    if (c > 0) Box(Modifier.width(0.5.dp).height(tileHeight).background(Color.White.copy(alpha = .08f)))
-                    Box(Modifier.weight(1f).height(tileHeight)) {
-                        if (tile != null) X14uTileView(tile, open = tile.key == choice, orientation = orientation) {
-                            haptics.selection()
-                            tile.onTap()
-                        }
-                    }
-                }
-            }
-            if (r < shownRows.size - 1 || choice != null) Box(Modifier.fillMaxWidth().height(0.5.dp).background(Color.White.copy(alpha = .08f)))
-        }
-        if (choice != null) {
+        // The open tile's options take the place of its own row, so they show where the tile was tapped.
+        val choiceRow: @Composable () -> Unit = {
             val (labels, selectedIndex, pick) = when (choice) {
                 "grid" -> Triple(X14uGridFamilies.map { it.first }, X14uGridFamilies.indexOfFirst { state.grid in it.second }) { i: Int ->
                     val modes = X14uGridFamilies[i].second
@@ -298,6 +281,24 @@ internal fun X14uToolsPanel(
                     )
                 }
             }
+        }
+        val choiceRowIndex = if (choice == null) -1 else rows.indexOfFirst { row -> row.any { it.key == choice } }
+        val shownRows = rows
+        shownRows.forEachIndexed { r, row ->
+            if (r == choiceRowIndex) choiceRow() else Row(Modifier.fillMaxWidth()) {
+                (0 until 4).forEach { c ->
+                    val tile = row.getOrNull(c)
+                    // Vertical hairlines between columns, matching the horizontal ones between rows.
+                    if (c > 0) Box(Modifier.width(0.5.dp).height(tileHeight).background(Color.White.copy(alpha = .08f)))
+                    Box(Modifier.weight(1f).height(tileHeight)) {
+                        if (tile != null) X14uTileView(tile, open = tile.key == choice, orientation = orientation) {
+                            haptics.selection()
+                            tile.onTap()
+                        }
+                    }
+                }
+            }
+            if (r < shownRows.size - 1) Box(Modifier.fillMaxWidth().height(0.5.dp).background(Color.White.copy(alpha = .08f)))
         }
     }
 }
