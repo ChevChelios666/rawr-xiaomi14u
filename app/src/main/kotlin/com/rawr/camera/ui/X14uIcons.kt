@@ -90,6 +90,17 @@ internal object X14uIcons {
         }
     }
 
+    /** Tools panel: video stabilisation (a frame held steady between shake marks). */
+    val Stabilize: ImageVector by lazy {
+        icon("X14u.Stabilize") {
+            stroke(1.6f) { moveTo(7.5f, 7.5f); lineTo(16.5f, 7.5f); lineTo(16.5f, 16.5f); lineTo(7.5f, 16.5f); close() }
+            stroke(1.4f) {
+                moveTo(4.5f, 8f); lineTo(3f, 10f); lineTo(4.5f, 12f); lineTo(3f, 14f); lineTo(4.5f, 16f)
+                moveTo(19.5f, 8f); lineTo(21f, 10f); lineTo(19.5f, 12f); lineTo(21f, 14f); lineTo(19.5f, 16f)
+            }
+        }
+    }
+
     /** Tools panel: histogram bars. */
     val Histogram: ImageVector by lazy {
         icon("X14u.Histogram") {

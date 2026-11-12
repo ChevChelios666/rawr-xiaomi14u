@@ -60,6 +60,22 @@ internal fun VideoEncoderSettings(state: SettingsUiState, dispatch: SettingsDisp
             }
         }
         SettingsGroup(
+            title = "Stabilise",
+            description = "Takes the shake out of the video using the gyroscope (Stabilise tile, Video, back lenses), " +
+                "inside a fixed crop: Standard about 1.15x, Strong about 1.3x for walking. The viewfinder shows it " +
+                "while recording. With Horizon Lock on Full it uses the crop that's already there."
+        ) {
+            com.rawr.camera.settings.model.VideoStabilize.entries.forEachIndexed { index, mode ->
+                if (index > 0) SettingDivider()
+                SettingsSelectionRow(
+                    title = if (mode == com.rawr.camera.settings.model.VideoStabilize.Off) mode.label
+                        else "${mode.label} · ${mode.crop}x",
+                    selected = state.values.videoStabilize == mode,
+                    enabled = true
+                ) { dispatch.invoke(com.rawr.camera.settings.architecture.SetVideoStabilize(mode)) }
+            }
+        }
+        SettingsGroup(
             title = "Horizon Follow",
             description = "Follow (Level tile → Follow): the video follows your tilt slowly, like a gimbal's roll, so " +
                 "shake goes and deliberate turns come through as smooth rolls. The viewfinder shows the recorded " +

@@ -87,6 +87,10 @@ internal fun reduceCaptureSettings(
         state.withValues(state.values.copy(horizonSmoothing = action.value))
     }
 
+    is SetVideoStabilize -> {
+        state.withValues(state.values.copy(videoStabilize = action.value))
+    }
+
     is SetZoomMergeAlgorithm -> {
         state.withValues(state.values.copy(zoomMergeAlgorithm = action.value))
     }

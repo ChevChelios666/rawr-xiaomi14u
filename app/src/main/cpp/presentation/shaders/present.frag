@@ -89,7 +89,9 @@ void main(){
                 return;
             }
             vec2 edge=min(s,1.0-s)/px;
-            if(min(edge.x,edge.y) < 2.0){
+            // Not along the screen's own edge (the level frame fills the screen when held straight).
+            vec2 screenEdge=min(q,1.0-q)/max(fwidth(q),vec2(1e-6));
+            if(min(edge.x,edge.y) < 2.0 && min(screenEdge.x,screenEdge.y) > 3.0){
                 outColor=vec4(0.93,0.93,0.93,1.0);
                 return;
             }

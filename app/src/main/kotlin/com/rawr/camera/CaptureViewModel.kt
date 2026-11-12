@@ -148,7 +148,9 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         /** Video horizon lock (the Level tile's Lock). */
         val horizonLock: Boolean = false,
         /** Video horizon Follow (the Level tile's Follow). */
-        val horizonFollow: Boolean = false
+        val horizonFollow: Boolean = false,
+        /** Video stabilisation (the Stabilise tile). */
+        val stabilize: com.rawr.camera.settings.model.VideoStabilize = com.rawr.camera.settings.model.VideoStabilize.Off
     )
     val tools: StateFlow<ToolsState> = settingsEditor.state
         .map { v ->
@@ -159,7 +161,8 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 v.focusLoupe,
                 com.rawr.camera.settings.model.ZoomChain.of(v.effectiveLensProfiles(DeviceLensDefaults.lenses)),
                 v.videoHorizonLock,
-                v.videoHorizonFollow
+                v.videoHorizonFollow,
+                v.videoStabilize
             )
         }
         .distinctUntilChanged()
@@ -208,9 +211,19 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun setStabilize(mode: com.rawr.camera.settings.model.VideoStabilize) {
+        settingsEditor.update { it.copy(videoStabilize = mode) }
+    }
+
     /** X14U video horizon lock: gravity in, roll and crop out to the native viewfinder and recorder. */
     private val horizonSensor = com.rawr.camera.integration.HorizonLockSensor(application) { roll, crop, natural, viewRoll, fit ->
+        stabilizerSensor.horizonRoll = roll
         previewCoordinator.setHorizonLock(roll, crop, natural, viewRoll, fit)
+    }
+
+    /** X14U video stabilisation: gyro in, the shake track out to the native recorder. */
+    private val stabilizerSensor = com.rawr.camera.integration.StabilizerSensor(application) { t, pitch, yaw, roll ->
+        previewCoordinator.pushStabilizerSample(t, pitch, yaw, roll)
     }
     fun setLocationTagging(on: Boolean) {
         settingsEditor.update { it.copy(locationTagging = on) }
@@ -452,24 +465,36 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             }.distinctUntilChanged().collect { previewCoordinator.setOutputAspect(it) }
         }
         // Video horizon lock: on in Video with the setting, range by lens; Full freezes its framing while recording.
+        // Stabilisation shares its fixed crop: on top of a limited range's, inside Full's.
         viewModelScope.launch {
             kotlinx.coroutines.flow.combine(
                 settingsEditor.values.map {
-                    Triple(it.videoHorizonLock, it.horizonLockRange,
-                        if (it.videoHorizonFollow) it.horizonSmoothing.seconds else 0f)
+                    HorizonSettings(it.videoHorizonLock, it.horizonLockRange,
+                        if (it.videoHorizonFollow) it.horizonSmoothing.seconds else 0f, it.videoStabilize)
                 }.distinctUntilChanged(),
                 controller.state.map { (it.captureMode == com.rawr.camera.model.CaptureMode.Video) to it.selectedLensId }
                     .distinctUntilChanged(),
                 recording.state.map { it.recording }.distinctUntilChanged()
-            ) { (on, range, follow), (video, lens), rec ->
+            ) { h, (video, lens), rec ->
+                val factor = com.rawr.camera.settings.model.ZoomChain.factorOf(lens) ?: 1f
                 // Follow uses ±15° (about 1.4x); Lock the chosen range (Auto: Full on every lens).
-                val resolved = if (follow > 0f) com.rawr.camera.settings.model.HorizonLockRange.Deg15
-                    else range.resolved(com.rawr.camera.settings.model.ZoomChain.factorOf(lens) ?: 1f)
-                val degrees = if ((on || follow > 0f) && video) resolved.degrees else 0
-                HorizonConfig(degrees, resolved.crop, rec, com.rawr.camera.ui.isFrontLens(lens, lens), follow)
+                val resolved = if (h.follow > 0f) com.rawr.camera.settings.model.HorizonLockRange.Deg15
+                    else h.range.resolved(factor)
+                val degrees = if ((h.lock || h.follow > 0f) && video) resolved.degrees else 0
+                val front = com.rawr.camera.ui.isFrontLens(lens, lens)
+                val stab = h.stabilize != com.rawr.camera.settings.model.VideoStabilize.Off && video && !front
+                val horizonCrop = if (degrees > 0) resolved.crop else 1f
+                val crop = if (!stab || horizonCrop >= 1.99f) horizonCrop else horizonCrop * h.stabilize.crop
+                // Back lenses: about 23 mm equivalent at 1x over a 4:3 frame's width (only used without a profile).
+                HorizonConfig(degrees, crop, rec, front, h.follow, stab, h.stabilize.seconds, factor * .665f)
             }.distinctUntilChanged().collect { c ->
                 horizonSensor.configure(c.degrees, c.crop, recording = c.recording, front = c.front,
                     followSeconds = c.followSeconds)
+                // Stabilisation alone still needs the zoom (the horizon sensor is off then).
+                if (c.degrees == 0) previewCoordinator.setHorizonLock(0f, if (c.stabilize) c.crop else 1f, true, 0f, false)
+                stabilizerSensor.configure(c.stabilize, c.crop, c.stabilizeSeconds, rollToo = c.degrees == 0,
+                    focalNorm = c.focalNorm)
+                previewCoordinator.setStabilizer(c.stabilize, c.focalNorm)
             }
         }
         settingsSync.start()
@@ -600,6 +625,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
 
     override fun onCleared() {
         horizonSensor.close()
+        stabilizerSensor.close()
         recording.closeWhenIdle {
             stillCaptureCoordinator.closeWhenIdle {
                 controller.close()
@@ -609,10 +635,20 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     }
 }
 
+private data class HorizonSettings(
+    val lock: Boolean,
+    val range: com.rawr.camera.settings.model.HorizonLockRange,
+    val follow: Float,
+    val stabilize: com.rawr.camera.settings.model.VideoStabilize
+)
+
 private data class HorizonConfig(
     val degrees: Int,
     val crop: Float,
     val recording: Boolean,
     val front: Boolean,
-    val followSeconds: Float
+    val followSeconds: Float,
+    val stabilize: Boolean,
+    val stabilizeSeconds: Float,
+    val focalNorm: Float
 )

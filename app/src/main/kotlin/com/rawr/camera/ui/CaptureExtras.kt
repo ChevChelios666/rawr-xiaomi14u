@@ -16,6 +16,8 @@ data class CaptureExtras(
     val onToggleLevel: () -> Unit = {},
     /** Video horizon Lock / Follow (the Level tile); either shows the level too. */
     val onSetHorizonMode: (lock: Boolean, follow: Boolean) -> Unit = { _, _ -> },
+    /** Video stabilisation (the Stabilise tile). */
+    val onSetStabilize: (com.rawr.camera.settings.model.VideoStabilize) -> Unit = {},
     val onSetLocationTagging: (Boolean) -> Unit = {},
     val onToggleLensMirror: (String) -> Unit = {},
     /** Show the one-time "Swipe up for Photo+" hint (until switched once, at most twice). */

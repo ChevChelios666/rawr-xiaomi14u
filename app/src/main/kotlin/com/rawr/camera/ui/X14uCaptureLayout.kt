@@ -613,9 +613,14 @@ internal fun X14uCaptureLayout(
                 )
                 if (tools.level) X14uLevel(Modifier.fillMaxSize())
                 // Video horizon Lock / Follow on: a small badge, so the fixed crop isn't a surprise.
-                if (isVideo && (tools.horizonLock || tools.horizonFollow)) {
+                val stabBadge = tools.stabilize != com.rawr.camera.settings.model.VideoStabilize.Off &&
+                    !isFrontLens(state.selectedLensId, state.selectedLensId)
+                if (isVideo && (tools.horizonLock || tools.horizonFollow || stabBadge)) {
                     Text(
-                        if (tools.horizonFollow) "LEVEL FOLLOW" else "LEVEL LOCK",
+                        listOfNotNull(
+                            if (tools.horizonFollow) "LEVEL FOLLOW" else if (tools.horizonLock) "LEVEL LOCK" else null,
+                            if (stabBadge) "STAB" else null
+                        ).joinToString(" · "),
                         fontFamily = X14uFont,
                         fontSize = dpText(10.5f),
                         color = CaptureColors.Accent,

@@ -27,6 +27,7 @@
 #include "presentation/SwapchainRenderer.h"
 #include "raw_preview/RawPreview.hpp"
 #include "tonemap/TonemapMath.h"
+#include "geometry/Stabilizer.h"
 #include "video/VideoSession.h"
 #include "video_pipeline/VideoCrop.h"
 #include "vulkan/RawAhbImporter.h"
@@ -577,6 +578,15 @@ void FrameSubmitCoordinator::submitSplitVideoAndMonitor(const SubmitParams& para
         videoOutput_->setLensMirror(metadata.cameraContext ? metadata.cameraContext->profileMirror : 0u);
         videoOutput_->setDcpProfile(metadata.cameraContext ? metadata.cameraContext->dcpProfile : nullptr,
                                     params.colorState->calibrationWeight1);
+        {
+            // Stabilisation looks up the shake at this frame's capture time: the middle of its exposure (and of a
+            // ~8 ms readout), on CLOCK_BOOTTIME like the gyro.
+            const bool boottime = metadata.cameraContext && metadata.cameraContext->sensorTimestampRealtime;
+            const int64_t toBoot = boottime ? 0 : clockNs(CLOCK_BOOTTIME) - clockNs(CLOCK_MONOTONIC);
+            rawrcam::geometry::stabilizerFrameTimeNs().store(
+                static_cast<int64_t>(params.timestampNs) + toBoot + metadata.exposureTimeNs / 2 + 4'000'000,
+                std::memory_order_relaxed);
+        }
         videoOutput_->record(current, slotIndex, *acquired.videoIndex, config_.rawWidth, config_.rawHeight, frame,
                              cameraToAp1, tone, performanceTracker_, acquired.swapIndex.has_value(), splitSubmit,
                              [&](VkCommandBuffer cmd, VkImageView view, uint32_t width, uint32_t height) {

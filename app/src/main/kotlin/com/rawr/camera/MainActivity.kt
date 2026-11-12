@@ -251,6 +251,7 @@ class MainActivity : ComponentActivity() {
                     onSetPhotoAspect = captureViewModel::setPhotoAspect,
                     onToggleLevel = captureViewModel::toggleLevel,
                     onSetHorizonMode = captureViewModel::setHorizonMode,
+                    onSetStabilize = captureViewModel::setStabilize,
                     onSetLocationTagging = captureViewModel::setLocationTagging,
                     onToggleLensMirror = captureViewModel::toggleLensMirror,
                     stillsHint = stillsHint,

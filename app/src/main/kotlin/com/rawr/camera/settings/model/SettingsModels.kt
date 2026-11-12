@@ -507,6 +507,16 @@ enum class HorizonLockRange(val label: String, val degrees: Int) {
     fun resolved(factor: Float): HorizonLockRange = if (this != Auto) this else Full
 }
 
+/**
+ * X14U video stabilisation: how much of the frame is kept as margin ([crop]) and how slowly the smoothed path follows
+ * the phone ([seconds]); Strong suits walking.
+ */
+enum class VideoStabilize(val label: String, val short: String, val crop: Float, val seconds: Float) {
+    Off("Off", "", 1f, 0f),
+    Standard("Standard", "std", 1.15f, .5f),
+    Strong("Strong", "strong", 1.3f, 1f)
+}
+
 /** X14U horizon Follow: how slowly the video follows the phone's tilt (seconds; a gimbal's roll smoothing). */
 enum class HorizonSmoothing(val label: String, val seconds: Float) {
     Light("Light", .3f),
@@ -1232,6 +1242,8 @@ data class SettingsValues(
     /** X14U video horizon Follow (Level tile: Follow): the video follows tilt, smoothed like a gimbal's roll. */
     val videoHorizonFollow: Boolean = false,
     val horizonSmoothing: HorizonSmoothing = HorizonSmoothing.Medium,
+    /** X14U video stabilisation (the Stabilise tile): gyro shake removal inside a fixed crop. */
+    val videoStabilize: VideoStabilize = VideoStabilize.Off,
     /** X14U digital zoom: the multiframe merge for zoomed shots; null = the usual merge. */
     val zoomMergeAlgorithm: MultiframeMergeAlgorithm? = MultiframeMergeAlgorithm.Wronski,
     /** X14U: the in-sensor-zoom lenses (2x) were turned off once, so zoom crops the main camera; they can be re-enabled. */

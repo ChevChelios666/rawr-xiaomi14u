@@ -187,7 +187,7 @@ void PostDemosaicProcessor::createWbPipeline() {
     ds.bindingCount = 3;
     ds.pBindings = b;
     ck(vkCreateDescriptorSetLayout(device_, &ds, nullptr, &wbDsl_), "WB set layout");
-    VkPushConstantRange pr{VK_SHADER_STAGE_COMPUTE_BIT, 0, 104};
+    VkPushConstantRange pr{VK_SHADER_STAGE_COMPUTE_BIT, 0, 112};
     VkPipelineLayoutCreateInfo pl{};
     pl.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pl.setLayoutCount = 1;
@@ -732,6 +732,7 @@ void PostDemosaicProcessor::record(VkCommandBuffer cmd, VkImage sourceImage, VkI
         float k4, k5, k6, fxOut, fyOut;
         float originX, originY, frameScale;
         float rollCos, rollSin;
+        float shiftX, shiftY;
     } pc{width_,
          height_,
          gains[0],
@@ -757,8 +758,10 @@ void PostDemosaicProcessor::record(VkCommandBuffer cmd, VkImage sourceImage, VkI
          distortion.frameOrigin[1],
          distortion.frameScale,
          distortion.rollCos,
-         distortion.rollSin};
-    static_assert(sizeof(Pc) == 104);
+         distortion.rollSin,
+         distortion.shiftX,
+         distortion.shiftY};
+    static_assert(sizeof(Pc) == 112);
     if (coloroppFusedWb) {
         // The highlight predicate stays zero: the guide chain is off with Inpaint Opposed.
         coloropp_->recordFused(cmd, sourceView, wbImage_.view, gains, highlightThreshold, shading, cfaPattern,

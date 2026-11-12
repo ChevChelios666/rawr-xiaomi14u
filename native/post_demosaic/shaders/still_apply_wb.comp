@@ -52,6 +52,9 @@ layout(push_constant) uniform Push {
     // identity when off. The zoom-in that keeps the frame filled is already in fxOut / fyOut.
     float rollCos;
     float rollSin;
+    // Rational only (X14U video stabilisation): shift after the rotation (the shake's pitch and yaw); zero when off.
+    float shiftX;
+    float shiftY;
 }
 pc;
 
@@ -94,7 +97,7 @@ vec2 rationalSource(vec2 outPixel) {
     vec2 origin = vec2(pc.originX, pc.originY);
     vec2 outUv = origin + (outPixel + 0.5) * pc.frameScale - 0.5;
     vec2 x = (outUv - vec2(pc.cx, pc.cy)) / vec2(pc.fxOut, pc.fyOut);
-    x = vec2(pc.rollCos * x.x - pc.rollSin * x.y, pc.rollSin * x.x + pc.rollCos * x.y);
+    x = vec2(pc.rollCos * x.x - pc.rollSin * x.y, pc.rollSin * x.x + pc.rollCos * x.y) + vec2(pc.shiftX, pc.shiftY);
     float r2 = dot(x, x);
     float radial = (1.0 + r2 * (pc.k1 + r2 * (pc.k2 + r2 * pc.k3))) / (1.0 + r2 * (pc.k4 + r2 * (pc.k5 + r2 * pc.k6)));
     vec2 d = vec2(x.x * radial + 2.0 * pc.p1 * x.x * x.y + pc.p2 * (r2 + 2.0 * x.x * x.x),

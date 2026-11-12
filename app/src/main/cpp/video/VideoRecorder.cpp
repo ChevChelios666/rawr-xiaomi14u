@@ -15,6 +15,7 @@
 #include "tonemap_video_rgb10a2.h"
 #include "tonemap_video_rgba8.h"
 #include "geometry/HorizonLock.h"
+#include "geometry/Stabilizer.h"
 #include "video/VideoOutput.h"
 #include "vulkan/VulkanContext.h"
 namespace rawrcam::video {
@@ -142,7 +143,10 @@ void VideoRecorder::record(VkCommandBuffer command, uint32_t frameSlot, uint32_t
         lensDistortion ? distortionFor(*lensDistortion, rawWidth, rawHeight) : rawr::post::StillDistortionCorrection{};
     // X14U horizon lock: rotate the output about the centre and zoom in by the lock's fixed crop. Without a lens
     // profile (or with correction off) a plain pinhole model carries it; its focal length cancels out.
+    // Stabilisation rides on the same remap: the frame's shake (from the gyro track, at its capture time) turns the
+    // sampling back by its roll and shifts it by its pitch and yaw, inside the same fixed crop.
     if (const auto lock = rawrcam::geometry::horizonSampling(); lock.active) {
+        const bool profiled = lensCorrection.enabled;
         if (!lensCorrection.enabled) {
             rawrcam::geometry::LensDistortionModel pinhole;
             pinhole.width = rawWidth;
@@ -157,6 +161,20 @@ void VideoRecorder::record(VkCommandBuffer command, uint32_t frameSlot, uint32_t
             lensCorrection.outputFocal[1] *= lock.scale;
             lensCorrection.rollCos = lock.cosA;
             lensCorrection.rollSin = lock.sinA;
+            rawrcam::geometry::StabilizerSample shake;
+            if (rawrcam::geometry::stabilizerEnabled().load(std::memory_order_relaxed) &&
+                rawrcam::geometry::stabilizerTrack().at(
+                    rawrcam::geometry::stabilizerFrameTimeNs().load(std::memory_order_relaxed), shake)) {
+                // A lens profile's normalized units are the ray's tangent (radians for small turns); the pinhole's
+                // focal is the frame width, so scale by the lens's real focal over the sensor width.
+                const float unit = profiled ? 1.0f : rawrcam::geometry::stabilizerFocalNorm().load(std::memory_order_relaxed);
+                const float angle = std::atan2(lock.sinA, lock.cosA) - shake.roll;
+                lensCorrection.rollCos = std::cos(angle);
+                lensCorrection.rollSin = std::sin(angle);
+                // A camera turn about y moves the scene left in the image; about x, down.
+                lensCorrection.shiftX = -shake.yaw * unit;
+                lensCorrection.shiftY = shake.pitch * unit;
+            }
         }
     }
     lensCorrection.mirror = lensMirror;

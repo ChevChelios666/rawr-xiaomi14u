@@ -54,6 +54,10 @@ struct StillDistortionCorrection {
     // before the lens model; identity when off. The zoom-in that keeps the frame filled is in outputFocal.
     float rollCos = 1.0f;
     float rollSin = 0.0f;
+    // Rational only (video stabilisation): shift of the normalized coordinate after the rotation (the shake's pitch
+    // and yaw, in the model's normalized units); zero when off.
+    float shiftX = 0.0f;
+    float shiftY = 0.0f;
 };
 
 // Exact still-pipeline domain bridge: pre-WB camera-linear RGB -> WB camera RGB

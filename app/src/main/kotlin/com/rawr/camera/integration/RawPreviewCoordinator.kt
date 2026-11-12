@@ -314,6 +314,9 @@ class RawPreviewCoordinator(application: Application) : AutoCloseable {
     /** Straight to native atomics (sensor thread, many times a second). */
     fun setHorizonLock(roll: Float, crop: Float, natural: Boolean, viewRoll: Float, fit: Boolean) =
         native.setHorizonLock(roll, crop, natural, viewRoll, fit)
+    fun setStabilizer(enabled: Boolean, focalNorm: Float) = native.setStabilizer(enabled, focalNorm)
+    fun pushStabilizerSample(timeNs: Long, pitch: Float, yaw: Float, roll: Float) =
+        native.pushStabilizerSample(timeNs, pitch, yaw, roll)
     fun setAePriorityDisabled(disabled: Boolean) = postNative { native.setAePriorityDisabled(nativeHandle, disabled) }
     fun setRawrAutoExposure(s: com.rawr.camera.settings.model.RawrAeSettings) = postNative {
         native.setRawrAutoExposure(

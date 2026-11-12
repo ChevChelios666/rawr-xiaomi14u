@@ -1,4 +1,5 @@
 #include "geometry/HorizonLock.h"
+#include "geometry/Stabilizer.h"
 #include "encoding/OutputAspect.h"
 #include <android/asset_manager_jni.h>
 #include <android/log.h>
@@ -204,6 +205,23 @@ extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreview
     rawrcam::geometry::horizonRoll().store(std::isfinite(roll) ? float(roll) : 0.0f, std::memory_order_relaxed);
     rawrcam::geometry::horizonScale().store(std::isfinite(scale) ? std::clamp(float(scale), 1.0f, 3.0f) : 1.0f,
                                             std::memory_order_relaxed);
+}
+
+// X14U video stabilisation: on/off with the lens's focal over the sensor width, and the gyro's shake track.
+extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setStabilizer(JNIEnv*, jobject,
+                                                                                                     jboolean enabled,
+                                                                                                     jfloat focalNorm) {
+    const bool on = enabled == JNI_TRUE;
+    if (rawrcam::geometry::stabilizerEnabled().exchange(on, std::memory_order_relaxed) != on)
+        rawrcam::geometry::stabilizerTrack().clear();
+    if (std::isfinite(focalNorm) && focalNorm > 0.05f)
+        rawrcam::geometry::stabilizerFocalNorm().store(float(focalNorm), std::memory_order_relaxed);
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_pushStabilizerSample(
+    JNIEnv*, jobject, jlong timeNs, jfloat pitch, jfloat yaw, jfloat roll) {
+    if (!std::isfinite(pitch) || !std::isfinite(yaw) || !std::isfinite(roll)) return;
+    rawrcam::geometry::stabilizerTrack().push({int64_t(timeNs), float(pitch), float(yaw), float(roll)});
 }
 
 // X14U: photo aspect ratio (long:short; 0 = native) for the next captures.

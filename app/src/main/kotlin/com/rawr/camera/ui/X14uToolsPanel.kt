@@ -62,6 +62,7 @@ import com.rawr.camera.model.ScopeType
 import com.rawr.camera.model.WaveformMode
 import com.rawr.camera.model.WhiteBalanceMode
 import com.rawr.camera.settings.model.PhotoAspect
+import com.rawr.camera.settings.model.VideoStabilize
 import com.rawr.camera.ui.icons.Icons
 import com.rawr.camera.ui.icons.outlined.CenterFocusStrong
 import com.rawr.camera.ui.icons.outlined.Palette
@@ -165,6 +166,11 @@ internal fun X14uToolsPanel(
                 toggleChoice("level")
             })
         } else add(X14uTile("level", "Level", tools.level, X14uIcons.Level) { extras.onToggleLevel() })
+        // Video, back lenses: Off · Standard · Strong.
+        if (video && !frontLens) {
+            add(X14uTile("stab", "Stabilise", tools.stabilize != VideoStabilize.Off, X14uIcons.Stabilize,
+                value = tools.stabilize.short.ifEmpty { null }) { toggleChoice("stab") })
+        }
         val histogram = state.histogramChoice()
         add(X14uTile("hist", "Histogram", histogram != HistogramChoice.Off, X14uIcons.Histogram,
             value = histogram.short) { toggleChoice("hist") })
@@ -242,6 +248,9 @@ internal fun X14uToolsPanel(
                         2 -> extras.onSetHorizonMode(true, false)
                         else -> extras.onSetHorizonMode(false, true)
                     }
+                }
+                "stab" -> Triple(VideoStabilize.entries.map { it.label }, tools.stabilize.ordinal) { i: Int ->
+                    extras.onSetStabilize(VideoStabilize.entries[i])
                 }
                 "hist" -> Triple(HistogramChoice.entries.map { it.label }, state.histogramChoice().ordinal) { i: Int ->
                     val c = HistogramChoice.entries[i]

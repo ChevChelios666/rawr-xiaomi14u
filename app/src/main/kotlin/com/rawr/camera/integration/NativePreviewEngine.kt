@@ -33,6 +33,12 @@ class NativePreviewEngine {
     /** X14U video horizon lock: roll past the kept framing (radians, clockwise in the camera's image) and crop (1 = off). */
     external fun setHorizonLock(roll: Float, scale: Float, natural: Boolean, viewRoll: Float, fit: Boolean)
 
+    /** X14U video stabilisation on/off, with the lens's focal length over the sensor width. */
+    external fun setStabilizer(enabled: Boolean, focalNorm: Float)
+
+    /** X14U video stabilisation: the shake to take out at [timeNs] (CLOCK_BOOTTIME), camera axes, radians. */
+    external fun pushStabilizerSample(timeNs: Long, pitch: Float, yaw: Float, roll: Float)
+
     /** X14U photo aspect ratio (long:short; 0 = the sensor's own) for the next captures. */
     external fun setOutputAspect(aspect: Float)
 
