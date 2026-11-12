@@ -209,8 +209,8 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /** X14U video horizon lock: gravity in, roll and crop out to the native viewfinder and recorder. */
-    private val horizonSensor = com.rawr.camera.integration.HorizonLockSensor(application) { roll, crop, natural ->
-        previewCoordinator.setHorizonLock(roll, crop, natural)
+    private val horizonSensor = com.rawr.camera.integration.HorizonLockSensor(application) { roll, crop, natural, viewRoll, fit ->
+        previewCoordinator.setHorizonLock(roll, crop, natural, viewRoll, fit)
     }
     fun setLocationTagging(on: Boolean) {
         settingsEditor.update { it.copy(locationTagging = on) }

@@ -21,12 +21,13 @@ import kotlin.math.roundToInt
  *
  * Follow (a gimbal's roll-follow): instead of a fixed framing, the video follows a slowly smoothed copy of the tilt
  * (time constant [configure]'s followSeconds), so shake is taken out and deliberate turns come through as smooth
- * rolls, and the viewfinder shows the recorded frame (natural = false). Lock keeps the viewfinder natural like a stock
- * camera (natural = true) while the saved video stays level; both are zoomed to the recording's crop.
+ * rolls. Lock keeps the viewfinder natural like a stock camera while the saved video stays level; Follow's viewfinder,
+ * while recording, shows the recorded frame upright in the world (turned by the whole tilt, shrunk to fit), so the
+ * tilts the video will show are seen on screen. Both are zoomed to the recording's crop.
  */
 internal class HorizonLockSensor(
     context: Context,
-    private val apply: (rollRadians: Float, crop: Float, natural: Boolean) -> Unit
+    private val apply: (rollRadians: Float, crop: Float, natural: Boolean, viewRoll: Float, fit: Boolean) -> Unit
 ) : SensorEventListener {
     private val manager = context.getSystemService(SensorManager::class.java)
     private val gravity = manager?.getDefaultSensor(Sensor.TYPE_GRAVITY)
@@ -71,7 +72,7 @@ internal class HorizonLockSensor(
         }
         if (!want) {
             currentBase = null
-            apply(0f, 1f, true)
+            apply(0f, 1f, true, 0f, false)
         }
     }
 
@@ -95,6 +96,11 @@ internal class HorizonLockSensor(
         }
         // Clockwise roll (as the user sees the screen): 0 upright, 90 turned onto the right side.
         val theta = Math.toDegrees(atan2(-gx, gy).toDouble()).toFloat()
+        // Framing kept level (multiple of 90°): follows the phone before recording, fixed during a take.
+        val held = currentBase
+        val idleBase = if (held == null || abs(wrap180(theta - held)) > 60f) (theta / 90f).roundToInt() * 90f else held
+        currentBase = idleBase
+        val base = if (recording) frozenBase ?: idleBase.also { frozenBase = it } else idleBase
         val follow = followSeconds
         if (follow > 0f) {
             // Follow: correct only the difference from a slowly smoothed tilt (unwrapped, so turning past 180° is
@@ -109,14 +115,15 @@ internal class HorizonLockSensor(
             var residual = softLimit(wrap180(theta - smoothed), range.toFloat().coerceAtMost(89f))
             // Never leave the correction past the crop: pull the smoothed tilt along instead.
             if (abs(wrap180(theta - smoothed)) > range) smoothed = wrap180(theta - residual)
-            if (front) residual = -residual
-            apply(Math.toRadians(residual.toDouble()).toFloat(), crop, false)
+            var tilt = wrap180(theta - base)
+            if (front) {
+                residual = -residual
+                tilt = -tilt
+            }
+            val roll = Math.toRadians(residual.toDouble()).toFloat()
+            apply(roll, crop, true, Math.toRadians(tilt.toDouble()).toFloat(), true)
             return
         }
-        val held = currentBase
-        val idleBase = if (held == null || abs(wrap180(theta - held)) > 60f) (theta / 90f).roundToInt() * 90f else held
-        currentBase = idleBase
-        val base = if (recording) frozenBase ?: idleBase.also { frozenBase = it } else idleBase
         var residual = wrap180(theta - base)
         // Far past a limited range (towards upside down) the correction holds instead of flipping sides at 180°.
         if (range < 90) {
@@ -125,7 +132,8 @@ internal class HorizonLockSensor(
         }
         // The front camera looks back at the user, so the same roll turns its picture the other way.
         if (front) residual = -residual
-        apply(Math.toRadians(residual.toDouble()).toFloat(), crop, true)
+        val roll = Math.toRadians(residual.toDouble()).toFloat()
+        apply(roll, crop, true, roll, false)
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit

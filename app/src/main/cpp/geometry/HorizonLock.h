@@ -23,6 +23,17 @@ inline std::atomic<bool>& horizonNaturalView() noexcept {
     static std::atomic<bool> value{true};
     return value;
 }
+// While recording, the viewfinder turns the recorded frame back by this much (radians, as horizonRoll) so it sits
+// upright in the world: Lock's correction (natural view), or Follow's whole tilt (the frame as the video shows it).
+inline std::atomic<float>& horizonViewRoll() noexcept {
+    static std::atomic<float> value{0.0f};
+    return value;
+}
+// Follow: shrink the turned frame so all of it stays on screen.
+inline std::atomic<bool>& horizonViewFit() noexcept {
+    static std::atomic<bool> value{false};
+    return value;
+}
 
 struct HorizonSampling {
     bool active = false;

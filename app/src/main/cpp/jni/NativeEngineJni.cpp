@@ -194,8 +194,13 @@ extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreview
 extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setHorizonLock(JNIEnv*, jobject,
                                                                                                       jfloat roll,
                                                                                                       jfloat scale,
-                                                                                                      jboolean natural) {
+                                                                                                      jboolean natural,
+                                                                                                      jfloat viewRoll,
+                                                                                                      jboolean fit) {
     rawrcam::geometry::horizonNaturalView().store(natural == JNI_TRUE, std::memory_order_relaxed);
+    rawrcam::geometry::horizonViewRoll().store(std::isfinite(viewRoll) ? float(viewRoll) : 0.0f,
+                                               std::memory_order_relaxed);
+    rawrcam::geometry::horizonViewFit().store(fit == JNI_TRUE, std::memory_order_relaxed);
     rawrcam::geometry::horizonRoll().store(std::isfinite(roll) ? float(roll) : 0.0f, std::memory_order_relaxed);
     rawrcam::geometry::horizonScale().store(std::isfinite(scale) ? std::clamp(float(scale), 1.0f, 3.0f) : 1.0f,
                                             std::memory_order_relaxed);

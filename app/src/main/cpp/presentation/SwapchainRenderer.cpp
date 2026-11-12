@@ -199,11 +199,19 @@ void SwapchainRenderer::record(VkCommandBuffer command, uint32_t frameSlot, uint
             m.fx = m.fy = double(previewWidth);
             m.cx = (double(previewWidth) - 1.0) * 0.5;
             m.cy = (double(previewHeight) - 1.0) * 0.5;
-            m.rollCos = lock.cosA;
-            m.rollSin = -lock.sinA;
-            // Same zoom as the recording (and the idle viewfinder): only the turn is undone, so the corners the
-            // level frame doesn't cover show dark while the phone is tilted.
+            const double view = rawrcam::geometry::horizonViewRoll().load(std::memory_order_relaxed);
+            const double c = std::cos(view), s = std::sin(view);
+            m.rollCos = c;
+            m.rollSin = s;
+            // Lock: same zoom as the recording (and the idle viewfinder), only the turn undone, so the corners the
+            // level frame doesn't cover show dark while the phone is tilted. Follow: the turned frame shrinks to
+            // stay whole on screen.
             m.rollScale = 1.0;
+            if (rawrcam::geometry::horizonViewFit().load(std::memory_order_relaxed)) {
+                const double w = double(previewWidth), h = double(previewHeight);
+                const double ac = std::abs(c), as = std::abs(s);
+                m.rollScale = std::min(w / (w * ac + h * as), h / (w * as + h * ac));
+            }
             m.darkOutside = true;
             unlock = m;
             info.lensWarp = &*unlock;
