@@ -164,6 +164,7 @@ internal class PanoMerger(private val context: Context) {
         }
     }
 
+    @Suppress("DEPRECATION") // TAG_ISO_SPEED_RATINGS: the framework ExifInterface has no newer name for 0x8827.
     private fun copyExif(from: Uri, to: Uri, frames: Int) {
         val resolver = context.contentResolver
         runCatching {
@@ -175,7 +176,7 @@ internal class PanoMerger(private val context: Context) {
                     ExifInterface.TAG_DATETIME_ORIGINAL, ExifInterface.TAG_DATETIME_DIGITIZED,
                     ExifInterface.TAG_OFFSET_TIME, ExifInterface.TAG_OFFSET_TIME_ORIGINAL,
                     ExifInterface.TAG_EXPOSURE_TIME, ExifInterface.TAG_F_NUMBER,
-                    ExifInterface.TAG_PHOTOGRAPHIC_SENSITIVITY, ExifInterface.TAG_FOCAL_LENGTH,
+                    ExifInterface.TAG_ISO_SPEED_RATINGS, ExifInterface.TAG_FOCAL_LENGTH,
                     ExifInterface.TAG_FOCAL_LENGTH_IN_35MM_FILM, ExifInterface.TAG_WHITE_BALANCE,
                     ExifInterface.TAG_GPS_LATITUDE, ExifInterface.TAG_GPS_LATITUDE_REF,
                     ExifInterface.TAG_GPS_LONGITUDE, ExifInterface.TAG_GPS_LONGITUDE_REF,
