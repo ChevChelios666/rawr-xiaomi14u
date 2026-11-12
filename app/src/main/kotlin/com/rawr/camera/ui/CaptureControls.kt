@@ -218,11 +218,15 @@ internal fun PhotoLookToggles(
     onOpenMultiframeSettings: () -> Unit,
     /** X14U: each pill turns in place in landscape. */
     pillModifier: Modifier = Modifier,
-    /** X14U build: the DCP button, after FILM. */
-    trailing: @Composable () -> Unit = {}
+    /** Extra buttons after FILM. */
+    trailing: @Composable () -> Unit = {},
+    /** X14U: spread across its side of the shutter row, mirroring the left side. */
+    modifier: Modifier = Modifier,
+    arrangement: Arrangement.Horizontal = Arrangement.spacedBy(0.dp)
 ) {
     Row(
-        horizontalArrangement = Arrangement.spacedBy(0.dp),
+        modifier,
+        horizontalArrangement = arrangement,
         verticalAlignment = Alignment.CenterVertically
     ) {
         CompactSidePill(

@@ -2365,7 +2365,9 @@ private fun X14uShutterRow(
         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
             if (isVideo) {
                 val muted = videoControls.audio.muted
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // Spread like the thumbnail and camera button on the other side.
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically) {
                     CompactSidePill(
                         icon = X14uIcons.LogCurve,
                         label = "LOG",
@@ -2394,9 +2396,11 @@ private fun X14uShutterRow(
                 }
             } else {
                 // Locked during a pano set: every frame keeps frame 1's merge and look.
-                Box(Modifier.alpha(if (pano?.locked == true) .45f else 1f)) {
+                Box(Modifier.fillMaxWidth().alpha(if (pano?.locked == true) .45f else 1f)) {
                     PhotoLookToggles(
                         state, dispatch, onOpenFilmSimSettings, onOpenMultiframeSettings,
+                        modifier = Modifier.fillMaxWidth(),
+                        arrangement = Arrangement.SpaceEvenly,
                         pillModifier = turn
                     )
                     if (pano?.locked == true) Box(Modifier.matchParentSize().pointerInput(Unit) {
