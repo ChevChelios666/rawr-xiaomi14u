@@ -154,6 +154,20 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     private val fullSizeBusyFlow = kotlinx.coroutines.flow.MutableStateFlow(false)
     val fullSizeBusy: StateFlow<Boolean> = fullSizeBusyFlow
 
+    /**
+     * The shutter press, when the selected lens's chosen option runs as another lens right now (read at the press,
+     * not from a flow that may lag the toggle): takes the 50 MP shot and returns true; false = a normal shot.
+     */
+    fun tryShootFullSize(): Boolean {
+        val state = controller.state.value
+        if (state.captureMode == com.rawr.camera.model.CaptureMode.Video || panoFlow.value) return false
+        val lens = latestSettings.effectiveLensProfiles(DeviceLensDefaults.lenses)
+            .firstOrNull { it.name.trim().equals(state.selectedLensId.trim(), ignoreCase = true) } ?: return false
+        if (lens.runAsTarget() == null) return false
+        shootFullSize()
+        return true
+    }
+
     /** The 50 MP shot (see [fullSizeShot]); a press while one runs is ignored. */
     fun shootFullSize() {
         if (fullSizeJob?.isActive == true) return

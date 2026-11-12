@@ -2400,9 +2400,8 @@ private fun X14uShutterRow(
             Shutter(
                 dispatch = when {
                     pano != null -> { action -> if (action is TriggerCapture) pano.onShoot() else dispatch(action) }
-                    // 50 mp on: the shot runs on the 50 MP lens (the viewfinder stays 12 MP with AF).
-                    extras.fullSizeShot -> { action -> if (action is TriggerCapture) extras.onFullSizeShot() else dispatch(action) }
-                    else -> dispatch
+                    // 50 mp on (checked at the press): the shot runs on the 50 MP lens (the viewfinder stays 12 MP with AF).
+                    else -> { action -> if (action !is TriggerCapture || !extras.onFullSizeShot()) dispatch(action) }
                 },
                 modifier = Modifier,
                 countingDown = state.selfTimerRemainingMs != null,

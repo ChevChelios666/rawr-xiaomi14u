@@ -268,7 +268,7 @@ class MainActivity : ComponentActivity() {
                     panoStatus = panoStatus,
                     fullSizeShot = fullSizeShot,
                     fullSizeBusy = fullSizeBusy,
-                    onFullSizeShot = captureViewModel::shootFullSize,
+                    onFullSizeShot = captureViewModel::tryShootFullSize,
                     onToggleAudioMuted = captureViewModel::toggleAudioMuted,
                     onOpenVideoSettings = {
                         startActivity(
@@ -437,8 +437,8 @@ class MainActivity : ComponentActivity() {
     private fun triggerShutter() {
         if (captureViewModel.controller.state.value.captureMode == CaptureMode.Video) {
             toggleVideoRecording()
-        } else if (captureViewModel.fullSizeShot.value) {
-            captureViewModel.shootFullSize()
+        } else if (captureViewModel.tryShootFullSize()) {
+            Unit
         } else {
             captureViewModel.controller.dispatch(TriggerCapture)
         }

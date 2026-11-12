@@ -888,7 +888,8 @@ struct NativeCameraController::Impl final : CameraEventSink {
         // control state because its legal ranges and capabilities may differ.
         const CameraControlState previousControl = control;
         const bool sameCameraRestart =
-            !previousControl.capabilities.cameraId.empty() && previousControl.capabilities.cameraId == route.cameraId;
+            !previousControl.capabilities.cameraId.empty() &&
+            (previousControl.capabilities.cameraId == route.cameraId || shotHandover().carrying());
         control = deviceSession.initialControls(route);
         // Vendor full-size modes: the HAL's S/I priority AE crashes the camera
         // provider once it raises gain (vivo X300 Ultra 50 MP); only rawr AE

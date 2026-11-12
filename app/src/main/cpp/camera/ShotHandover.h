@@ -28,7 +28,11 @@ public:
     void setCarry(bool on) {
         std::lock_guard<std::mutex> lock(mutex_);
         carried_ = on ? last_ : std::nullopt;
+        carrying_.store(on, std::memory_order_relaxed);
     }
+    // A 50 MP shot's camera switches are under way: the new session keeps the exposure and focus intent even on a
+    // different camera (the ultra-wide's 50 MP runs on camera 3, its viewfinder on camera 0).
+    bool carrying() const { return carrying_.load(std::memory_order_relaxed); }
     std::optional<AppliedWhiteBalance> carried() const {
         std::lock_guard<std::mutex> lock(mutex_);
         return carried_;
@@ -61,6 +65,7 @@ private:
     std::optional<AppliedWhiteBalance> last_;
     std::optional<AppliedWhiteBalance> carried_;
     std::atomic<bool> hold_{false};
+    std::atomic<bool> carrying_{false};
     std::atomic<uint64_t> lastGeneration_{0};
     std::atomic<uint64_t> holdStartGeneration_{0};
     std::atomic<int64_t> newFrames_{0};

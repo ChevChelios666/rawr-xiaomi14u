@@ -38,7 +38,8 @@ data class CaptureExtras(
     val fullSizeShot: Boolean = false,
     /** A 50 MP shot is running: lens row and controls are locked until it's back. */
     val fullSizeBusy: Boolean = false,
-    val onFullSizeShot: () -> Unit = {}
+    /** The shutter press: true when it was taken as a 50 MP shot, false for a normal shot. */
+    val onFullSizeShot: () -> Boolean = { false }
 )
 
 val LocalCaptureExtras = staticCompositionLocalOf { CaptureExtras() }
