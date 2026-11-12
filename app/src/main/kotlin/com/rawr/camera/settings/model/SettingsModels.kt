@@ -1224,7 +1224,9 @@ data class SettingsValues(
     /** X14U digital zoom: the multiframe merge for zoomed shots; null = the usual merge. */
     val zoomMergeAlgorithm: MultiframeMergeAlgorithm? = MultiframeMergeAlgorithm.Wronski,
     /** X14U: the in-sensor-zoom lenses (2x) were turned off once, so zoom crops the main camera; they can be re-enabled. */
-    val inSensorZoomLensesOffOnce: Boolean = false
+    val inSensorZoomLensesOffOnce: Boolean = false,
+    /** X14U, once: photo DCP defaults (Main / Tele by lens) and video back on the camera's colour. */
+    val dcpDefaultsOnce: Boolean = false
 ) {
     val isVideo: Boolean get() = captureModeId == "video"
     val isLogActive: Boolean get() = isVideo && videoLogEnabled

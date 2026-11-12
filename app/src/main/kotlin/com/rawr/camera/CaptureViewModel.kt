@@ -398,6 +398,22 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 previewCoordinator.setDigitalZoom(digitalZoomCrop, it)
             }
         }
+        // Once: each lens's photo DCP defaults to an imported Main profile (Tele on the 3.2x / 5x) when it has none,
+        // and video goes back to the camera's own colour (a DCP costs video frames).
+        viewModelScope.launch {
+            settingsEditor.values.first().let { v ->
+                if (!v.dcpDefaultsOnce) settingsEditor.update { s ->
+                    val lenses = s.effectiveLensProfiles(DeviceLensDefaults.lenses).map { lens ->
+                        val tele = (com.rawr.camera.settings.model.ZoomChain.factorOf(lens.name) ?: 1f) >= 3f
+                        val match = lens.image.availableDcps.firstOrNull {
+                            it.name.contains(if (tele) "tele" else "main", ignoreCase = true)
+                        }
+                        lens.image { (if (dcp == null && match != null) selectDcp(match.file) else this).selectVideoDcp(null) }
+                    }
+                    s.copy(lensProfiles = lenses, dcpDefaultsOnce = true)
+                }
+            }
+        }
         // Option A, once: in-sensor-zoom lenses (the 2x) go off so zooming crops the main camera without a switch.
         // Turned back on in Settings → Lenses, the 2x is a button again and a zoom step (1x -> 2x -> 3.2x).
         viewModelScope.launch {

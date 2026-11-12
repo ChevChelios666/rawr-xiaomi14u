@@ -804,7 +804,9 @@ internal fun X14uCaptureLayout(
                         onOpenSettings = { openTools(false); onOpenSettings() },
                         onClose = { openTools(false) },
                         modifier = Modifier.fillMaxWidth(),
-                        tileHeight = 86.dp * s
+                        tileHeight = 86.dp * s,
+                        dcp = quick.dcps.firstOrNull { it.lensId == state.selectedLensId },
+                        onSelectDcp = { file -> onQuickEvent(CaptureQuickEvent.SelectDcp(state.selectedLensId, file)) }
                     )
                 }
             }
@@ -2307,8 +2309,6 @@ private fun X14uShutterRow(
     val extras = LocalCaptureExtras.current
     val orientation = state.orientation
     val turn = Modifier.uprightInLandscape(orientation)
-    val dcp = quick.dcps.firstOrNull { it.lensId == state.selectedLensId }
-    val onSelectDcp: (String?) -> Unit = { file -> onQuickEvent(CaptureQuickEvent.SelectDcp(state.selectedLensId, file)) }
     // The front-camera button returns to the last back lens.
     val front = state.capabilities.lenses.firstOrNull { isFrontLens(it.id, it.displayName) }
     var lastBack by remember { mutableStateOf<String?>(null) }
@@ -2391,14 +2391,12 @@ private fun X14uShutterRow(
                         minWidth = SidePillWidth,
                         modifier = turn
                     )
-                    DcpSidePill(dcp, { if (enabled) onSelectDcp(it) }, modifier = turn, onOpenLensSettings = { onOpenLensSettings(state.selectedLensId) })
                 }
             } else {
                 // Locked during a pano set: every frame keeps frame 1's merge and look.
                 Box(Modifier.alpha(if (pano?.locked == true) .45f else 1f)) {
                     PhotoLookToggles(
                         state, dispatch, onOpenFilmSimSettings, onOpenMultiframeSettings,
-                        trailing = { DcpSidePill(dcp, onSelectDcp, modifier = turn, onOpenLensSettings = { onOpenLensSettings(state.selectedLensId) }) },
                         pillModifier = turn
                     )
                     if (pano?.locked == true) Box(Modifier.matchParentSize().pointerInput(Unit) {

@@ -539,6 +539,7 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
                     .firstOrNull { it.name == saved && it.available } ?: d.zoomMergeAlgorithm
             },
             inSensorZoomLensesOffOnce = p[Keys.inSensorZoomOff] ?: d.inSensorZoomLensesOffOnce,
+            dcpDefaultsOnce = p[Keys.dcpDefaultsOnce] ?: d.dcpDefaultsOnce,
             focusLoupe = FocusLoupeSettings(
                 zoom = (p[Keys.loupeZoom] ?: d.focusLoupe.zoom).takeIf { it in FocusLoupeSettings.ZOOMS } ?: d.focusLoupe.zoom,
                 onManualFocus = p[Keys.loupeOnMf] ?: d.focusLoupe.onManualFocus,
@@ -801,6 +802,7 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
         p[Keys.horizonRange] = v.horizonLockRange.name
         p[Keys.zoomMerge] = v.zoomMergeAlgorithm?.name ?: "same"
         p[Keys.inSensorZoomOff] = v.inSensorZoomLensesOffOnce
+        p[Keys.dcpDefaultsOnce] = v.dcpDefaultsOnce
         p[Keys.loupeOnMf] = v.focusLoupe.onManualFocus
         p[Keys.loupeDoubleTap] = v.focusLoupe.doubleTap
         p[Keys.loupeMeter] = v.focusLoupe.meter
@@ -1122,6 +1124,7 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
         val horizonLock = booleanPreferencesKey("x14u_horizon_lock")
         val horizonRange = stringPreferencesKey("x14u_horizon_range")
         val inSensorZoomOff = booleanPreferencesKey("x14u_in_sensor_zoom_off_once")
+        val dcpDefaultsOnce = booleanPreferencesKey("x14u_dcp_defaults_once")
         val loupeOnMf = booleanPreferencesKey("x14u_loupe_on_mf")
         val loupeDoubleTap = booleanPreferencesKey("x14u_loupe_double_tap")
         val loupeMeter = booleanPreferencesKey("x14u_loupe_meter")

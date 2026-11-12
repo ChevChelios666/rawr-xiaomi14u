@@ -135,7 +135,10 @@ internal fun X14uToolsPanel(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
     /** Stock-sized tiles: 87 dp rows at the stock reference height. */
-    tileHeight: androidx.compose.ui.unit.Dp = 86.dp
+    tileHeight: androidx.compose.ui.unit.Dp = 86.dp,
+    /** The lens's camera profiles (photo or video set, by mode) and picking one (null = the camera's own). */
+    dcp: com.rawr.camera.model.DcpQuickState? = null,
+    onSelectDcp: (String?) -> Unit = {}
 ) {
     val extras = LocalCaptureExtras.current
     val tools = extras.tools
@@ -176,6 +179,13 @@ internal fun X14uToolsPanel(
         add(X14uTile("wb", "White bal.", wb != WhiteBalanceMode.Auto,
             text = if (wb == WhiteBalanceMode.ManualTempTint) "${state.whiteBalanceTemperatureK}K"
             else if (wb == WhiteBalanceMode.Auto) "AWB" else wb.shortLabel) { toggleChoice("wb") })
+        // Camera profile (DCP) of this lens: Default (the camera's own colour) or an imported profile.
+        val dcpProfiles = dcp?.profiles.orEmpty()
+        if (dcpProfiles.isNotEmpty()) {
+            val chosen = dcpProfiles.firstOrNull { it.file == dcp?.selectedFile }
+            add(X14uTile("dcp", "DCP", chosen != null,
+                text = chosen?.let { shortDcpName(it.name).take(7) } ?: "Def.") { toggleChoice("dcp") })
+        }
         val locationOn = tools.location && locationPermitted()
         add(X14uTile("location", "Location", locationOn, X14uIcons.Pin) {
             when {
@@ -248,6 +258,13 @@ internal fun X14uToolsPanel(
                 "hist" -> Triple(HistogramChoice.entries.map { it.label }, state.histogramChoice().ordinal) { i: Int ->
                     val c = HistogramChoice.entries[i]
                     dispatch(SetSingleScope(c.scope, c.mode ?: state.waveformMode))
+                }
+                "dcp" -> {
+                    val files = listOf<String?>(null) + dcp?.profiles.orEmpty().map { it.file }
+                    Triple(listOf("Default") + dcp?.profiles.orEmpty().map { shortDcpName(it.name) },
+                        files.indexOf(dcp?.selectedFile).coerceAtLeast(0)) { i: Int ->
+                        if (files[i] != dcp?.selectedFile) onSelectDcp(files[i])
+                    }
                 }
                 else -> Triple(WbPresets.map { it.label }, WbPresets.indexOf(wb)) { i: Int -> dispatch(SetWhiteBalanceMode(WbPresets[i])) }
             }
