@@ -194,6 +194,7 @@ class MainActivity : ComponentActivity() {
             val videoDiagnostics by captureViewModel.videoDiagnostics.collectAsStateWithLifecycle()
             val proUi by captureViewModel.proUi.collectAsStateWithLifecycle()
             val pano by captureViewModel.pano.collectAsStateWithLifecycle()
+            val horizonDebug by captureViewModel.horizonDebug.collectAsStateWithLifecycle()
             val tools by captureViewModel.tools.collectAsStateWithLifecycle()
             val stillsHint by captureViewModel.stillsHint.collectAsStateWithLifecycle()
             androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -251,6 +252,7 @@ class MainActivity : ComponentActivity() {
                     onSetPhotoAspect = captureViewModel::setPhotoAspect,
                     onToggleLevel = captureViewModel::toggleLevel,
                     onSetHorizonLock = captureViewModel::setHorizonLock,
+                    horizonDebug = horizonDebug,
                     onSetLocationTagging = captureViewModel::setLocationTagging,
                     onToggleLensMirror = captureViewModel::toggleLensMirror,
                     stillsHint = stillsHint,

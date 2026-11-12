@@ -194,6 +194,16 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Temporary: horizon lock diagnostics for the LEVEL LOCK badge (sensor, viewfinder route, record route). */
+    val horizonDebug: StateFlow<String> = kotlinx.coroutines.flow.flow {
+        while (true) {
+            val d = previewCoordinator.horizonLockDebug()
+            fun route(r: Int) = when (r) { 1 -> "lens"; 2 -> "pin"; else -> "off" }
+            emit("${horizonSensor.debugText} vf:${route(d[0])} rec:${route(d[1])} ${d[2] / 10f}°")
+            kotlinx.coroutines.delay(250L)
+        }
+    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(1000L), "")
+
     /** X14U video horizon lock: gravity in, roll and crop out to the native viewfinder and recorder. */
     private val horizonSensor = com.rawr.camera.integration.HorizonLockSensor(application) { roll, crop ->
         previewCoordinator.setHorizonLock(roll, crop)

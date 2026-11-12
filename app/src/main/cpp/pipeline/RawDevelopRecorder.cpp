@@ -673,6 +673,7 @@ RawDevelopRecordResult RawDevelopRecorder::record(const RawDevelopRecordInput& i
     if (in.diagnosticMode == 0u && in.previewWidth >= 2 && in.previewHeight >= 2) {
         if (const auto lock = rawrcam::geometry::horizonSampling(); lock.active) {
             rawrcam::geometry::LensDistortionModel m;
+            rawrcam::geometry::horizonViewfinderRoute().store(presented.lensWarp ? 1 : 2, std::memory_order_relaxed);
             if (presented.lensWarp) {
                 m = *presented.lensWarp;
             } else {
@@ -687,6 +688,8 @@ RawDevelopRecordResult RawDevelopRecorder::record(const RawDevelopRecordInput& i
             m.rollScale = lock.scale;
             horizonWarp = m;
             presented.lensWarp = &*horizonWarp;
+        } else {
+            rawrcam::geometry::horizonViewfinderRoute().store(0, std::memory_order_relaxed);
         }
     }
     monitor_.present(presented, previewCrop.x, previewCrop.y, previewCrop.width, previewCrop.height);

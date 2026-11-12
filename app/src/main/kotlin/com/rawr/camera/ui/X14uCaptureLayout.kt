@@ -615,7 +615,7 @@ internal fun X14uCaptureLayout(
                 // Video horizon lock on: a small badge, so the fixed crop isn't a surprise.
                 if (isVideo && tools.horizonLock) {
                     Text(
-                        "LEVEL LOCK",
+                        "LEVEL LOCK " + LocalCaptureExtras.current.horizonDebug,
                         fontFamily = X14uFont,
                         fontSize = dpText(10.5f),
                         color = CaptureColors.Accent,

@@ -313,6 +313,7 @@ class RawPreviewCoordinator(application: Application) : AutoCloseable {
     fun setDigitalZoom(crop: Float, upscale: Boolean) = postNative { native.setDigitalZoom(nativeHandle, crop, upscale) }
     /** Straight to native atomics (sensor thread, many times a second). */
     fun setHorizonLock(roll: Float, crop: Float) = native.setHorizonLock(roll, crop)
+    fun horizonLockDebug(): IntArray = runCatching { native.horizonLockDebug() }.getOrDefault(IntArray(3))
     fun setAePriorityDisabled(disabled: Boolean) = postNative { native.setAePriorityDisabled(nativeHandle, disabled) }
     fun setRawrAutoExposure(s: com.rawr.camera.settings.model.RawrAeSettings) = postNative {
         native.setRawrAutoExposure(

@@ -37,6 +37,10 @@ internal class HorizonLockSensor(
     private var primed = false
     private var frozenBase: Float? = null
     private var currentBase: Float? = null
+    private var lastOut = 0f
+    /** Temporary diagnostics for the badge: the sensor's roll, base and the correction sent (degrees). */
+    @Volatile var debugText: String = ""
+        private set
 
     /** Lock with [range] degrees (0 off, >= 90 full) and its [cropFactor]; [front] lenses see the roll mirrored. */
     @Synchronized
@@ -84,7 +88,12 @@ internal class HorizonLockSensor(
         currentBase = idleBase
         val base = if (recording) frozenBase ?: idleBase.also { frozenBase = it } else idleBase
         var residual = wrap180(theta - base)
-        if (range < 90) residual = softLimit(residual, range.toFloat())
+        // Far past a limited range (towards upside down) the correction holds instead of flipping sides at 180°.
+        if (range < 90) {
+            residual = if (abs(residual) > range + 45f) lastOut else softLimit(residual, range.toFloat())
+            lastOut = residual
+        }
+        debugText = "%.0f°/%.0f→%.1f".format(theta, base, residual)
         // The front camera looks back at the user, so the same roll turns its picture the other way.
         if (front) residual = -residual
         apply(Math.toRadians(residual.toDouble()).toFloat(), crop)
