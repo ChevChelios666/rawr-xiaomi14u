@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "camera/ShotHandover.h"
 #include "camera/WhiteBalanceMath.h"
 #include "color/WbDisplayEstimate.h"
 
@@ -48,6 +49,13 @@ void observeWhiteBalanceResult(CameraControlState& state, const metadata::FrameM
     // TRANSFORM_MATRIX seed, and re-seeding from it would feed the
     // manual rendering back into the baseline and drift.
     const bool inManualWb = state.whiteBalanceMode == WhiteBalanceControlMode::ManualTempTint;
+    // X14U 50 MP shot: what this frame was developed with, for carrying into the shot's session.
+    {
+        const auto& g = frame.colorCorrectionGainsRggb;
+        if (frame.colorCorrectionTransform.valid && g[0] > 0.0f && g[1] > 0.0f && g[2] > 0.0f && g[3] > 0.0f &&
+            std::isfinite(g[0]) && std::isfinite(g[1]) && std::isfinite(g[2]) && std::isfinite(g[3]))
+            shotHandover().noteApplied(g, frame.colorCorrectionTransform.rowMajor);
+    }
     if (!inManualWb && frame.colorCorrectionTransform.valid) {
         state.manualWhiteBalanceTransformSeed = frame.colorCorrectionTransform.rowMajor;
         state.hasManualWhiteBalanceTransformSeed = true;

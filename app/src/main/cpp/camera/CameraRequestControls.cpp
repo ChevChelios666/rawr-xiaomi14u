@@ -11,6 +11,7 @@
 #include "camera/CameraAePriority.h"
 #include "camera/CameraWorkarounds.h"
 #include "camera/CameraRequestCadence.h"
+#include "camera/ShotHandover.h"
 #include "camera/StillFocus.h"
 #include "camera/ViewfinderExposure.h"
 #include "camera/WhiteBalanceMath.h"
@@ -201,7 +202,24 @@ CameraControlApplyResult applyCameraControlState(CameraRequest* request, const C
     // the preset/auto look exactly. Absolute Helland gains are the fallback
     // when no entry baseline exists (e.g. entered before any HAL result).
     result.wbManualRequested = state.whiteBalanceMode == WhiteBalanceControlMode::ManualTempTint;
-    if (result.wbManualRequested && state.capabilities.manualGainsSupported &&
+    // X14U 50 MP shot: the shot's session uses the 12 MP view's white balance (gains and transform as applied there)
+    // instead of starting its own auto white balance cold.
+    const auto carried = shotHandover().carried();
+    if (carried && state.capabilities.manualGainsSupported) {
+        const uint8_t awb = ACAMERA_CONTROL_AWB_MODE_OFF;
+        const uint8_t color = ACAMERA_COLOR_CORRECTION_MODE_TRANSFORM_MATRIX;
+        result.wbStatus = request->setU8(ACAMERA_CONTROL_AWB_MODE, 1, &awb);
+        (void)request->setU8(ACAMERA_COLOR_CORRECTION_MODE, 1, &color);
+        std::array<float, 4> gains = carried->gains;
+        for (auto& g : gains) g = clampGain(g);
+        (void)request->setFloat(ACAMERA_COLOR_CORRECTION_GAINS, 4, gains.data());
+        RequestRational transform[9];
+        for (size_t i = 0; i < 9; ++i) {
+            transform[i].numerator = static_cast<int32_t>(std::lround(carried->transform[i] * 10000.0f));
+            transform[i].denominator = 10000;
+        }
+        (void)request->setRational(ACAMERA_COLOR_CORRECTION_TRANSFORM, 9, transform);
+    } else if (result.wbManualRequested && state.capabilities.manualGainsSupported &&
         state.hasManualWhiteBalanceTransformSeed) {
         const uint8_t awb = ACAMERA_CONTROL_AWB_MODE_OFF;
         const uint8_t color = ACAMERA_COLOR_CORRECTION_MODE_TRANSFORM_MATRIX;

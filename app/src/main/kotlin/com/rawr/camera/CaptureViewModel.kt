@@ -150,10 +150,6 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
 
     private var fullSizeJob: kotlinx.coroutines.Job? = null
 
-    private fun cameraSnapshot(): com.rawr.camera.integration.NativeCameraUiSnapshot? =
-        runCatching { com.rawr.camera.integration.NativeCameraUiSnapshot.parse(previewCoordinator.cameraControlSnapshot()) }
-            .getOrNull()
-
     /** The 50 MP shot (see [fullSizeShot]); a press while one runs is ignored. */
     fun shootFullSize() {
         if (fullSizeJob?.isActive == true) return
@@ -162,26 +158,23 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 panoStatusClear?.cancel()
                 panoStatusFlow.value = message
             }
+            // The viewfinder holds its last 12 MP frame, and the shot keeps the 12 MP view's white balance (a new
+            // session would start its own auto white balance cold: the ultra-wide's especially, at 12 fps).
+            suspend fun newSessionFrames(count: Long, timeoutMs: Long) = kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
+                while (previewCoordinator.heldNewFrames() < count) kotlinx.coroutines.delay(30L)
+            } != null
             try {
                 status("50 MP…")
-                val before = cameraSnapshot()?.generation ?: -1L
+                previewCoordinator.setViewfinderHold(true)
+                previewCoordinator.setCarryWhiteBalance(true)
                 previewCoordinator.setRunAsForShot(true)
-                // The 50 MP session is up once its own frames arrive.
-                val started = kotlinx.coroutines.withTimeoutOrNull(8_000L) {
-                    while (true) {
-                        val s = cameraSnapshot()
-                        if (s != null && s.generation != before && s.livePreviewGeneration == s.generation &&
-                            s.livePreviewTimestamp > 0L && !s.lensUnavailable) break
-                        kotlinx.coroutines.delay(40L)
-                    }
-                } != null
-                if (!started) {
+                // The 50 MP session is up once its own frames arrive; a few for exposure to settle.
+                if (!newSessionFrames(3, 8_000L)) {
                     status("50 MP didn't start")
                     kotlinx.coroutines.delay(2_500L)
                     return@launch
                 }
-                // A moment for exposure to settle on the new mode.
-                kotlinx.coroutines.delay(450L)
+                kotlinx.coroutines.delay(300L)
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     controller.dispatch(com.rawr.camera.architecture.TriggerCapture)
                 }
@@ -193,7 +186,12 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                     while (previewCoordinator.stillCaptureHoldsCamera()) kotlinx.coroutines.delay(50L)
                 }
             } finally {
+                // Back to 12 MP: still held (and on the carried white balance) until its first frames are in.
+                previewCoordinator.setViewfinderHold(true)
                 previewCoordinator.setRunAsForShot(false)
+                newSessionFrames(2, 4_000L)
+                previewCoordinator.setCarryWhiteBalance(false)
+                previewCoordinator.setViewfinderHold(false)
                 status(null)
             }
         }

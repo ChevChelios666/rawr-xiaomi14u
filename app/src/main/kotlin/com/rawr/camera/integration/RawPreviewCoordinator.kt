@@ -327,6 +327,9 @@ class RawPreviewCoordinator(application: Application) : AutoCloseable {
     fun setHorizonLock(roll: Float, crop: Float, natural: Boolean, viewRoll: Float, fit: Boolean) =
         native.setHorizonLock(roll, crop, natural, viewRoll, fit)
     fun setStabilizer(enabled: Boolean, focalNorm: Float) = native.setStabilizer(enabled, focalNorm)
+    fun setCarryWhiteBalance(on: Boolean) = native.setCarryWhiteBalance(on)
+    fun setViewfinderHold(on: Boolean) = native.setViewfinderHold(on)
+    fun heldNewFrames(): Long = native.heldNewFrames()
     fun pushStabilizerSample(timeNs: Long, pitch: Float, yaw: Float, roll: Float) =
         native.pushStabilizerSample(timeNs, pitch, yaw, roll)
     fun setAePriorityDisabled(disabled: Boolean) = postNative { native.setAePriorityDisabled(nativeHandle, disabled) }

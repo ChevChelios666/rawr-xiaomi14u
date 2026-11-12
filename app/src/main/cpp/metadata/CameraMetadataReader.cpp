@@ -345,6 +345,18 @@ std::optional<FrameMetadataSnapshot> readFrameMetadataSnapshot(const ACameraMeta
             out.lensShadingMap = colorFallback->lensShadingMap;
         }
     }
+    // X14U: with AWB off (manual / carried white balance) the HAL applies our gains but keeps reporting the neutral
+    // point of its last auto frame, which would cancel the chosen white balance in develop and in the DNG. The
+    // neutral is then the applied gains' own (camera RGB = 1 / gain, green 1).
+    if (out.awbMode == 0) {
+        const auto& g = out.colorCorrectionGainsRggb;
+        const float green = 0.5f * (g[1] + g[2]);
+        if (std::isfinite(g[0]) && std::isfinite(green) && std::isfinite(g[3]) && g[0] > 0.0f && green > 0.0f &&
+            g[3] > 0.0f) {
+            out.neutralColorPoint = {green / g[0], 1.0f, green / g[3]};
+            out.hasNeutralColorPoint = true;
+        }
+    }
     std::string validationError;
     if (!validate(out, &validationError)) {
         if (error) *error = validationError;

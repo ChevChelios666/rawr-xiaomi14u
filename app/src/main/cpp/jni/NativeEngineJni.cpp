@@ -1,5 +1,6 @@
 #include "geometry/HorizonLock.h"
 #include "geometry/Stabilizer.h"
+#include "camera/ShotHandover.h"
 #include "encoding/OutputAspect.h"
 #include <android/asset_manager_jni.h>
 #include <android/log.h>
@@ -222,6 +223,22 @@ extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreview
     JNIEnv*, jobject, jlong timeNs, jfloat pitch, jfloat yaw, jfloat roll) {
     if (!std::isfinite(pitch) || !std::isfinite(yaw) || !std::isfinite(roll)) return;
     rawrcam::geometry::stabilizerTrack().push({int64_t(timeNs), float(pitch), float(yaw), float(roll)});
+}
+
+// X14U 50 MP shot: carry the 12 MP view's white balance into the shot's session; hold the viewfinder meanwhile.
+extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setCarryWhiteBalance(
+    JNIEnv*, jobject, jboolean on) {
+    rawrcam::camera::shotHandover().setCarry(on == JNI_TRUE);
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setViewfinderHold(
+    JNIEnv*, jobject, jboolean on) {
+    rawrcam::camera::shotHandover().setHold(on == JNI_TRUE);
+}
+
+// Frames from sessions started since the hold was set (the shot's session is up once it counts some).
+extern "C" JNIEXPORT jlong JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_heldNewFrames(JNIEnv*, jobject) {
+    return jlong(rawrcam::camera::shotHandover().newFrames());
 }
 
 // X14U: photo aspect ratio (long:short; 0 = native) for the next captures.

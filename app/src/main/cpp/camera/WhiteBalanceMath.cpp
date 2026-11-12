@@ -40,13 +40,13 @@ std::array<float, 4> whiteBalanceGainsForTempTint(int32_t temperatureK, int32_t 
     illuminantG = std::clamp(illuminantG, 1.0f, 255.0f);
     illuminantB = std::clamp(illuminantB, 1.0f, 255.0f);
     // Ride tint on the red/blue pair, then renormalize the triplet by its
-    // minimum so all gains land in [1.0, 4.0]. Positive tint pushes green
-    // (negative magenta), matching the +/-50 tint convention; the
-    // quarter-stop span keeps the slider photographic. Renormalization (not
+    // minimum so all gains land in [1.0, 4.0]. X14U: positive tint is magenta
+    // (red and blue up against green) like the ruler and Lightroom, negative
+    // green; +/-50 spans half a stop. Renormalization (not
     // a fixed G=1) is what keeps tint visible: otherwise the 1.0 clamp floor
     // would pin R across the whole warm range and swallow the axis.
     const float clampedTint = static_cast<float>(std::clamp(tint, kWbTintMin, kWbTintMax));
-    const float tintFactor = std::pow(2.0f, -clampedTint / 50.0f * 0.25f);
+    const float tintFactor = std::pow(2.0f, clampedTint / 50.0f * 0.5f);
     const float rawR = (illuminantG / illuminantR) * tintFactor;
     const float rawB = (illuminantG / illuminantB) * tintFactor;
     const float norm = std::min({rawR, rawB, 1.0f});

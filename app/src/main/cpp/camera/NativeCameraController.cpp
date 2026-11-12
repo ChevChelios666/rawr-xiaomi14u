@@ -1,3 +1,4 @@
+#include "camera/ShotHandover.h"
 #include "camera/NativeCameraController.h"
 #include "camera/JavaCameraDriver.h"
 #include "capture/BurstLimits.h"
@@ -1409,6 +1410,10 @@ struct NativeCameraController::Impl final : CameraEventSink {
             }
             diag(line);
         }
+        // X14U 50 MP shot: the viewfinder holds its last 12 MP frame while the shot's session runs.
+        if (shotHandover().noteFrame(actions.frame->cameraContext ? actions.frame->cameraContext->cameraContextGeneration
+                                                                  : 0))
+            actions.frame->hidePreview = true;
         const uint64_t longTag = longExposureTag.load(std::memory_order_relaxed);
         // Freeze the viewfinder on the press until a single long frame is in,
         // and never show it (burst frames must reach the ZSL ring).
