@@ -49,7 +49,10 @@ jobs:
         run: ./gradlew :app:compileDebugUnitTestKotlin --continue 2>&1 | tee compile.log; exit ${PIPESTATUS[0]}
       - name: Compile native code (C++)
         if: success()
-        run: ./gradlew :app:externalNativeBuildDebug 2>&1 | tee native.log | grep -E "error:|FAILED|BUILD" ; exit ${PIPESTATUS[0]}
+        run: |
+          ./gradlew :app:externalNativeBuildDebug 2>&1 | tee native.log | grep -E "error:|FAILED|BUILD"; status=${PIPESTATUS[0]}
+          if [ $status -ne 0 ]; then grep -nE "CMake Error|FATAL|[Ee]rror|failed" -A6 native.log | grep -v "Werror" | tail -120; fi
+          exit $status
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v7
