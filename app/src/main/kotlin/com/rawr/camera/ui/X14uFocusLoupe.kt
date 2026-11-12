@@ -68,8 +68,12 @@ internal fun X14uFocusLoupe(
     BoxWithConstraints(modifier.fillMaxSize()) {
         val fw = maxWidth
         val fh = maxHeight
-        val w = fw * .56f
-        val h = w * .66f
+        // Landscape: the window turns with the phone (tall on screen), and so does the magnified spot's box.
+        val landscape = orientation == Orientation.Landscape
+        val long = fw * .56f
+        val short = long * .66f
+        val w = if (landscape) short else long
+        val h = if (landscape) long else short
         val margin = 8.dp
         val zoom = settings.zoom.coerceAtLeast(1).toFloat()
         // Source window, kept inside the frame.
@@ -93,7 +97,7 @@ internal fun X14uFocusLoupe(
         val values = floatArrayOf(
             x / fw, y / fh, w / fw, h / fh,
             window[0], window[1], window[2], window[3],
-            (12.dp / h)
+            (12.dp / minOf(w, h))
         )
         val latestOnLoupe by rememberUpdatedState(preview.onLoupe)
         LaunchedEffect(values.toList(), settings.meter) { latestOnLoupe(values, settings.meter) }
@@ -168,6 +172,8 @@ internal fun X14uFocusLoupe(
                 .testTag("x14u_focus_loupe")
                 .semantics { contentDescription = "Focus loupe, ${settings.zoom} times" }
         ) {
+          // The labels, close button and meter sit as the phone is held.
+          Box(Modifier.fillMaxSize().uprightLayoutInLandscape(orientation)) {
             Text(
                 "${settings.zoom}×",
                 fontFamily = X14uFont,
@@ -176,7 +182,6 @@ internal fun X14uFocusLoupe(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(7.dp)
-                    .uprightLayoutInLandscape(orientation)
                     .background(Color.Black.copy(alpha = .55f), RoundedCornerShape(7.dp))
                     .padding(horizontal = 7.dp, vertical = 2.dp)
             )
@@ -207,6 +212,7 @@ internal fun X14uFocusLoupe(
                 )
             }
             if (settings.meter) X14uFocusMeter(preview, distanceLabel, Modifier.align(Alignment.BottomCenter))
+          }
         }
     }
 }

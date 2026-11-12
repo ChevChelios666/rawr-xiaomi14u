@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -62,7 +63,7 @@ import kotlin.math.atan2
 import kotlin.math.ceil
 import kotlin.math.hypot
 
-/** Pano sweep direction, as seen on the viewfinder. */
+/** Pano sweep direction, as the phone is held (landscape: see [PanoSet.screenDirection]). */
 internal enum class PanoDirection(val arrow: String) { Right("→"), Left("←"), Up("↑"), Down("↓") }
 
 /** What the set covers: one row (or column), or a 3 × 3 grid around the first frame. */
@@ -78,6 +79,19 @@ internal enum class PanoShape(val label: String) { Wide("Wide"), Grid("3×3") }
 @Stable
 internal class PanoSet {
     var direction by mutableStateOf(PanoDirection.Right)
+    /** Held in landscape (followed until a set starts, then kept for the set). */
+    var landscape by mutableStateOf(false)
+    /**
+     * [direction] on the screen (portrait axes): in landscape the top as held is the screen's right edge, so a sweep
+     * to the right as held runs down the screen.
+     */
+    val screenDirection: PanoDirection
+        get() = if (!landscape) direction else when (direction) {
+            PanoDirection.Right -> PanoDirection.Down
+            PanoDirection.Left -> PanoDirection.Up
+            PanoDirection.Up -> PanoDirection.Right
+            PanoDirection.Down -> PanoDirection.Left
+        }
     var overlap by mutableIntStateOf(30)
     var shape by mutableStateOf(PanoShape.Wide)
     /** Wide only: stop by itself after this many degrees (0 = until the stop button). */
@@ -110,7 +124,8 @@ internal class PanoSet {
 
     val inSet: Boolean get() = frames > 0 || arming
     /** Up / down sweeps measure the turn as pitch; the rest as yaw. */
-    val vertical: Boolean get() = shape == PanoShape.Wide && (direction == PanoDirection.Up || direction == PanoDirection.Down)
+    val vertical: Boolean
+        get() = shape == PanoShape.Wide && (screenDirection == PanoDirection.Up || screenDirection == PanoDirection.Down)
 
     fun frameTag(n: Int = frames) = "_PANO${tag}_%02d".format(n)
 
@@ -146,7 +161,7 @@ internal class PanoSet {
             PanoShape.Wide -> {
                 val step = if (vertical) stepY else stepX
                 val span = if (vertical) fovY else fovX
-                val sign = if (direction == PanoDirection.Right || direction == PanoDirection.Up) 1f else -1f
+                val sign = if (screenDirection == PanoDirection.Right || screenDirection == PanoDirection.Up) 1f else -1f
                 val count = when {
                     stopAt <= 0 -> 72
                     stopAt >= 360 -> ceil(360f / step).toInt()
@@ -293,6 +308,9 @@ internal fun X14uPanoOverlay(
     modifier: Modifier = Modifier
 ) {
     val haptics = LocalCaptureHaptics.current
+    val landscape = orientation == Orientation.Landscape
+    // Directions follow how the phone is held, fixed once a set starts.
+    LaunchedEffect(landscape, set.inSet) { if (!set.inSet) set.landscape = landscape }
     var aim by remember { mutableStateOf<PanoAimState?>(null) }
     val flash = remember { Animatable(0f) }
     val frame by rememberUpdatedState(onFrame)
@@ -369,7 +387,8 @@ internal fun X14uPanoOverlay(
                 inside -> "hold still"
                 else -> {
                     val far = hypot(errA, errB)
-                    "%s %.0f°".format(arrowFor(dot), far)
+                    // The badge turns with the phone, so the arrow is as held.
+                    "%s %.0f°".format(arrowFor(if (set.landscape) Offset(dot.y, -dot.x) else dot), far)
                 }
             }
             aim = PanoAimState(dot, inside, hold, message)
@@ -404,18 +423,30 @@ internal fun X14uPanoOverlay(
                 }
                 if (flash.value > 0f) drawRect(Color.White.copy(alpha = flash.value))
             }
-            Row(Modifier.align(Alignment.TopEnd).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                listOf("AE-L", "AF-L", "WB-L").forEach { PanoBadge(it, CaptureColors.Accent, orientation) }
+            // Placed as the phone is held: in landscape the top is the screen's right edge, the bottom its left.
+            if (landscape) {
+                Column(Modifier.align(Alignment.TopEnd).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf("AE-L", "AF-L", "WB-L").forEach { PanoBadge(it, CaptureColors.Accent, orientation) }
+                }
+            } else {
+                Row(Modifier.align(Alignment.TopEnd).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf("AE-L", "AF-L", "WB-L").forEach { PanoBadge(it, CaptureColors.Accent, orientation) }
+                }
             }
-            PanoProgress(set, Modifier.align(Alignment.TopCenter).padding(top = 36.dp))
+            PanoProgress(
+                set,
+                if (landscape) Modifier.align(Alignment.CenterEnd).padding(end = 36.dp).uprightLayoutInLandscape(orientation)
+                else Modifier.align(Alignment.TopCenter).padding(top = 36.dp)
+            )
             if (state != null) {
-                Box(Modifier.align(Alignment.Center).offset(y = 46.dp)) {
+                // Below the centre as held, clear of the level line.
+                Box(Modifier.align(Alignment.Center).offset(x = if (landscape) (-46).dp else 0.dp, y = if (landscape) 0.dp else 46.dp)) {
                     PanoBadge(state.message, if (state.inside) green else Color.White, orientation)
                 }
             }
         } else {
-            // Above the centre, clear of the level line.
-            Box(Modifier.align(Alignment.Center).offset(y = (-56).dp)) {
+            // Above the centre as held, clear of the level line.
+            Box(Modifier.align(Alignment.Center).offset(x = if (landscape) 56.dp else 0.dp, y = if (landscape) 0.dp else (-56).dp)) {
                 PanoBadge(if (set.arming) "Hold still…" else "Aim, then tap the shutter to start", Color.White, orientation)
             }
         }
@@ -506,7 +537,8 @@ internal fun X14uPanoControls(set: PanoSet, enabled: Boolean) {
     ) {
         val locked = set.inSet || !enabled
         val wide = set.shape == PanoShape.Wide
-        if (wide) PanoChip(set.direction.arrow, active = false, enabled = !locked) {
+        // The chip stays unturned: in landscape it shows the arrow that points the held direction on screen.
+        if (wide) PanoChip(set.screenDirection.arrow, active = false, enabled = !locked) {
             set.direction = PanoDirection.entries[(set.direction.ordinal + 1) % PanoDirection.entries.size]
         }
         PanoChip("${set.overlap}%", active = false, enabled = !locked) {

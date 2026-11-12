@@ -276,7 +276,7 @@ internal fun X14uToolsPanel(
                         label,
                         fontFamily = X14uFont,
                         fontWeight = if (on) FontWeight.Medium else FontWeight.Normal,
-                        fontSize = dpText(16f),
+                        fontSize = dpText(if (orientation == Orientation.Landscape) 13f else 16f),
                         maxLines = 1,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         color = if (on) CaptureColors.Accent else Color.White.copy(alpha = .9f),
@@ -334,8 +334,9 @@ private fun X14uTileView(tile: X14uTile, open: Boolean, orientation: Orientation
     ) {
         // Landscape: the tile's content turns as a whole, so its label wraps within the tile's height.
         Column(Modifier.uprightLayoutInLandscape(orientation), horizontalAlignment = Alignment.CenterHorizontally) {
+            val landscape = orientation == Orientation.Landscape
             if (tile.text != null) {
-                Text(tile.text, fontFamily = X14uFont, fontSize = dpText(21f), maxLines = 1, color = color)
+                Text(tile.text, fontFamily = X14uFont, fontSize = dpText(if (landscape) 18f else 21f), maxLines = 1, color = color)
             } else if (tile.icon != null) {
                 Icon(tile.icon, contentDescription = null, tint = color, modifier = Modifier.size(26.dp))
             }
@@ -343,8 +344,8 @@ private fun X14uTileView(tile: X14uTile, open: Boolean, orientation: Orientation
             Text(
                 label,
                 fontFamily = X14uFont,
-                fontSize = dpText(12.5f),
-                lineHeight = dpText(15f),
+                fontSize = dpText(if (landscape) 11f else 12.5f),
+                lineHeight = dpText(if (landscape) 13f else 15f),
                 maxLines = 2,
                 textAlign = TextAlign.Center,
                 color = if (tile.on || open) CaptureColors.Accent else Color.White.copy(alpha = .75f),

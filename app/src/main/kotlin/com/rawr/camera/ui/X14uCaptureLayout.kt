@@ -906,6 +906,8 @@ private fun X14uRoundButton(
     size: Dp = 36.dp,
     iconScale: Float = .55f,
     onLongClick: (() -> Unit)? = null,
+    /** Turn the icon upright in landscape (shutter row); the lens row's round buttons don't. */
+    turn: Boolean = true,
     onClick: () -> Unit
 ) {
     val haptics = LocalCaptureHaptics.current
@@ -935,7 +937,7 @@ private fun X14uRoundButton(
                 highlighted -> CaptureColors.Accent
                 else -> Color.White.copy(alpha = .9f)
             },
-            modifier = Modifier.size(size * iconScale).uprightInLandscape(orientation)
+            modifier = Modifier.size(size * iconScale).then(if (turn) Modifier.uprightInLandscape(orientation) else Modifier)
         )
     }
 }
@@ -966,8 +968,7 @@ private fun X14uRawrAeToggle(on: Boolean, enabled: Boolean, orientation: Orienta
                 !enabled -> Color.White.copy(alpha = .25f)
                 on -> CaptureColors.Accent
                 else -> Color.White.copy(alpha = .5f)
-            },
-            modifier = Modifier.uprightInLandscape(orientation)
+            }
         )
     }
 }
@@ -1002,7 +1003,8 @@ private fun X14uLensRow(
             X14uRoundButton(
                 X14uIcons.Look, "Look: profile, tone and highlights", orientation,
                 open = panel == X14uPanel.Look,
-                highlighted = groups.any { it != LensOverrides.GROUP_AE }
+                highlighted = groups.any { it != LensOverrides.GROUP_AE },
+                turn = false
             ) { onTogglePanel(X14uPanel.Look) }
         }
         Box(Modifier.align(Alignment.CenterEnd)) {
@@ -1010,14 +1012,15 @@ private fun X14uLensRow(
                 Icons.Outlined.Exposure, "Exposure: auto exposure and metering. Long press for exposure settings.", orientation,
                 open = panel == X14uPanel.Exposure,
                 highlighted = LensOverrides.GROUP_AE in groups,
-                onLongClick = extras.onOpenExposureSettings
+                onLongClick = extras.onOpenExposureSettings,
+                turn = false
             ) { onTogglePanel(X14uPanel.Exposure) }
         }
         val pill = RoundedCornerShape(18.dp)
         Box(Modifier.align(Alignment.Center).padding(horizontal = 42.dp)) {
         Row(
             Modifier
-                .height(if (orientation == Orientation.Landscape) 44.dp else 36.dp)
+                .height(36.dp)
                 .background(Color.Black.copy(alpha = .4f), pill)
                 .padding(horizontal = 4.dp)
                 .horizontalScroll(rememberScrollState()),
@@ -1083,10 +1086,9 @@ private fun X14uLensRow(
 
 @Composable
 private fun PillItem(text: String, on: Boolean, orientation: Orientation, width: Dp?, onClick: () -> Unit) {
-    // Landscape: the item turns as a whole, with a short label so it fits the pill's height.
-    val landscape = orientation == Orientation.Landscape
+    // Panel tabs stay as they are in landscape (user's choice).
     Text(
-        if (landscape) pillShortLabel(text) else text,
+        text,
         fontFamily = X14uFont,
         fontWeight = if (on) FontWeight.Medium else FontWeight.Normal,
         fontSize = dpText(12f),
@@ -1101,19 +1103,10 @@ private fun PillItem(text: String, on: Boolean, orientation: Orientation, width:
         ),
         textAlign = TextAlign.Center,
         modifier = Modifier
-            .uprightLayoutInLandscape(orientation)
-            .then(if (width != null && !landscape) Modifier.width(width) else Modifier)
+            .then(if (width != null) Modifier.width(width) else Modifier)
             .captureClickable(shape = RoundedCornerShape(14.dp)) { onClick() }
-            .padding(horizontal = if (landscape) 3.dp else 10.dp, vertical = 10.dp)
+            .padding(horizontal = 10.dp, vertical = 10.dp)
     )
-}
-
-private fun pillShortLabel(text: String): String = when (text) {
-    "PROFILE" -> "PROF"
-    "HIGHLIGHTS" -> "HL"
-    "RAWR AE" -> "R AE"
-    "DEVICE AE" -> "D AE"
-    else -> text
 }
 
 // ---- Exposure row ----------------------------------------------------------------------------------------------
@@ -1229,20 +1222,15 @@ private fun X14uCellView(
             },
         contentAlignment = Alignment.Center
     ) {
-        // Landscape: the cell turns as a whole, so a long value wraps / ends in … within the row's height.
-        val landscape = orientation == Orientation.Landscape
-        Column(
-            Modifier.uprightLayoutInLandscape(orientation),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
+        // Panel cells stay as they are in landscape (user's choice).
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 cell.value,
                 fontFamily = X14uFont,
-                fontSize = dpText(if (compact || landscape) 14f else 16f),
-                lineHeight = dpText(if (compact || landscape) 16f else 19f),
-                maxLines = if (landscape) 2 else 1,
-                overflow = if (landscape) TextOverflow.Ellipsis else TextOverflow.Clip,
-                textAlign = TextAlign.Center,
+                fontSize = dpText(if (compact) 14f else 16f),
+                lineHeight = dpText(if (compact) 16f else 19f),
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
                 color = when {
                     isOpen -> CaptureColors.Accent
                     !cell.enabled -> Color.White.copy(alpha = .35f)
@@ -1895,8 +1883,7 @@ private fun X14uTextRoundButton(text: String, active: Boolean, orientation: Orie
     ) {
         Text(
             text, fontFamily = X14uFont, fontWeight = FontWeight.Medium, fontSize = dpText(if (text.length > 2) 9.5f else 12f),
-            maxLines = 1, color = if (active) CaptureColors.Accent else Color.White.copy(alpha = .85f),
-            modifier = Modifier.uprightInLandscape(orientation)
+            maxLines = 1, color = if (active) CaptureColors.Accent else Color.White.copy(alpha = .85f)
         )
     }
 }
@@ -1945,8 +1932,7 @@ private fun X14uChoiceChips(
             val shape = RoundedCornerShape(17.dp)
             Box(
                 Modifier
-                    // Landscape: the chip turns as a whole (a long name ends in … within the row's height).
-                    .uprightLayoutInLandscape(orientation)
+                    // Chips stay as they are in landscape (user's choice).
                     .height(34.dp)
                     .widthIn(min = 44.dp)
                     .background(if (isSelected) CaptureColors.Accent.copy(alpha = .18f) else Color.White.copy(alpha = .07f), shape)

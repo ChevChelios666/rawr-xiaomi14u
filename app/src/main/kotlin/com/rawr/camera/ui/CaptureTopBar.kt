@@ -75,7 +75,9 @@ internal fun CaptureTopBar(
                     description = "Video resolution ${state.videoResolution.label}. Tap to change.",
                     enabled = !videoLocked,
                     orientation = state.orientation,
+                    // X14U: resolution and frame rate stay as they are in landscape.
                     rotateLabel = false,
+                    rotateIcon = false,
                     onClick = {
                         haptics.selection()
                         dispatch(CycleVideoResolution)
@@ -90,6 +92,8 @@ internal fun CaptureTopBar(
                     description = "Video frame rate ${state.videoFps} fps. Tap to change.",
                     enabled = !videoLocked,
                     orientation = state.orientation,
+                    rotateLabel = false,
+                    rotateIcon = false,
                     onClick = {
                         haptics.selection()
                         dispatch(CycleVideoFps)
@@ -286,6 +290,7 @@ private fun VideoTopBarChoice(
     enabled: Boolean,
     orientation: com.rawr.camera.model.Orientation,
     rotateLabel: Boolean = true,
+    rotateIcon: Boolean = true,
     onClick: () -> Unit
 ) {
     TextButton(
@@ -300,7 +305,7 @@ private fun VideoTopBarChoice(
                 icon,
                 contentDescription = null,
                 tint = if (enabled) CaptureColors.Accent else CaptureColors.Muted,
-                modifier = Modifier.size(20.dp).uprightInLandscape(orientation)
+                modifier = Modifier.size(20.dp).then(if (rotateIcon) Modifier.uprightInLandscape(orientation) else Modifier)
             )
             Text(
                 label,
