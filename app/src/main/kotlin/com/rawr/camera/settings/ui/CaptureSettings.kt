@@ -258,6 +258,15 @@ internal fun JpegSettings(state: SettingsUiState, dispatch: SettingsDispatch) {
                 else "Zoomed JPEGs keep the crop's own pixels (smaller files)",
                 onCheckedChange = { dispatch.invoke(SetZoomUpscale(it)) }
             )
+            SettingDivider()
+            SettingsSwitchRow(
+                title = "Merge panoramas on the phone",
+                checked = state.values.panoMerge,
+                supportingText = if (state.values.panoMerge) "When a Pano set ends, its JPEG frames are stitched into one " +
+                    "panorama (saved next to them, frames kept). Needs JPEG or DNG + JPEG."
+                else "Pano frames are kept for merging elsewhere (Lightroom Photo Merge)",
+                onCheckedChange = { dispatch.invoke(com.rawr.camera.settings.architecture.SetPanoMerge(it)) }
+            )
         }
     }
 }

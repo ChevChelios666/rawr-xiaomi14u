@@ -47,16 +47,33 @@ internal fun VideoEncoderSettings(state: SettingsUiState, dispatch: SettingsDisp
             description = "Lock keeps the saved video level while you move (Level tile → Lock, Video only); the " +
                 "viewfinder behaves like a stock camera. The picture is zoomed in by a fixed " +
                 "amount so the turned frame stays full: the wider the range, the more it crops. Past the range the " +
-                "horizon follows the phone. Auto: Full on every lens."
+                "horizon follows the phone. ±15° is the default."
         ) {
-            com.rawr.camera.settings.model.HorizonLockRange.entries.forEachIndexed { index, range ->
+            val shownRange = state.values.horizonLockRange.resolved(1f)
+            com.rawr.camera.settings.model.HorizonLockRange.entries
+                .filter { it != com.rawr.camera.settings.model.HorizonLockRange.Auto }
+                .forEachIndexed { index, range ->
                 if (index > 0) SettingDivider()
                 SettingsSelectionRow(
-                    title = if (range == com.rawr.camera.settings.model.HorizonLockRange.Auto) range.label
-                    else "${range.label} · %.2fx crop".format(range.crop),
-                    selected = state.values.horizonLockRange == range,
+                    title = "${range.label} · %.2fx crop".format(range.crop),
+                    selected = shownRange == range,
                     enabled = true
                 ) { dispatch.invoke(com.rawr.camera.settings.architecture.SetHorizonLockRange(range)) }
+            }
+        }
+        SettingsGroup(
+            title = "Shutter display",
+            description = "How the video shutter reads: as a time (1/60) or as a shutter angle (180° = half the " +
+                "frame time). The camera is set by angle either way, so a choice keeps its look when the frame rate " +
+                "changes."
+        ) {
+            listOf(false to "Time · 1/60", true to "Angle · 180°").forEachIndexed { index, (angle, title) ->
+                if (index > 0) SettingDivider()
+                SettingsSelectionRow(
+                    title = title,
+                    selected = state.values.videoShutterAngle == angle,
+                    enabled = true
+                ) { dispatch.invoke(com.rawr.camera.settings.architecture.SetVideoShutterAngle(angle)) }
             }
         }
         SettingsGroup(

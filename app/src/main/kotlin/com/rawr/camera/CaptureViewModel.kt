@@ -108,6 +108,29 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         if (!on) com.rawr.camera.storage.CaptureFileNames.setNextStillSuffix("")
     }
 
+    /** X14U Pano merge on the phone: progress and result for the viewfinder (clears a few seconds after the end). */
+    private val panoStatusFlow = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    val panoStatus: StateFlow<String?> = panoStatusFlow
+    private val panoMerger by lazy { com.rawr.camera.pano.PanoMerger(getApplication()) }
+    private var panoStatusClear: kotlinx.coroutines.Job? = null
+
+    fun mergePano(tag: String, frames: Int, startedAtMillis: Long) {
+        if (!latestSettings.panoMerge || frames < 2 || tag.isEmpty()) return
+        viewModelScope.launch {
+            panoMerger.merge(tag, frames, startedAtMillis) { message ->
+                panoStatusClear?.cancel()
+                panoStatusFlow.value = message
+                // Progress stays; a result clears after a few seconds.
+                if (message != null && !message.endsWith("…")) {
+                    panoStatusClear = viewModelScope.launch {
+                        kotlinx.coroutines.delay(5_000L)
+                        panoStatusFlow.value = null
+                    }
+                }
+            }
+        }
+    }
+
     /**
      * Pano undo: removes the files of the frame tagged [tag] ("_PANO2231_03") that this app saved. A merge may still
      * be writing them, so it looks again a few times over the next two minutes.
@@ -464,6 +487,12 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 if (pano) com.rawr.camera.settings.model.PhotoAspect.Native.nativeRatio else aspect.nativeRatio
             }.distinctUntilChanged().collect { previewCoordinator.setOutputAspect(it) }
         }
+        // Video shutter display (time or angle) for the shutter labels.
+        viewModelScope.launch {
+            settingsEditor.values.map { it.videoShutterAngle }.distinctUntilChanged().collect {
+                com.rawr.camera.integration.NativeCapabilityProjection.videoShutterAsAngle = it
+            }
+        }
         // Video horizon lock: on in Video with the setting, range by lens; Full freezes its framing while recording.
         // Stabilisation shares its fixed crop: on top of a limited range's, inside Full's.
         viewModelScope.launch {
@@ -477,7 +506,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 recording.state.map { it.recording }.distinctUntilChanged()
             ) { h, (video, lens), rec ->
                 val factor = com.rawr.camera.settings.model.ZoomChain.factorOf(lens) ?: 1f
-                // Follow uses ±15° (about 1.4x); Lock the chosen range (Auto: Full on every lens).
+                // Follow uses ±15° (about 1.4x); Lock the chosen range (default ±15°).
                 val resolved = if (h.follow > 0f) com.rawr.camera.settings.model.HorizonLockRange.Deg15
                     else h.range.resolved(factor)
                 val degrees = if ((h.lock || h.follow > 0f) && video) resolved.degrees else 0

@@ -103,7 +103,11 @@ internal class PanoSet {
         private set
 
     /** Set name part, from its start time ("2231"). */
-    private var tag = ""
+    var tag = ""
+        private set
+    /** When the set started (for finding its frames to merge). */
+    var startedAtMillis = 0L
+        private set
     /** Phone orientation at frame 1; every target is an angle from it. */
     var reference: FloatArray? = null
         private set
@@ -133,6 +137,7 @@ internal class PanoSet {
     fun start(state: CaptureUiState, dispatch: CaptureDispatch, lensFactor: Float) {
         saved = Saved(state.exposureControl.mode, state.focus.mode, state.whiteBalanceMode)
         tag = java.text.SimpleDateFormat("HHmm", java.util.Locale.US).format(java.util.Date())
+        startedAtMillis = System.currentTimeMillis()
         fovX = fov(lensFactor, alongWidth = true)
         fovY = fov(lensFactor, alongWidth = false)
         layOut()

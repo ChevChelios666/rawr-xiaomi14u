@@ -60,6 +60,8 @@ android {
             version = "3.31.6"
         }
     }
+    // X14U Pano merge: OpenCV's prebuilt library needs the shared C++ runtime (prefab checks it).
+    defaultConfig { externalNativeBuild { cmake { arguments += "-DANDROID_STL=c++_shared" } } }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -71,6 +73,8 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        // X14U: OpenCV's native library and headers come in through prefab (Pano merge).
+        prefab = true
     }
 
     sourceSets {
@@ -182,6 +186,8 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.2.1")
     implementation("androidx.media3:media3-muxer:1.10.0")
     implementation("sh.calvin.reorderable:reorderable:3.0.0")
+    // X14U Pano merge on the phone (cv::Stitcher, used from native code only; Apache-2.0).
+    implementation("org.opencv:opencv:4.10.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation(kotlin("test"))

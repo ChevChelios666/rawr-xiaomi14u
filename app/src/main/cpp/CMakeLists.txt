@@ -426,3 +426,11 @@ set_source_files_properties(encoding/jpeg/JpegCaptureWriter.cpp encoding/jpeg/Im
 # allocation/copy/serialization paths in device Debug builds too.
 set_source_files_properties(capture/persistence/BurstJob.cpp capture/persistence/CaptureJob.cpp
   PROPERTIES COMPILE_OPTIONS "$<$<CONFIG:Debug>:-O2>")
+
+# X14U Pano merge: OpenCV's stitcher (org.opencv:opencv AAR through prefab) in its own library, loaded only when a
+# set is merged, so the camera never depends on it.
+find_package(OpenCV REQUIRED CONFIG)
+add_library(rawrcam_pano SHARED pano/PanoStitchJni.cpp)
+target_compile_features(rawrcam_pano PRIVATE cxx_std_17)
+target_link_libraries(rawrcam_pano PRIVATE OpenCV::opencv_java4 log)
+target_compile_options(rawrcam_pano PRIVATE -O2)

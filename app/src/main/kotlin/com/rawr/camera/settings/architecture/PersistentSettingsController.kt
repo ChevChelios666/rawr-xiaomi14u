@@ -102,7 +102,7 @@ class PersistentSettingsController(
             is SetSelfTimer, is SetLocationTagging, is SetOisPreference,
             is SetAntiFlicker, is SetExposureStep,
             is SetHighlightProtection, is SetAutoKeyExposure, is SetLocalTone, is SetControlSurfaceStyle, is SetCaptureControlLayout,
-            is SetGridMode, is SetFocusLoupe, is SetZoomUpscale, is SetZoomMergeAlgorithm, is SetVideoHorizonLock, is SetHorizonLockRange, is SetHorizonSmoothing, is SetVideoStabilize, is SetViewfinderDivisor, is SetLensProfiles -> reduceCaptureSettings(state, action)
+            is SetGridMode, is SetFocusLoupe, is SetZoomUpscale, is SetZoomMergeAlgorithm, is SetVideoHorizonLock, is SetHorizonLockRange, is SetHorizonSmoothing, is SetVideoStabilize, is SetVideoShutterAngle, is SetPanoMerge, is SetViewfinderDivisor, is SetLensProfiles -> reduceCaptureSettings(state, action)
 
         }
 }

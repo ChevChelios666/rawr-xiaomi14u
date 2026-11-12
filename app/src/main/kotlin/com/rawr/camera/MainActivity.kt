@@ -194,6 +194,7 @@ class MainActivity : ComponentActivity() {
             val videoDiagnostics by captureViewModel.videoDiagnostics.collectAsStateWithLifecycle()
             val proUi by captureViewModel.proUi.collectAsStateWithLifecycle()
             val pano by captureViewModel.pano.collectAsStateWithLifecycle()
+            val panoStatus by captureViewModel.panoStatus.collectAsStateWithLifecycle()
             val tools by captureViewModel.tools.collectAsStateWithLifecycle()
             val stillsHint by captureViewModel.stillsHint.collectAsStateWithLifecycle()
             androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -261,6 +262,8 @@ class MainActivity : ComponentActivity() {
                     pano = pano,
                     onSetPano = captureViewModel::setPano,
                     onPanoUndo = captureViewModel::deletePanoFrame,
+                    onPanoMerge = captureViewModel::mergePano,
+                    panoStatus = panoStatus,
                     onToggleAudioMuted = captureViewModel::toggleAudioMuted,
                     onOpenVideoSettings = {
                         startActivity(

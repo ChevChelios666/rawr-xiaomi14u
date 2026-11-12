@@ -37,6 +37,9 @@ internal object NativeCapabilityProjection {
         )
     }
 
+    /** X14U: video shutter labels as angles (Settings → Video → Shutter display); set from the settings. */
+    @Volatile var videoShutterAsAngle = false
+
     fun project(s: NativeCameraUiSnapshot, videoFps: Int? = null): NativeExposureProjection {
         val effectiveIsoMin = s.sensitivityMin
         val effectiveIsoMax = s.sensitivityMax
@@ -70,9 +73,12 @@ internal object NativeCapabilityProjection {
         } else if (videoAngles != null) {
             val nsForAngle = videoChoices!!.associate { it.degrees to it.exposureTimeNs }
             fun angleId(angle: Double): String = "ssa:${angleLabel(angle)}"
-            // X14U: shown as exposure time (1/50), like photos; the angle stays the command underneath.
+            // X14U: shown as exposure time (1/50) like photos, or as the angle (Settings → Video → Shutter display);
+            // the angle stays the command underneath.
             ssCandidates = videoAngles.map {
-                ExposureCandidate(angleId(it), ExposureFormat.formatShutterNs(nsForAngle.getValue(it)))
+                ExposureCandidate(angleId(it),
+                    if (videoShutterAsAngle) ExposureFormat.formatShutterDegree(it)
+                    else ExposureFormat.formatShutterNs(nsForAngle.getValue(it)))
             }
             shutterValues = videoAngles.map { nsForAngle.getValue(it) }
             val targetNs =

@@ -502,9 +502,9 @@ enum class HorizonLockRange(val label: String, val degrees: Int) {
             return (kotlin.math.cos(r) + a * kotlin.math.sin(r)).toFloat()
         }
 
-    /** The range on a lens of [factor]: Auto is Full on every lens (level at any angle, ~2x crop). */
+    /** The range on a lens of [factor]: Auto (older saved choice) is ±15° on every lens, the default. */
     @Suppress("UNUSED_PARAMETER")
-    fun resolved(factor: Float): HorizonLockRange = if (this != Auto) this else Full
+    fun resolved(factor: Float): HorizonLockRange = if (this != Auto) this else Deg15
 }
 
 /**
@@ -1238,12 +1238,16 @@ data class SettingsValues(
     val zoomUpscale: Boolean = true,
     /** X14U video horizon lock (Level tile: Level + lock) and how far it holds the horizon. */
     val videoHorizonLock: Boolean = false,
-    val horizonLockRange: HorizonLockRange = HorizonLockRange.Auto,
+    val horizonLockRange: HorizonLockRange = HorizonLockRange.Deg15,
     /** X14U video horizon Follow (Level tile: Follow): the video follows tilt, smoothed like a gimbal's roll. */
     val videoHorizonFollow: Boolean = false,
     val horizonSmoothing: HorizonSmoothing = HorizonSmoothing.Medium,
     /** X14U video stabilisation (the Stabilise tile): gyro shake removal inside a fixed crop. */
     val videoStabilize: VideoStabilize = VideoStabilize.Off,
+    /** X14U video shutter shown as an angle (180°) instead of a time (1/60). */
+    val videoShutterAngle: Boolean = false,
+    /** X14U Pano: merge a finished set's JPEG frames into one panorama on the phone (OpenCV stitcher). */
+    val panoMerge: Boolean = true,
     /** X14U digital zoom: the multiframe merge for zoomed shots; null = the usual merge. */
     val zoomMergeAlgorithm: MultiframeMergeAlgorithm? = MultiframeMergeAlgorithm.Wronski,
     /** X14U: the in-sensor-zoom lenses (2x) were turned off once, so zoom crops the main camera; they can be re-enabled. */

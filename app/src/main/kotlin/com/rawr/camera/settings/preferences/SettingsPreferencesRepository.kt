@@ -535,6 +535,8 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
             videoHorizonFollow = p[Keys.horizonFollow] ?: d.videoHorizonFollow,
             horizonSmoothing = enumOrDefault(p[Keys.horizonSmoothing], d.horizonSmoothing),
             videoStabilize = enumOrDefault(p[Keys.videoStabilize], d.videoStabilize),
+            videoShutterAngle = p[Keys.videoShutterAngle] ?: d.videoShutterAngle,
+            panoMerge = p[Keys.panoMerge] ?: d.panoMerge,
             zoomMergeAlgorithm = when (val saved = p[Keys.zoomMerge]) {
                 null -> d.zoomMergeAlgorithm
                 "same" -> null
@@ -806,6 +808,8 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
         p[Keys.horizonFollow] = v.videoHorizonFollow
         p[Keys.horizonSmoothing] = v.horizonSmoothing.name
         p[Keys.videoStabilize] = v.videoStabilize.name
+        p[Keys.videoShutterAngle] = v.videoShutterAngle
+        p[Keys.panoMerge] = v.panoMerge
         p[Keys.zoomMerge] = v.zoomMergeAlgorithm?.name ?: "same"
         p[Keys.inSensorZoomOff] = v.inSensorZoomLensesOffOnce
         p[Keys.dcpDefaultsOnce] = v.dcpDefaultsOnce
@@ -1132,6 +1136,8 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
         val horizonFollow = booleanPreferencesKey("x14u_horizon_follow")
         val horizonSmoothing = stringPreferencesKey("x14u_horizon_smoothing")
         val videoStabilize = stringPreferencesKey("x14u_video_stabilize")
+        val videoShutterAngle = booleanPreferencesKey("x14u_video_shutter_angle")
+        val panoMerge = booleanPreferencesKey("x14u_pano_merge")
         val inSensorZoomOff = booleanPreferencesKey("x14u_in_sensor_zoom_off_once")
         val dcpDefaultsOnce = booleanPreferencesKey("x14u_dcp_defaults_once")
         val loupeOnMf = booleanPreferencesKey("x14u_loupe_on_mf")

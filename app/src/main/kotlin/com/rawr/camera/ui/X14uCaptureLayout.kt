@@ -9,6 +9,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -367,7 +368,11 @@ internal fun X14uCaptureLayout(
     val panoScope = androidx.compose.runtime.rememberCoroutineScope()
     val panoExtras = LocalCaptureExtras.current
     val panoState by rememberUpdatedState(state)
-    val panoDone: () -> Unit = { panoSet.end(panoState, dispatch) }
+    val panoDone: () -> Unit = {
+        // A finished set (stop or complete) is merged on the phone when that's on (Settings → JPEG).
+        if (panoSet.frames >= 2) panoExtras.onPanoMerge(panoSet.tag, panoSet.frames, panoSet.startedAtMillis)
+        panoSet.end(panoState, dispatch)
+    }
     // The shutter starts a set (frame 1 after the locks settle) and stops it; the frames between take themselves.
     val panoShoot: () -> Unit = shoot@{
         if (recordingLock || panoSet.arming) return@shoot
@@ -612,6 +617,22 @@ internal fun X14uCaptureLayout(
                     modifier = Modifier.fillMaxSize()
                 )
                 if (tools.level) X14uLevel(Modifier.fillMaxSize())
+                // Pano merge progress / result (keeps showing in other modes while it runs).
+                LocalCaptureExtras.current.panoStatus?.let { message ->
+                    Text(
+                        message,
+                        fontFamily = X14uFont,
+                        fontSize = dpText(11.5f),
+                        color = Color.White,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .align(if (orientation == Orientation.Landscape) Alignment.CenterEnd else Alignment.TopCenter)
+                            .padding(if (orientation == Orientation.Landscape) PaddingValues(end = 56.dp) else PaddingValues(top = 56.dp))
+                            .uprightLayoutInLandscape(orientation)
+                            .background(Color.Black.copy(alpha = .6f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
                 // Video horizon Lock / Follow on: a small badge, so the fixed crop isn't a surprise.
                 val stabBadge = tools.stabilize != com.rawr.camera.settings.model.VideoStabilize.Off &&
                     !isFrontLens(state.selectedLensId, state.selectedLensId)

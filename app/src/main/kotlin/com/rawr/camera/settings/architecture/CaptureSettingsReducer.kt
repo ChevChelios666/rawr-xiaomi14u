@@ -91,6 +91,14 @@ internal fun reduceCaptureSettings(
         state.withValues(state.values.copy(videoStabilize = action.value))
     }
 
+    is SetVideoShutterAngle -> {
+        state.withValues(state.values.copy(videoShutterAngle = action.value))
+    }
+
+    is SetPanoMerge -> {
+        state.withValues(state.values.copy(panoMerge = action.value))
+    }
+
     is SetZoomMergeAlgorithm -> {
         state.withValues(state.values.copy(zoomMergeAlgorithm = action.value))
     }
