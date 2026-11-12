@@ -18,7 +18,7 @@ of this file. The GNU GPL v3 text is the repository `LICENSE`.
 | AMaZE GPU pass structure, adapted from a privately shared GPL-3.0 implementation (2026) | `native/raw_demosaic/amaze` | — | GPL-3.0-or-later |
 | QB binning, adapted from a privately shared GPL-3.0 implementation (2026) | `app/src/main/cpp/renderer/NaturalBayerBin.h` | — | GPL-3.0 |
 | spektrafilm / spektrafilm-ofx | `native/spektrafilm`, `app/src/main/assets/spektrafilm` | https://github.com/chaert-s/spektrafilm-ofx , https://github.com/andreavolpato/spektrafilm | GPL-3.0-only |
-| OpenCV 4.10 (`org.opencv:opencv` Android package; stitching for the X14U Pano merge) | `app/src/main/cpp/pano` (librawrcam_pano) | https://github.com/opencv/opencv | Apache-2.0 (`licenses/Apache-2.0.txt`) |
+| OpenCV 4.10 (core, imgproc, imgcodecs, features2d, flann, calib3d, stitching; built from source, static, for the X14U Pano merge) | `app/src/main/cpp/pano` (librawrcam_pano) | https://github.com/opencv/opencv | Apache-2.0 (`licenses/Apache-2.0.txt`) |
 | Handheld Multi-Frame Super-Resolution (Wronski et al.) | `native/multiframe` | https://github.com/Jamy-L/Handheld-Multi-Frame-Super-Resolution | MIT |
 | hdr-plus-swift / Burst Photo (HDR+ spatial merge) | `native/multiframe/merge_hdrplus` | https://github.com/martin-marek/hdr-plus-swift | GPL-3.0 |
 | libultrahdr (Ultra HDR / JPEG_R mux) | `native/gainmap` | https://github.com/google/libultrahdr | Apache-2.0 |

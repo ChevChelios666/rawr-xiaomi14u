@@ -36,6 +36,11 @@ jobs:
           enable-cache: false
       - uses: gradle/actions/setup-gradle@v6
       # Native compile cache: only changed C++ files rebuild between runs.
+      # X14U Pano merge: the slim OpenCV build (stitching) is made once and kept here.
+      - uses: actions/cache@v4
+        with:
+          path: build/opencv/4.10.0-arm64-v8a
+          key: x14u-opencv-4.10.0-arm64-v8a-v1
       - uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: x14u-native

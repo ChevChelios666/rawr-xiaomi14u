@@ -427,10 +427,56 @@ set_source_files_properties(encoding/jpeg/JpegCaptureWriter.cpp encoding/jpeg/Im
 set_source_files_properties(capture/persistence/BurstJob.cpp capture/persistence/CaptureJob.cpp
   PROPERTIES COMPILE_OPTIONS "$<$<CONFIG:Debug>:-O2>")
 
-# X14U Pano merge: OpenCV's stitcher (org.opencv:opencv AAR through prefab) in its own library, loaded only when a
-# set is merged, so the camera never depends on it.
-find_package(OpenCV REQUIRED CONFIG)
-add_library(rawrcam_pano SHARED pano/PanoStitchJni.cpp)
-target_compile_features(rawrcam_pano PRIVATE cxx_std_17)
-target_link_libraries(rawrcam_pano PRIVATE OpenCV::opencv_java4 log)
-target_compile_options(rawrcam_pano PRIVATE -O2)
+# X14U Pano merge: OpenCV's stitcher in its own library (librawrcam_pano), loaded only when a set is merged, so the
+# camera never depends on it. The official Android package leaves stitching out, so a slim static OpenCV (only the
+# modules the stitcher needs) is built once at configure time into build/opencv (kept between CI runs by a cache).
+if(ANDROID)
+  set(X14U_OPENCV_VERSION 4.10.0)
+  set(X14U_OPENCV_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../build/opencv)
+  set(X14U_OPENCV_INSTALL ${X14U_OPENCV_DIR}/${X14U_OPENCV_VERSION}-${ANDROID_ABI})
+  if(NOT EXISTS ${X14U_OPENCV_INSTALL}/.done)
+    set(_src ${X14U_OPENCV_DIR}/opencv-${X14U_OPENCV_VERSION})
+    if(NOT EXISTS ${_src}/CMakeLists.txt)
+      file(DOWNLOAD https://github.com/opencv/opencv/archive/refs/tags/${X14U_OPENCV_VERSION}.tar.gz
+        ${X14U_OPENCV_DIR}/opencv-${X14U_OPENCV_VERSION}.tar.gz STATUS _dl SHOW_PROGRESS)
+      list(GET _dl 0 _dl_code)
+      if(NOT _dl_code EQUAL 0)
+        message(FATAL_ERROR "OpenCV download failed: ${_dl}")
+      endif()
+      file(ARCHIVE_EXTRACT INPUT ${X14U_OPENCV_DIR}/opencv-${X14U_OPENCV_VERSION}.tar.gz DESTINATION ${X14U_OPENCV_DIR})
+    endif()
+    set(_bld ${X14U_OPENCV_DIR}/build-${X14U_OPENCV_VERSION}-${ANDROID_ABI})
+    message(STATUS "X14U: building OpenCV ${X14U_OPENCV_VERSION} (stitching) for ${ANDROID_ABI}")
+    execute_process(
+      COMMAND ${CMAKE_COMMAND} -S ${_src} -B ${_bld} -G Ninja
+        -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
+        -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
+        -DANDROID_ABI=${ANDROID_ABI} -DANDROID_PLATFORM=${ANDROID_PLATFORM} -DANDROID_STL=c++_static
+        -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${X14U_OPENCV_INSTALL}
+        -DBUILD_LIST=core,imgproc,imgcodecs,features2d,flann,calib3d,stitching
+        -DBUILD_SHARED_LIBS=OFF -DBUILD_opencv_world=OFF -DBUILD_JAVA=OFF -DBUILD_opencv_java=OFF
+        -DBUILD_ANDROID_PROJECTS=OFF -DBUILD_ANDROID_EXAMPLES=OFF -DBUILD_ANDROID_SERVICE=OFF
+        -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_DOCS=OFF -DBUILD_opencv_apps=OFF
+        -DBUILD_JPEG=ON -DWITH_JPEG=ON -DWITH_PNG=OFF -DWITH_TIFF=OFF -DWITH_WEBP=OFF -DWITH_OPENEXR=OFF
+        -DWITH_JASPER=OFF -DWITH_OPENJPEG=OFF -DWITH_AVIF=OFF -DWITH_IMGCODEC_HDR=OFF -DWITH_IMGCODEC_SUNRASTER=OFF
+        -DWITH_IMGCODEC_PXM=OFF -DWITH_IMGCODEC_PFM=OFF
+        -DWITH_OPENCL=OFF -DWITH_IPP=OFF -DWITH_ITT=OFF -DWITH_EIGEN=OFF -DWITH_PROTOBUF=OFF -DWITH_ADE=OFF
+        -DWITH_KLEIDICV=OFF -DWITH_ANDROID_MEDIANDK=OFF -DWITH_VULKAN=OFF -DWITH_FFMPEG=OFF -DBUILD_ZLIB=OFF
+        -DCV_TRACE=OFF -DOPENCV_ENABLE_NONFREE=OFF -DENABLE_PRECOMPILED_HEADERS=OFF
+      RESULT_VARIABLE _cfg)
+    if(NOT _cfg EQUAL 0)
+      message(FATAL_ERROR "OpenCV configure failed (${_cfg})")
+    endif()
+    execute_process(COMMAND ${CMAKE_COMMAND} --build ${_bld} --target install --parallel RESULT_VARIABLE _b)
+    if(NOT _b EQUAL 0)
+      message(FATAL_ERROR "OpenCV build failed (${_b})")
+    endif()
+    file(TOUCH ${X14U_OPENCV_INSTALL}/.done)
+  endif()
+  find_package(OpenCV REQUIRED CONFIG PATHS ${X14U_OPENCV_INSTALL}/sdk/native/jni NO_DEFAULT_PATH)
+  add_library(rawrcam_pano SHARED pano/PanoStitchJni.cpp)
+  target_compile_features(rawrcam_pano PRIVATE cxx_std_17)
+  target_include_directories(rawrcam_pano PRIVATE ${OpenCV_INCLUDE_DIRS})
+  target_link_libraries(rawrcam_pano PRIVATE ${OpenCV_LIBS} log z)
+  target_compile_options(rawrcam_pano PRIVATE -O2)
+endif()
