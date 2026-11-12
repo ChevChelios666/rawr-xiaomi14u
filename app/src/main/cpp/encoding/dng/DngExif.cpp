@@ -241,8 +241,12 @@ void fillDngExif(TinyDngWriteParams& p, const rawrcam::imaging::RawSnapshot& fra
     p.lensMake = std::move(lens.make);
     p.lensModel = std::move(lens.model);
     p.software = rawrcam::encoding::kSoftwareName;
+    // X14U digital zoom: the zoomed focal length as a line under the header (EXIF keeps the lens's own).
     p.description = tiffAsciiDescription(stopBathDescription(
-        captureContext.imageDescription.empty() ? rawrcam::encoding::kCapturedWith : captureContext.imageDescription,
+        withDescriptionNote(
+            captureContext.imageDescription.empty() ? std::string(rawrcam::encoding::kCapturedWith)
+                                                    : captureContext.imageDescription,
+            digitalZoomNote(captureContext.cropZoom, lens.focalLength35mm, false)),
         captureContext.processingRecipe, captureContext.filmTone));
     switch (rawrcam::geometry::presentationQuarterTurns(ctx.geometry.sensorOrientationDegrees,
                                                         captureContext.deviceRotationDegrees)) {

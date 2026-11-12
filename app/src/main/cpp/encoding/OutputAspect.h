@@ -4,6 +4,9 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
+#include <optional>
+#include <string>
 
 namespace rawrcam::encoding {
 
@@ -71,6 +74,29 @@ inline CropRect stillCrop(std::uint32_t width, std::uint32_t height, float zoom,
 inline std::uint16_t zoomedFocalLength35mm(std::uint16_t lens35mm, float zoom) noexcept {
     if (!(zoom > 1.001f) || !std::isfinite(zoom)) return lens35mm;
     return static_cast<std::uint16_t>(std::clamp(std::lround(double(lens35mm) * zoom), 1L, 65535L));
+}
+
+// The ImageDescription ("notes") line for a digitally zoomed still, ASCII only (EXIF/TIFF ASCII):
+// "Digital zoom: 1.25x (115 mm equiv., lens 92 mm), upscaled". Empty when not zoomed.
+inline std::string digitalZoomNote(float zoom, std::optional<std::uint16_t> lens35mm, bool upscaled) {
+    if (!(zoom > 1.001f) || !std::isfinite(zoom)) return {};
+    char buffer[160];
+    if (lens35mm && *lens35mm > 0)
+        std::snprintf(buffer, sizeof(buffer), "Digital zoom: %.2fx (%u mm equiv., lens %u mm)%s\n", double(zoom),
+                      unsigned(zoomedFocalLength35mm(*lens35mm, zoom)), unsigned(*lens35mm), upscaled ? ", upscaled" : "");
+    else
+        std::snprintf(buffer, sizeof(buffer), "Digital zoom: %.2fx%s\n", double(zoom), upscaled ? ", upscaled" : "");
+    return buffer;
+}
+
+// [note] placed after the description's header lines (before its first blank line), or appended.
+inline std::string withDescriptionNote(const std::string& description, const std::string& note) {
+    if (note.empty() || description.find(note) != std::string::npos) return description;
+    const auto blank = description.find("\n\n");
+    if (blank == std::string::npos) {
+        return description + (description.empty() || description.back() == '\n' ? "" : "\n") + note;
+    }
+    return description.substr(0, blank + 1) + note + description.substr(blank + 1);
 }
 
 }  // namespace rawrcam::encoding

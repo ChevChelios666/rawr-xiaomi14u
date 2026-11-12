@@ -4,7 +4,9 @@
 #include <sstream>
 #include <string>
 
+#include "encoding/OutputAspect.h"
 #include "encoding/jpeg/JpegCaptureContext.h"
+#include "encoding/jpeg/JpegLensMetadata.h"
 #include "encoding/jpeg/JpegTimingsFormat.h"
 
 namespace rawrcam::encoding::jpeg {
@@ -29,9 +31,14 @@ inline std::string setupBreakdown(const JpegCaptureContext& c) {
 inline std::string appendProcessingTimes(const JpegCaptureContext& c, double jpegEncodingMs,
                                          double gainmapEncodeMs = 0.0, bool ultraHdr = false) {
     std::ostringstream out;
-    out << c.imageDescription;
+    // X14U digital zoom: a line under the header with the zoomed focal length (EXIF keeps the lens's own).
+    LensMetadata generatedLens;
+    const std::string description = withDescriptionNote(
+        c.imageDescription,
+        digitalZoomNote(c.cropZoom, lensMetadataForJpeg(c, generatedLens).focalLength35mm, c.upscaleZoom));
+    out << description;
     // One blank line before TIMINGS whether or not the settings block ends its last line.
-    if (!c.imageDescription.empty() && c.imageDescription.back() != '\n') out << '\n';
+    if (!description.empty() && description.back() != '\n') out << '\n';
     const bool multiframe = c.hasMultiframeTimings;
     const double baseReadMs = multiframe ? c.mfBaseReadMs : 0.0;
     const double projectMs = multiframe ? c.mfProjectMs : 0.0;
