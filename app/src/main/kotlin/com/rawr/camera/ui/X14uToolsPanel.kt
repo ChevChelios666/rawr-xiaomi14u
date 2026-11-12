@@ -226,6 +226,8 @@ internal fun X14uToolsPanel(
             Row(Modifier.fillMaxWidth()) {
                 (0 until 4).forEach { c ->
                     val tile = row.getOrNull(c)
+                    // Vertical hairlines between columns, matching the horizontal ones between rows.
+                    if (c > 0) Box(Modifier.width(0.5.dp).height(tileHeight).background(Color.White.copy(alpha = .08f)))
                     Box(Modifier.weight(1f).height(tileHeight)) {
                         if (tile != null) X14uTileView(tile, open = tile.key == choice, orientation = orientation) {
                             haptics.selection()
