@@ -113,7 +113,8 @@ internal fun CaptureTopBar(
                         modifier = Modifier.uprightInLandscape(state.orientation))
                 }
             }
-            TopBarSlot {
+            // X14U: the timer sits right of the centred tools chevron (below).
+            if (toolsOpen == null) TopBarSlot {
                 SelfTimerTopBarChoice(
                     state = state,
                     dispatch = dispatch,
@@ -186,7 +187,8 @@ internal fun CaptureTopBar(
                 )
             }
         }
-        if (toolsOpen != null) TopBarSlot {
+        if (toolsOpen != null) {
+          TopBarSlot {
             Box(
                 Modifier
                     .size(44.dp, 26.dp)
@@ -205,6 +207,18 @@ internal fun CaptureTopBar(
                     tint = if (toolsOpen) CaptureColors.Accent else CaptureColors.Muted,
                     modifier = Modifier.size(20.dp)
                 )
+            }
+          }
+            // Video: timer, then empty slots so the chevron stays centred (as many slots right as left).
+            if (state.captureMode == CaptureMode.Video) {
+                TopBarSlot {
+                    SelfTimerTopBarChoice(
+                        state = state,
+                        dispatch = dispatch,
+                        orientation = state.orientation
+                    )
+                }
+                repeat((if (showLog) 3 else 2) - 1) { TopBarSlot {} }
             }
         } else TopBarSlot {
             IconToggleButton(
