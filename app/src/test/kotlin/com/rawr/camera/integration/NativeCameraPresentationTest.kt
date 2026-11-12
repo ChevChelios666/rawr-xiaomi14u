@@ -147,7 +147,8 @@ class NativeCameraPresentationTest {
         assertEquals(mapOf("ssa:180" to 1234567L), projected.shutterValuesNs)
         assertEquals(mapOf("ssa:180" to 180.0), projected.shutterAnglesDeg)
         assertEquals("ssa:180", projected.capabilities.shutter.initialCandidateId)
-        assertEquals("180°", projected.capabilities.shutter.candidates.single().displayLabel)
+        // Shown as the exposure time of the native request value (1234567 ns).
+        assertEquals("1/810", projected.capabilities.shutter.candidates.single().displayLabel)
         val changed = NativeCapabilityProjection.project(snapshot.copy(
             videoPreviewFps = 30,
             shutterAngleChoices = listOf(NativeShutterAngleChoice(180.0, 16666666))

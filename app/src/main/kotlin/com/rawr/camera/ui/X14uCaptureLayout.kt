@@ -1467,10 +1467,13 @@ private fun exposureRuler(parameter: ExposureParameter, state: CaptureUiState, d
     val (valueText, _) = exposureValue(parameter, state)
     val anchors = capability.fullStopAnchorIds
     val video = parameter == ExposureParameter.Shutter && state.captureMode == CaptureMode.Video
+    // Video: every 4th mark (labels are wider than the 14 dp spacing), counted from 180° so it's always labelled.
+    val videoLabelFrom = if (video) stops.indexOfFirst { candidates[it].id == "ssa:180" }.coerceAtLeast(0) else 0
     val labelled: (Int) -> Boolean = { i ->
         val c = candidates[stops[i]]
         when {
-            video || isEv -> c.id in anchors
+            video -> ((i - videoLabelFrom) % 4 + 4) % 4 == 0
+            isEv -> c.id in anchors
             parameter == ExposureParameter.Iso -> numberOf(c.id)?.let { v ->
                 val stopsFrom100 = ln(v / 100.0) / ln(2.0)
                 abs(stopsFrom100 - stopsFrom100.roundToInt()) < .08 && stopsFrom100.roundToInt() % 2 == 0

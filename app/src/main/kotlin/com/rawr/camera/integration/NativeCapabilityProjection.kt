@@ -70,7 +70,10 @@ internal object NativeCapabilityProjection {
         } else if (videoAngles != null) {
             val nsForAngle = videoChoices!!.associate { it.degrees to it.exposureTimeNs }
             fun angleId(angle: Double): String = "ssa:${angleLabel(angle)}"
-            ssCandidates = videoAngles.map { ExposureCandidate(angleId(it), ExposureFormat.formatShutterDegree(it)) }
+            // X14U: shown as exposure time (1/50), like photos; the angle stays the command underneath.
+            ssCandidates = videoAngles.map {
+                ExposureCandidate(angleId(it), ExposureFormat.formatShutterNs(nsForAngle.getValue(it)))
+            }
             shutterValues = videoAngles.map { nsForAngle.getValue(it) }
             val targetNs =
                 s.requestedExposureTimeNs.takeIf { it > 0 } ?: s.appliedExposureTimeNs
