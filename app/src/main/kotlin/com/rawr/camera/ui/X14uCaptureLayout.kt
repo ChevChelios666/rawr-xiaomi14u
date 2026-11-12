@@ -662,9 +662,9 @@ internal fun X14uCaptureLayout(
                 ) {
                     Row(
                         Modifier
+                            .uprightLayoutInLandscape(orientation)
                             .background(Color.Black.copy(alpha = .6f), RoundedCornerShape(16.dp))
-                            .padding(horizontal = 12.dp, vertical = 7.dp)
-                            .uprightInLandscape(orientation),
+                            .padding(horizontal = 12.dp, vertical = 7.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(X14uIcons.ChevronUp, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
@@ -685,9 +685,9 @@ internal fun X14uCaptureLayout(
                         fontSize = dpText(20f),
                         color = Color.White,
                         modifier = Modifier
+                            .uprightLayoutInLandscape(orientation)
                             .background(Color.Black.copy(alpha = .45f), RoundedCornerShape(10.dp))
                             .padding(horizontal = 16.dp, vertical = 8.dp)
-                            .uprightInLandscape(orientation)
                     )
                 }
                 if (isVideo && videoControls.recording) {
@@ -1017,7 +1017,7 @@ private fun X14uLensRow(
         Box(Modifier.align(Alignment.Center).padding(horizontal = 42.dp)) {
         Row(
             Modifier
-                .height(36.dp)
+                .height(if (orientation == Orientation.Landscape) 44.dp else 36.dp)
                 .background(Color.Black.copy(alpha = .4f), pill)
                 .padding(horizontal = 4.dp)
                 .horizontalScroll(rememberScrollState()),
@@ -1083,8 +1083,10 @@ private fun X14uLensRow(
 
 @Composable
 private fun PillItem(text: String, on: Boolean, orientation: Orientation, width: Dp?, onClick: () -> Unit) {
+    // Landscape: the item turns as a whole, with a short label so it fits the pill's height.
+    val landscape = orientation == Orientation.Landscape
     Text(
-        text,
+        if (landscape) pillShortLabel(text) else text,
         fontFamily = X14uFont,
         fontWeight = if (on) FontWeight.Medium else FontWeight.Normal,
         fontSize = dpText(12f),
@@ -1099,10 +1101,19 @@ private fun PillItem(text: String, on: Boolean, orientation: Orientation, width:
         ),
         textAlign = TextAlign.Center,
         modifier = Modifier
-            .then(if (width != null) Modifier.width(width) else Modifier)
+            .uprightLayoutInLandscape(orientation)
+            .then(if (width != null && !landscape) Modifier.width(width) else Modifier)
             .captureClickable(shape = RoundedCornerShape(14.dp)) { onClick() }
-            .padding(horizontal = 10.dp, vertical = 10.dp)
+            .padding(horizontal = if (landscape) 3.dp else 10.dp, vertical = 10.dp)
     )
+}
+
+private fun pillShortLabel(text: String): String = when (text) {
+    "PROFILE" -> "PROF"
+    "HIGHLIGHTS" -> "HL"
+    "RAWR AE" -> "R AE"
+    "DEVICE AE" -> "D AE"
+    else -> text
 }
 
 // ---- Exposure row ----------------------------------------------------------------------------------------------
@@ -1218,17 +1229,20 @@ private fun X14uCellView(
             },
         contentAlignment = Alignment.Center
     ) {
+        // Landscape: the cell turns as a whole, so a long value wraps / ends in … within the row's height.
+        val landscape = orientation == Orientation.Landscape
         Column(
-            Modifier.uprightInLandscape(orientation),
+            Modifier.uprightLayoutInLandscape(orientation),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
                 cell.value,
                 fontFamily = X14uFont,
-                fontSize = dpText(if (compact) 14f else 16f),
-                lineHeight = dpText(if (compact) 16f else 19f),
-                maxLines = 1,
-                overflow = TextOverflow.Clip,
+                fontSize = dpText(if (compact || landscape) 14f else 16f),
+                lineHeight = dpText(if (compact || landscape) 16f else 19f),
+                maxLines = if (landscape) 2 else 1,
+                overflow = if (landscape) TextOverflow.Ellipsis else TextOverflow.Clip,
+                textAlign = TextAlign.Center,
                 color = when {
                     isOpen -> CaptureColors.Accent
                     !cell.enabled -> Color.White.copy(alpha = .35f)
@@ -1931,6 +1945,8 @@ private fun X14uChoiceChips(
             val shape = RoundedCornerShape(17.dp)
             Box(
                 Modifier
+                    // Landscape: the chip turns as a whole (a long name ends in … within the row's height).
+                    .uprightLayoutInLandscape(orientation)
                     .height(34.dp)
                     .widthIn(min = 44.dp)
                     .background(if (isSelected) CaptureColors.Accent.copy(alpha = .18f) else Color.White.copy(alpha = .07f), shape)
@@ -1952,12 +1968,12 @@ private fun X14uChoiceChips(
                     fontFamily = X14uFont,
                     fontSize = dpText(13f),
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     color = when {
                         !enabled -> Color.White.copy(alpha = .3f)
                         isSelected -> CaptureColors.Accent
                         else -> Color.White.copy(alpha = .85f)
-                    },
-                    modifier = Modifier.uprightInLandscape(orientation)
+                    }
                 )
             }
         }

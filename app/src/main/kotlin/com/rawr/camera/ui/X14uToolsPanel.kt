@@ -278,8 +278,11 @@ internal fun X14uToolsPanel(
                         fontWeight = if (on) FontWeight.Medium else FontWeight.Normal,
                         fontSize = dpText(16f),
                         maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         color = if (on) CaptureColors.Accent else Color.White.copy(alpha = .9f),
+                        // Landscape: each choice turns as a whole (long names end in … within the row's height).
                         modifier = Modifier
+                            .uprightLayoutInLandscape(orientation)
                             .captureClickable(shape = RoundedCornerShape(14.dp), role = Role.RadioButton) {
                                 haptics.selection()
                                 pick(i)
@@ -289,7 +292,6 @@ internal fun X14uToolsPanel(
                             }
                             .semantics { selected = on }
                             .padding(horizontal = 10.dp, vertical = 10.dp)
-                            .uprightInLandscape(orientation)
                     )
                 }
             }
@@ -330,7 +332,8 @@ private fun X14uTileView(tile: X14uTile, open: Boolean, orientation: Orientation
             .testTag("x14u_tool_${tile.key}"),
         contentAlignment = Alignment.Center
     ) {
-        Column(Modifier.uprightInLandscape(orientation), horizontalAlignment = Alignment.CenterHorizontally) {
+        // Landscape: the tile's content turns as a whole, so its label wraps within the tile's height.
+        Column(Modifier.uprightLayoutInLandscape(orientation), horizontalAlignment = Alignment.CenterHorizontally) {
             if (tile.text != null) {
                 Text(tile.text, fontFamily = X14uFont, fontSize = dpText(21f), maxLines = 1, color = color)
             } else if (tile.icon != null) {

@@ -176,9 +176,9 @@ internal fun X14uFocusLoupe(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(7.dp)
+                    .uprightLayoutInLandscape(orientation)
                     .background(Color.Black.copy(alpha = .55f), RoundedCornerShape(7.dp))
                     .padding(horizontal = 7.dp, vertical = 2.dp)
-                    .uprightInLandscape(orientation)
             )
             Box(
                 Modifier
