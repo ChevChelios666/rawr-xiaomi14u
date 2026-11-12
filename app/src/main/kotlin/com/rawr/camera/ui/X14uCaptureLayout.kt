@@ -695,7 +695,9 @@ internal fun X14uCaptureLayout(
                         video = videoControls,
                         orientation = orientation,
                         onTap = { if (videoControls.diagnostics) showNumbers = !showNumbers },
-                        modifier = Modifier.align(Alignment.TopCenter).padding(top = 10.dp)
+                        // Top centre as the phone is held (landscape: the frame's right edge).
+                        modifier = if (orientation == Orientation.Landscape) Modifier.align(Alignment.CenterEnd).padding(end = 10.dp)
+                            else Modifier.align(Alignment.TopCenter).padding(top = 10.dp)
                     )
                 }
                 X14uRawrAeToggle(
@@ -2270,13 +2272,14 @@ private fun X14uRecordTimer(video: VideoControlState, orientation: Orientation, 
     }
     Row(
         modifier
+            // The pill turns as a whole (background and all) in landscape.
+            .uprightLayoutInLandscape(orientation)
             .background(Color.Black.copy(alpha = .4f), RoundedCornerShape(12.dp))
             .captureClickable(shape = RoundedCornerShape(12.dp), enabled = video.diagnostics) { onTap() }
             .semantics {
                 contentDescription = "Video recording ${video.status}" + if (dropped > 0) ", $dropped frames dropped" else ""
             }
-            .padding(horizontal = 10.dp, vertical = 4.dp)
-            .uprightInLandscape(orientation),
+            .padding(horizontal = 10.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
