@@ -232,7 +232,7 @@ void SwapchainRenderer::record(VkCommandBuffer command, uint32_t frameSlot, uint
         !videoSource && monitoringOverlayEnabled && overlayViews_[frameSlot] != VK_NULL_HANDLE && diagnosticMode == 0u;
     for (uint32_t i = 0; i < 3; ++i) {
         const auto& placement = scopeState_.placements[i];
-        info.scopes[i].descriptor = scopeSets_[frameSlot][i];
+        info.scopes[i].descriptor = scopeSets_[scopeSourceSlot_ >= 0 ? uint32_t(scopeSourceSlot_) : frameSlot][i];
         info.scopes[i].x = placement.x;
         info.scopes[i].y = placement.y;
         info.scopes[i].width = placement.width;

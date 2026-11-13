@@ -49,6 +49,8 @@ class MonitorRecorder final {
                            uint32_t width, uint32_t height, int sensorOrientationDegrees,
                            int deviceRotationDegrees) const;
     void restoreVideoScopes(VkCommandBuffer command, uint32_t frameSlot) const;
+    // A frame between scope updates: the slot's last scopes are only made readable again (no measurement).
+    void showVideoScopes(VkCommandBuffer command, uint32_t frameSlot) const;
 
    private:
     static void transitionImageForSampling(VkCommandBuffer command, VkImage image);

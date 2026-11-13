@@ -725,6 +725,9 @@ void RawDevelopRecorder::recordVideoScopes(VkCommandBuffer command, uint32_t slo
                                            uint32_t width, uint32_t height, int sensor, int rotation) const {
     monitor_.recordVideoScopes(command, slot, view, image, width, height, sensor, rotation);
 }
+void RawDevelopRecorder::showVideoScopes(VkCommandBuffer command, uint32_t slot) const {
+    monitor_.showVideoScopes(command, slot);
+}
 void RawDevelopRecorder::restoreVideoScopes(VkCommandBuffer command, uint32_t slot) const {
     monitor_.restoreVideoScopes(command, slot);
 }

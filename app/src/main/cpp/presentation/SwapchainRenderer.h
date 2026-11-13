@@ -42,6 +42,8 @@ class SwapchainRenderer final {
         const std::array<std::array<VkImageView, 3>, rawrcam::imaging::kRealtimeFramesInFlight>& scopeViews,
         float scopeSourceAspect);
     void setVideoFrameSources(const std::array<VkImageView, rawrcam::imaging::kRealtimeFramesInFlight>& views);
+    // Recording: draw the scopes measured in another frame slot (they update less often than the frames); -1 = own.
+    void setScopeSourceSlot(int slot) noexcept { scopeSourceSlot_ = slot; }
     void setScopePresentationState(const rawrcam::monitoring::ScopePresentationState& state) noexcept {
         scopeState_ = state;
     }
@@ -150,6 +152,7 @@ class SwapchainRenderer final {
     mutable std::mutex loupeMutex_;
     LoupeDraw loupe_{};
     float scopeSourceAspect_ = 1.0f;
+    int scopeSourceSlot_ = -1;
     bool hasFrameSources_ = false;
     bool hasVideoFrameSources_ = false;
 };

@@ -59,6 +59,13 @@ void MonitorRecorder::recordVideoScopes(VkCommandBuffer command, uint32_t frameS
             rawrcam::vulkan::computeWriteToFragmentRead(command, imageScopes_.renderedImage(frameSlot, i));
     }
 }
+void MonitorRecorder::showVideoScopes(VkCommandBuffer command, uint32_t frameSlot) const {
+    const auto scopeState = imageScopes_.presentationState();
+    for (uint32_t i = 0; i < scopeState.placements.size(); ++i) {
+        if (scopeState.placements[i].type != rawrcam::monitoring::ScopeType::None)
+            rawrcam::vulkan::computeWriteToFragmentRead(command, imageScopes_.renderedImage(frameSlot, i));
+    }
+}
 void MonitorRecorder::restoreVideoScopes(VkCommandBuffer command, uint32_t frameSlot) const {
     const auto scopeState = imageScopes_.presentationState();
     for (uint32_t i = 0; i < scopeState.placements.size(); ++i) {

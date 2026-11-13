@@ -1,4 +1,5 @@
 #pragma once
+#include <chrono>
 #include <android/hardware_buffer.h>
 #include <media/NdkImage.h>
 #include <spektrafilm/SpektraFilm.h>
@@ -114,6 +115,7 @@ class FrameSubmitCoordinator final {
     void resetVideoCounters() noexcept {
         videoSubmitted_ = 0;
         videoDrops_ = 0;
+        lastVideoScopeSlot_ = -1;
         previewSkippedDuringVideo_ = 0;
         videoDropReasons_ = {};
         lastVideoSubmitFailure_.clear();
@@ -286,6 +288,9 @@ class FrameSubmitCoordinator final {
     std::atomic<bool> uiPresentationActive_{true};
     rawrcam::video::VideoSession* videoOutput_ = nullptr;
     uint64_t videoSubmitted_ = 0;
+    // Recording: scopes measure the video about 16 times a second, not every frame (they cost GPU time per frame).
+    std::chrono::steady_clock::time_point lastVideoScopeUpdate_{};
+    int lastVideoScopeSlot_ = -1;
     uint64_t videoDrops_ = 0;
     // Live RAW content sampling (logcat, at most once per second of sensor time).
     uint64_t lastRawContentStatsNs_ = 0;

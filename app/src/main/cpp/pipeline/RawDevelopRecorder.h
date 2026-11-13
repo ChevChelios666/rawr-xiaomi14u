@@ -143,6 +143,7 @@ class RawDevelopRecorder final {
                            uint32_t width, uint32_t height, int sensorOrientationDegrees,
                            int deviceRotationDegrees) const;
     void restoreVideoScopes(VkCommandBuffer command, uint32_t frameSlot) const;
+    void showVideoScopes(VkCommandBuffer command, uint32_t frameSlot) const;
     static std::array<float, 9> composeCameraToAp1(const std::array<float, 9>& matrix);
 
    private:

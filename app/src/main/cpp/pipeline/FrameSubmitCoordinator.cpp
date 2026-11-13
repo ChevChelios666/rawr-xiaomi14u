@@ -671,12 +671,24 @@ void FrameSubmitCoordinator::submitSplitVideoAndMonitor(const SubmitParams& para
         vkCheck(vkBeginCommandBuffer(slot->command, &begin), "video monitor begin command");
         videoOutput_->beginMonitorTiming(slot->command, slotIndex);
         const auto extent = videoOutput_->extent();
-        resources_.recorder()->recordVideoScopes(slot->command, slotIndex, videoOutput_->monitorView(slotIndex),
-                                                 videoOutput_->monitorImage(slotIndex), extent.width, extent.height,
-                                                 config_.sensorOrientationDegrees, scopeDeviceRotationDegrees_);
+        // Scopes: a new measurement about every 60 ms; frames in between show the last one (its slot's images).
+        const auto now = std::chrono::steady_clock::now();
+        const bool measureScopes = lastVideoScopeSlot_ < 0 || now - lastVideoScopeUpdate_ >= std::chrono::milliseconds(60);
+        const uint32_t scopeSlot = measureScopes ? slotIndex : uint32_t(lastVideoScopeSlot_);
+        if (measureScopes) {
+            resources_.recorder()->recordVideoScopes(slot->command, slotIndex, videoOutput_->monitorView(slotIndex),
+                                                     videoOutput_->monitorImage(slotIndex), extent.width, extent.height,
+                                                     config_.sensorOrientationDegrees, scopeDeviceRotationDegrees_);
+            lastVideoScopeUpdate_ = now;
+            lastVideoScopeSlot_ = int(slotIndex);
+        } else {
+            resources_.recorder()->showVideoScopes(slot->command, scopeSlot);
+        }
+        swapchainRenderer_.setScopeSourceSlot(int(scopeSlot));
         swapchainRenderer_.record(slot->command, slotIndex, *acquired.swapIndex, extent.width, extent.height,
                                   config_.sensorOrientationDegrees, displayRotationDegrees_, 0u, false, 0u, true);
-        resources_.recorder()->restoreVideoScopes(slot->command, slotIndex);
+        swapchainRenderer_.setScopeSourceSlot(-1);
+        resources_.recorder()->restoreVideoScopes(slot->command, scopeSlot);
         videoOutput_->endMonitorTiming(slot->command, slotIndex);
         vkCheck(vkEndCommandBuffer(slot->command), "video monitor end command");
         vkCheck(vkResetFences(vulkanContext_.device(), 1, &slot->previewFence), "video monitor reset fence");
