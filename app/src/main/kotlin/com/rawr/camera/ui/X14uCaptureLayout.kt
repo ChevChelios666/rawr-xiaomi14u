@@ -706,7 +706,8 @@ internal fun X14uCaptureLayout(
         // Video, like stock: the recording's shape at the photo frame's width, between the camera cut-out and the
         // shutter (just below the mode names), narrowed if it would not fit. A short one (4:3, 1:1) sits where the
         // photo frame does; a tall one (16:9 and up) starts right under the cut-out with the top bar over it.
-        val audioMeterOn = isVideo && LocalCaptureExtras.current.tools.audioMeter
+        // Muted: no meter (an empty box says nothing); the histogram moves up into its place.
+        val audioMeterOn = isVideo && LocalCaptureExtras.current.tools.audioMeter && !videoControls.audio.muted
         val (videoRect, videoTop) = run {
             val upper = cutoutTop + 2.dp
             val lower = shutterCenter - 50.dp
