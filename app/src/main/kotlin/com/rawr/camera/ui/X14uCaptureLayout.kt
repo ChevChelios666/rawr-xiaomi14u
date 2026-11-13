@@ -1091,8 +1091,6 @@ private fun X14uLensRow(
     val haptics = LocalCaptureHaptics.current
     val extras = LocalCaptureExtras.current
     val orientation = state.orientation
-    val lenses = state.capabilities.lenses.filterNot { isFrontLens(it.id, it.displayName) }
-        .filter { it.id !in buttons.hidden || it.id == state.selectedLensId }
     val stops = if (!stopsAvailable) emptyList() else buttons.digital.filter { it.on }
         .mapNotNull { com.rawr.camera.settings.model.resolveDigitalStop(it.mm, zoomChain) }
     // The stop in use: photo by its total zoom, video by its lens and crop.
@@ -1100,6 +1098,10 @@ private fun X14uLensRow(
         if (totalZoom != null) kotlin.math.abs(totalZoom - stop.zoom) <= stop.zoom * .01f
         else stop.lens == state.selectedLensId && kotlin.math.abs(state.videoCrop.digitalZoom - stop.crop) <= stop.crop * .01f
     }
+    // A hidden lens stays hidden, also while a digital focal length crops it; it shows only when it is in use and
+    // nothing on the pill stands for it (pinch zoom, a lens picked elsewhere).
+    val lenses = state.capabilities.lenses.filterNot { isFrontLens(it.id, it.displayName) }
+        .filter { it.id !in buttons.hidden || (it.id == state.selectedLensId && activeStop == null) }
     val lensMm: (String) -> Int? = { id -> com.rawr.camera.settings.model.ZoomChain.factorOf(id)?.let { com.rawr.camera.settings.model.LensButtons.mmOf(it) } }
     // Lenses in their order, each digital stop before the first lens longer than it.
     val items: List<Any> = buildList {
