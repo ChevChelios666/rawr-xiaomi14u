@@ -15,6 +15,7 @@
 #include "video_demosaic_quad_reduce.h"
 #include "video_downscale_h.h"
 #include "video_downscale_v.h"
+#include "video_resample.h"
 #include "video_pipeline/VideoCrop.h"
 
 namespace rawrcam::video {
@@ -85,10 +86,18 @@ VideoDemosaic::VideoDemosaic(const rawr::vk::GpuContext& context, uint32_t rawWi
     reduceCfa_ = sourceRect.reduceCfa;
     cropX_ = sourceRect.x;
     cropY_ = sourceRect.y;
+    sourceWidth_ = sourceRect.width;
+    sourceHeight_ = sourceRect.height;
+    // X14U video crop: the demosaic fills the crop at 1:1 or halved; a resample brings it to the recording size.
+    finalWidth_ = outputWidth;
+    finalHeight_ = outputHeight;
+    outputWidth_ = sourceRect.baseWidth ? sourceRect.baseWidth : outputWidth;
+    outputHeight_ = sourceRect.baseHeight ? sourceRect.baseHeight : outputHeight;
+    resample_ = outputWidth_ != finalWidth_ || outputHeight_ != finalHeight_;
     __android_log_print(ANDROID_LOG_INFO, "RawrNativeVideo",
-                        "VIDEO_RAW_STAGE input=%ux%u crop=%u,%u %ux%u output=%ux%u method=%s", rawWidth_, rawHeight_,
-                        cropX_, cropY_, sourceRect.width, sourceRect.height, outputWidth_, outputHeight_,
-                        method());
+                        "VIDEO_RAW_STAGE input=%ux%u crop=%u,%u %ux%u demosaic=%ux%u output=%ux%u resample=%d method=%s",
+                        rawWidth_, rawHeight_, cropX_, cropY_, sourceRect.width, sourceRect.height, outputWidth_,
+                        outputHeight_, finalWidth_, finalHeight_, resample_ ? 1 : 0, method());
 
     try {
         const VkDevice device = context_.device;
@@ -177,6 +186,7 @@ VideoDemosaic::VideoDemosaic(const rawr::vk::GpuContext& context, uint32_t rawWi
             lscBuffers_[i] = makeHostBuffer(kMaxLscBytes);
         }
         if (reduceCfa_) createDownscale();
+        if (resample_) createResample();
     } catch (...) {
         destroy();
         throw;
@@ -240,6 +250,12 @@ void allocateSets(VkDevice device, VkDescriptorSetLayout layout, const std::vect
     allocate.pSetLayouts = layouts.data();
     check(vkAllocateDescriptorSets(device, &allocate, sets), what);
 }
+
+struct ResamplePush {
+    uint32_t sourceWidth, sourceHeight, targetWidth, targetHeight;
+    float scaleX, scaleY;
+};
+static_assert(sizeof(ResamplePush) == 24);
 
 struct VerticalPush {
     uint32_t width, height, rowApron, inputHeight;
@@ -359,9 +375,91 @@ void VideoDemosaic::destroyHostBuffer(HostBuffer& buffer) noexcept {
     buffer = {};
 }
 
+void VideoDemosaic::createResample() {
+    const VkDevice device = context_.device;
+    for (uint32_t i = 0; i < kFramesInFlight; ++i) {
+        finals_[i] = rawr::vk::createOwnedImage(context_.physicalDevice, device, finalWidth_, finalHeight_,
+                                                VK_FORMAT_R16G16B16A16_SFLOAT,
+                                                VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+        finalClips_[i] = rawr::vk::createOwnedImage(context_.physicalDevice, device, finalWidth_ / 2u,
+                                                    finalHeight_ / 2u, VK_FORMAT_R16_UINT,
+                                                    VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+    }
+    resampleLayout_ = createLayout(device,
+                                   {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                                    VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},
+                                   "video resample layout");
+    resamplePipelineLayout_ =
+        createPipelineLayout(device, resampleLayout_, sizeof(ResamplePush), "video resample pipeline layout");
+    resamplePipeline_ = createComputePipeline(device, resamplePipelineLayout_, video_resample_spv,
+                                              video_resample_spv_size, "video resample pipeline");
+    allocateSets(device, resampleLayout_, {{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, kFramesInFlight * 4u}},
+                 &resamplePool_, resampleSets_.data(), kFramesInFlight, "video resample descriptors");
+    for (uint32_t i = 0; i < kFramesInFlight; ++i) {
+        const VkImageView views[4] = {outputs_[i].view, clipStates_[i].view, finals_[i].view, finalClips_[i].view};
+        VkDescriptorImageInfo infos[4]{};
+        VkWriteDescriptorSet writes[4]{};
+        for (uint32_t b = 0; b < 4; ++b) {
+            infos[b] = {VK_NULL_HANDLE, views[b], VK_IMAGE_LAYOUT_GENERAL};
+            writes[b].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[b].dstSet = resampleSets_[i];
+            writes[b].dstBinding = b;
+            writes[b].descriptorCount = 1;
+            writes[b].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+            writes[b].pImageInfo = &infos[b];
+        }
+        vkUpdateDescriptorSets(device, 4, writes, 0, nullptr);
+    }
+}
+
+void VideoDemosaic::recordResample(VkCommandBuffer command, uint32_t frameSlot) {
+    std::array<VkImageMemoryBarrier, 2> starts{};
+    for (uint32_t i = 0; i < starts.size(); ++i) {
+        starts[i].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        starts[i].oldLayout = finalInitialized_[frameSlot] ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_UNDEFINED;
+        starts[i].newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        starts[i].srcAccessMask = finalInitialized_[frameSlot] ? VK_ACCESS_SHADER_READ_BIT : 0u;
+        starts[i].dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        starts[i].image = i == 0 ? finals_[frameSlot].image : finalClips_[frameSlot].image;
+        starts[i].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    }
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0,
+                         nullptr, 0, nullptr, starts.size(), starts.data());
+    finalInitialized_[frameSlot] = true;
+    ResamplePush push{outputWidth_, outputHeight_, finalWidth_, finalHeight_,
+                      float(outputWidth_) / float(finalWidth_), float(outputHeight_) / float(finalHeight_)};
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, resamplePipeline_);
+    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, resamplePipelineLayout_, 0, 1,
+                            &resampleSets_[frameSlot], 0, nullptr);
+    vkCmdPushConstants(command, resamplePipelineLayout_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), &push);
+    vkCmdDispatch(command, (finalWidth_ + 15u) / 16u, (finalHeight_ + 15u) / 16u, 1);
+    std::array<VkImageMemoryBarrier, 2> ready{};
+    for (uint32_t i = 0; i < ready.size(); ++i) {
+        ready[i].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        ready[i].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        ready[i].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        ready[i].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+        ready[i].newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        ready[i].image = i == 0 ? finals_[frameSlot].image : finalClips_[frameSlot].image;
+        ready[i].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    }
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0,
+                         nullptr, 0, nullptr, ready.size(), ready.data());
+}
+
 void VideoDemosaic::destroy() noexcept {
     const VkDevice device = context_.device;
     if (!device) return;
+    for (auto& image : finals_) rawr::vk::destroyOwnedImage(device, image);
+    for (auto& image : finalClips_) rawr::vk::destroyOwnedImage(device, image);
+    if (resamplePool_) vkDestroyDescriptorPool(device, resamplePool_, nullptr);
+    if (resamplePipeline_) vkDestroyPipeline(device, resamplePipeline_, nullptr);
+    if (resamplePipelineLayout_) vkDestroyPipelineLayout(device, resamplePipelineLayout_, nullptr);
+    if (resampleLayout_) vkDestroyDescriptorSetLayout(device, resampleLayout_, nullptr);
+    resamplePool_ = VK_NULL_HANDLE;
+    resamplePipeline_ = VK_NULL_HANDLE;
+    resamplePipelineLayout_ = VK_NULL_HANDLE;
+    resampleLayout_ = VK_NULL_HANDLE;
     for (auto& buffer : lscBuffers_) destroyHostBuffer(buffer);
     for (auto& output : outputs_) rawr::vk::destroyOwnedImage(device, output);
     for (auto& clip : clipStates_) rawr::vk::destroyOwnedImage(device, clip);
@@ -553,5 +651,6 @@ void VideoDemosaic::record(VkCommandBuffer command, uint32_t frameSlot, const Fr
     }
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0,
                          nullptr, 0, nullptr, ready.size(), ready.data());
+    if (resample_) recordResample(command, frameSlot);
 }
 }  // namespace rawrcam::video

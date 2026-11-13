@@ -5,7 +5,6 @@ import com.rawr.camera.architecture.SetControlSurfaceStyle
 import com.rawr.camera.architecture.SyncToneControls
 import com.rawr.camera.model.CaptureMode
 import com.rawr.camera.settings.model.*
-import com.rawr.camera.video.VideoResolutionMode
 import com.rawr.camera.video.toVideoImageSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -147,30 +146,43 @@ internal class CaptureSettingsSync(
      * Open Gate and Photo show the full frame (clear). Output sizes are
      * sensor-landscape, matching the recorder's frame sizes.
      */
-    fun updatePreviewCrop(mode: CaptureMode, resolution: VideoResolutionMode) {
+    fun updatePreviewCrop(mode: CaptureMode, crop: com.rawr.camera.video.VideoCrop) {
+        // X14U video crop: the native side takes the sensor window, the viewfinder frames it.
+        val (source, output) = crop.sizes(rawSize().first, rawSize().second)
+        previewCoordinator.setVideoCropSource(source.width, source.height)
         when {
             mode != CaptureMode.Video -> previewCoordinator.clearVideoPreviewCrop()
-            resolution == VideoResolutionMode.HD1080 -> previewCoordinator.setVideoPreviewCropOut(1920, 1080)
-            resolution == VideoResolutionMode.UHD4K -> previewCoordinator.setVideoPreviewCropOut(3840, 2160)
-            else -> previewCoordinator.clearVideoPreviewCrop()
+            crop.isOpenGate && crop.factor == 1f -> previewCoordinator.clearVideoPreviewCrop()
+            else -> previewCoordinator.setVideoPreviewCropOut(output.width, output.height)
         }
-        prewarmVideo(mode, resolution)
+        prewarmVideo(mode, crop)
+    }
+
+    /** The active camera's RAW size (remembered for the crop panel), or the last one known. */
+    private fun rawSize(): Pair<Int, Int> {
+        runCatching {
+            val camera = org.json.JSONObject(previewCoordinator.cameraControlSnapshot())
+            val w = camera.optInt("rawWidth")
+            val h = camera.optInt("rawHeight")
+            if (w > 0 && h > 0) {
+                com.rawr.camera.video.VideoCrop.lastRawWidth = w
+                com.rawr.camera.video.VideoCrop.lastRawHeight = h
+            }
+        }
+        return com.rawr.camera.video.VideoCrop.lastRawWidth to com.rawr.camera.video.VideoCrop.lastRawHeight
     }
 
     /** Builds (Video) or frees (Photo) the recording pipeline so recording starts at once. */
     fun prewarmVideo(
         mode: CaptureMode = controller.state.value.captureMode,
-        resolution: VideoResolutionMode = controller.state.value.videoResolution
+        crop: com.rawr.camera.video.VideoCrop = controller.state.value.videoCrop
     ) {
         if (mode != CaptureMode.Video) {
             previewCoordinator.releaseVideoProcessing()
             return
         }
-        val (width, height) = when (resolution) {
-            VideoResolutionMode.HD1080 -> 1920 to 1080
-            VideoResolutionMode.UHD4K -> 3840 to 2160
-            VideoResolutionMode.OPEN_GATE -> 0 to 0
-        }
+        val output = crop.sizes(rawSize().first, rawSize().second).second
+        val (width, height) = output.width to output.height
         previewCoordinator.prewarmVideo(width, height, latestSettings().effectiveVideoBitDepth())
     }
 

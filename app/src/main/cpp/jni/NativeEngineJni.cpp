@@ -27,6 +27,7 @@
 #include "jni/CaptureGps.h"
 #include "jni/DevelopSettingsReader.h"
 #include "jni/SessionEngineApi.h"
+#include "video_pipeline/VideoCrop.h"
 #include "tonemap/ColorRenderProfile.h"
 #include "vulkan/VulkanDispatch.h"
 
@@ -193,6 +194,11 @@ extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreview
 
 // X14U video horizon lock: roll past the kept framing (radians) and the fixed crop (>= 1; 1 = off). Atomics only,
 // called straight from the sensor thread.
+// X14U video crop: the sensor window recordings use (0x0 = the original size rule).
+extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setVideoCropSource(
+    JNIEnv*, jobject, jint width, jint height) {
+    rawrcam::video::setVideoCropSource(uint32_t(std::max(width, 0)) & ~1u, uint32_t(std::max(height, 0)) & ~1u);
+}
 extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setHorizonLock(JNIEnv*, jobject,
                                                                                                       jfloat roll,
                                                                                                       jfloat scale,

@@ -45,12 +45,25 @@ class VideoDemosaic final {
     };
 
     void record(VkCommandBuffer command, uint32_t frameSlot, const Frame& frame);
-    VkImageView outputView(uint32_t frameSlot) const noexcept { return outputs_[frameSlot].view; }
-    VkImage outputImage(uint32_t frameSlot) const noexcept { return outputs_[frameSlot].image; }
-    VkImageView clipStateView(uint32_t frameSlot) const noexcept { return clipStates_[frameSlot].view; }
-    VkImage clipStateImage(uint32_t frameSlot) const noexcept { return clipStates_[frameSlot].image; }
-    uint32_t outputWidth() const noexcept { return outputWidth_; }
-    uint32_t outputHeight() const noexcept { return outputHeight_; }
+    // The recording-size image (the resampled one when the crop's downscale needs it).
+    VkImageView outputView(uint32_t frameSlot) const noexcept {
+        return resample_ ? finals_[frameSlot].view : outputs_[frameSlot].view;
+    }
+    VkImage outputImage(uint32_t frameSlot) const noexcept {
+        return resample_ ? finals_[frameSlot].image : outputs_[frameSlot].image;
+    }
+    VkImageView clipStateView(uint32_t frameSlot) const noexcept {
+        return resample_ ? finalClips_[frameSlot].view : clipStates_[frameSlot].view;
+    }
+    VkImage clipStateImage(uint32_t frameSlot) const noexcept {
+        return resample_ ? finalClips_[frameSlot].image : clipStates_[frameSlot].image;
+    }
+    uint32_t outputWidth() const noexcept { return finalWidth_; }
+    uint32_t outputHeight() const noexcept { return finalHeight_; }
+    // Sensor window the recording covers, and sensor pixels per output pixel.
+    uint32_t sourceWidth() const noexcept { return sourceWidth_; }
+    uint32_t sourceHeight() const noexcept { return sourceHeight_; }
+    float frameScale() const noexcept { return finalWidth_ ? float(sourceWidth_) / float(finalWidth_) : 1.0f; }
     uint32_t rawWidth() const noexcept { return rawWidth_; }
     uint32_t rawHeight() const noexcept { return rawHeight_; }
     uint32_t cropX() const noexcept { return cropX_; }
@@ -81,10 +94,24 @@ class VideoDemosaic final {
     void destroy() noexcept;
     void createDownscale();
     void recordVertical(VkCommandBuffer command, uint32_t frameSlot, const Frame& frame);
+    void createResample();
+    void recordResample(VkCommandBuffer command, uint32_t frameSlot);
 
     rawr::vk::GpuContext context_;
     uint32_t rawWidth_ = 0, rawHeight_ = 0;
+    // Demosaic target (the crop at 1:1 or halved); finals_ hold the recording size when they differ.
     uint32_t outputWidth_ = 0, outputHeight_ = 0;
+    uint32_t finalWidth_ = 0, finalHeight_ = 0;
+    uint32_t sourceWidth_ = 0, sourceHeight_ = 0;
+    bool resample_ = false;
+    std::array<rawr::vk::OwnedImage, kFramesInFlight> finals_{};
+    std::array<rawr::vk::OwnedImage, kFramesInFlight> finalClips_{};
+    std::array<bool, kFramesInFlight> finalInitialized_{};
+    VkDescriptorSetLayout resampleLayout_ = VK_NULL_HANDLE;
+    VkPipelineLayout resamplePipelineLayout_ = VK_NULL_HANDLE;
+    VkPipeline resamplePipeline_ = VK_NULL_HANDLE;
+    VkDescriptorPool resamplePool_ = VK_NULL_HANDLE;
+    std::array<VkDescriptorSet, kFramesInFlight> resampleSets_{};
     uint32_t cropX_ = 0, cropY_ = 0;
     bool reduceCfa_ = false;
     bool quad_ = false;  // 1:1 recording runs the quad-per-thread shader

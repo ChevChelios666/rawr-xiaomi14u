@@ -24,7 +24,7 @@ internal class CaptureRecordingBackend(
 ) {
     suspend fun start(options: RecordingOptions, gps: CaptureGps?): VideoRecording {
         val captureSnapshot = controller.state.value
-        val selectedMode = captureSnapshot.videoResolution
+        val selectedCrop = captureSnapshot.videoCrop
         val selectedFps = captureSnapshot.videoFps
         val imageSettings = settingsSnapshot()
         val encoder = imageSettings.videoEncoder.sanitized()
@@ -46,8 +46,16 @@ internal class CaptureRecordingBackend(
                         preview.setManualSensitivity(
                             requireNotNull(options.iso))
                 }
-                val frameSize = selectedMode.resolve(
-                    JSONObject(preview.cameraControlSnapshot()))
+                // X14U video crop: the sensor window goes to the native recorder before it is set up.
+                val camera = JSONObject(preview.cameraControlSnapshot())
+                val rawWidth = camera.optInt("rawWidth")
+                val rawHeight = camera.optInt("rawHeight")
+                require(rawWidth > 0 && rawHeight > 0) { "Active RAW camera geometry is unavailable" }
+                VideoCrop.lastRawWidth = rawWidth
+                VideoCrop.lastRawHeight = rawHeight
+                val (cropSource, frameSize) = selectedCrop.sizes(rawWidth, rawHeight)
+                preview.setVideoCropSource(cropSource.width, cropSource.height)
+                val selectedMode = selectedCrop.bitrateClass(frameSize)
                 // Settings → Video Encoder; debug builds let scripted runs override via extras.
                 fun extra(name: String, value: Int) =
                     options.encoderOverrides[name] ?: value

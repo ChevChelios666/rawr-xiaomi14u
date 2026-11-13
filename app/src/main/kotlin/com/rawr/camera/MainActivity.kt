@@ -183,10 +183,10 @@ class MainActivity : ComponentActivity() {
             val viewfinderQuick by captureViewModel.viewfinderQuick.collectAsStateWithLifecycle()
             val latestGalleryImage by captureViewModel.latestGalleryImage.collectAsStateWithLifecycle()
             val videoSelection = androidx.compose.runtime.remember(captureViewModel) {
-                captureViewModel.controller.state.map { it.videoResolution to it.videoFps }.distinctUntilChanged()
+                captureViewModel.controller.state.map { it.videoCrop to it.videoFps }.distinctUntilChanged()
             }
             val initialVideoSelection = androidx.compose.runtime.remember(captureViewModel) {
-                captureViewModel.controller.state.value.let { it.videoResolution to it.videoFps }
+                captureViewModel.controller.state.value.let { it.videoCrop to it.videoFps }
             }
             val selectedVideo by videoSelection.collectAsStateWithLifecycle(initialVideoSelection)
             val recording by captureViewModel.recording.state.collectAsStateWithLifecycle()
@@ -238,7 +238,7 @@ class MainActivity : ComponentActivity() {
                     quick = viewfinderQuick,
                     onQuickEvent = captureViewModel::onQuickEvent,
                     videoControls = VideoControlState(
-                        resolution = selectedVideo.first.label,
+                        resolution = selectedVideo.first.sizes().second.let { "${it.width}×${it.height}" },
                         fps = selectedVideo.second,
                         recording = recording.recording,
                         busy = recording.busy,
@@ -421,6 +421,13 @@ class MainActivity : ComponentActivity() {
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         super.onStop()
     }
+
+    // Button test (Tools): every key and dial event is shown instead of acting.
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean =
+        com.rawr.camera.integration.ButtonTest.onKey(event) || super.dispatchKeyEvent(event)
+
+    override fun dispatchGenericMotionEvent(ev: android.view.MotionEvent): Boolean =
+        com.rawr.camera.integration.ButtonTest.onMotion(ev) || super.dispatchGenericMotionEvent(ev)
 
     // Volume down is a hardware shutter: photo capture, or start/stop in video.
     // Held-key repeats are dropped so one press is one shot, and the key is

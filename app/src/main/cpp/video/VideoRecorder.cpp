@@ -22,9 +22,9 @@ namespace rawrcam::video {
 rawr::post::StillDistortionCorrection VideoRecorder::distortionFor(const rawrcam::geometry::LensDistortionModel& lens,
                                                                   uint32_t rawWidth, uint32_t rawHeight) {
     const auto& demosaic = *resources_.demosaic_;
-    const uint32_t scale = demosaic.sensorScale();
+    const float scale = demosaic.frameScale();
     const uint32_t cropX = demosaic.cropX(), cropY = demosaic.cropY();
-    const uint32_t cropW = output_.extent_.width * scale, cropH = output_.extent_.height * scale;
+    const uint32_t cropW = demosaic.sourceWidth(), cropH = demosaic.sourceHeight();
     auto& c = distortionCache_;
     const bool same = c.valid && c.rawWidth == rawWidth && c.rawHeight == rawHeight && c.cropX == cropX &&
                       c.cropY == cropY && c.cropW == cropW && c.cropH == cropH && c.lens.k == lens.k &&
@@ -46,10 +46,10 @@ rawr::post::StillDistortionCorrection VideoRecorder::distortionFor(const rawrcam
     d.rationalDenominator = {float(model->k[5]), float(model->k[6]), float(model->k[7])};
     d.outputFocal = {float(model->fx * outputScale), float(model->fy * outputScale)};
     d.frameOrigin = {float(cropX), float(cropY)};
-    d.frameScale = float(scale);
+    d.frameScale = scale;
     __android_log_print(ANDROID_LOG_INFO, "RawrNativeVideo",
-                        "VIDEO_DISTORTION_CORRECTION raw=%ux%u crop=%u,%u %ux%u scale=%u outputScale=%.5f", rawWidth,
-                        rawHeight, cropX, cropY, cropW, cropH, scale, outputScale);
+                        "VIDEO_DISTORTION_CORRECTION raw=%ux%u crop=%u,%u %ux%u scale=%.4f outputScale=%.5f", rawWidth,
+                        rawHeight, cropX, cropY, cropW, cropH, double(scale), outputScale);
     return c.correction;
 }
 void VideoRecorder::record(VkCommandBuffer command, uint32_t frameSlot, uint32_t imageIndex, uint32_t rawWidth,
@@ -138,7 +138,7 @@ void VideoRecorder::record(VkCommandBuffer command, uint32_t frameSlot, uint32_t
     }
     const rawr::highlight::ColoroppSensorGeometry geometry{rawWidth, rawHeight, resources_.demosaic_->cropX(),
                                                            resources_.demosaic_->cropY(),
-                                                           resources_.demosaic_->sensorScale()};
+                                                           resources_.demosaic_->frameScale()};
     auto lensCorrection =
         lensDistortion ? distortionFor(*lensDistortion, rawWidth, rawHeight) : rawr::post::StillDistortionCorrection{};
     // X14U horizon lock: rotate the output about the centre and zoom in by the lock's fixed crop. Without a lens

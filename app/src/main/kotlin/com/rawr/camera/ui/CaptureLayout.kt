@@ -19,7 +19,6 @@ import com.rawr.camera.model.CaptureUiState
 import com.rawr.camera.model.FilmSimQuickState
 import com.rawr.camera.model.RenderProfileQuickState
 import com.rawr.camera.model.monitorProjection
-import com.rawr.camera.video.VideoResolutionMode
 
 /** X14U: the new capture screen (X14uCaptureLayout); false brings back the previous layout. */
 internal const val X14U_NEW_CAPTURE_SCREEN = true
@@ -67,7 +66,7 @@ internal fun PhysicalCaptureLayout(
     val compactControls = isVideo || state.captureLayout == CaptureControlLayout.Compact
     // 16:9 viewfinders run past the photo frame and behind the shutter
     // cluster; Open Gate is exactly the photo box, so nothing bleeds.
-    val videoBleed = isVideo && state.videoResolution != VideoResolutionMode.OPEN_GATE
+    val videoBleed = isVideo && !state.videoCrop.isOpenGate
     BoxWithConstraints(modifier) {
         // Reserve the shutter/record area and both monitors before sizing the
         // 3:4 viewfinder. A short display must not push the readout below nav.

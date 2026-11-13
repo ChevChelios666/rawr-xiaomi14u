@@ -19,8 +19,7 @@ data class RestoreCapturePreferences(
     val multiframeAlgorithm: com.rawr.camera.settings.model.MultiframeMergeAlgorithm = com.rawr.camera.settings.model.MultiframeMergeAlgorithm.HdrPlusQuality,
     val captureLayout: CaptureControlLayout = CaptureControlLayout.Compact,
     val captureMode: CaptureMode = CaptureMode.Photo,
-    val videoResolution: com.rawr.camera.video.VideoResolutionMode =
-        com.rawr.camera.video.VideoResolutionMode.HD1080,
+    val videoCrop: com.rawr.camera.video.VideoCrop = com.rawr.camera.video.VideoCrop.Default,
     val videoFps: Int = 30,
     val videoLogEnabled: Boolean = false,
     val selfTimer: com.rawr.camera.settings.model.SelfTimer =
@@ -44,6 +43,9 @@ data class SetCaptureLayout(val layout: CaptureControlLayout) : PresentationCapt
 data class SetCaptureMode(val mode: CaptureMode) : PresentationCaptureAction
 
 data object CycleVideoResolution : PresentationCaptureAction
+
+/** X14U video crop panel. */
+data class SetVideoCrop(val crop: com.rawr.camera.video.VideoCrop) : PresentationCaptureAction
 
 data object CycleVideoFps : PresentationCaptureAction
 

@@ -9,7 +9,8 @@
 
 namespace rawr::highlight {
 struct ColoroppSensorGeometry {
-    uint32_t width = 0, height = 0, cropX = 0, cropY = 0, scale = 1;
+    uint32_t width = 0, height = 0, cropX = 0, cropY = 0;
+    float scale = 1.0f;
 };
 // coloropp.comp (pre-WB build) and coloropp_tone.comp. fusedWb is the
 // optional RAWR_COLOROPP_FUSED_WB build used by recordFused().

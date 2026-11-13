@@ -31,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -121,7 +122,6 @@ import com.rawr.camera.settings.model.RawrMetering
 import com.rawr.camera.settings.model.RawrNightLook
 import com.rawr.camera.ui.icons.Icons
 import com.rawr.camera.ui.icons.outlined.Exposure
-import com.rawr.camera.video.VideoResolutionMode
 import kotlin.math.abs
 import kotlin.math.ln
 import kotlin.math.pow
@@ -251,7 +251,9 @@ internal fun X14uCaptureLayout(
     val videoLocked = videoControls.busy || videoControls.recording
     // Video recording, or a 50 MP shot running (its camera switch must not meet a lens change).
     val recordingLock = (isVideo && videoLocked) || LocalCaptureExtras.current.fullSizeBusy
-    val videoBleed = isVideo && state.videoResolution != VideoResolutionMode.OPEN_GATE
+    // X14U video crop: the viewfinder takes the recording's shape (portrait: its height over its width).
+    val videoAspect = if (isVideo) state.videoCrop.sizes().second.let { it.width.toFloat() / it.height } else 4f / 3f
+    val videoBleed = isVideo && videoAspect > 4f / 3f + .01f
     val orientation = state.orientation
     var selected by remember { mutableStateOf<String?>(null) }
     var panel by remember { mutableStateOf<X14uPanel?>(null) }
@@ -314,6 +316,8 @@ internal fun X14uCaptureLayout(
     }
     // Tools panel (swipe down on the viewfinder / top-bar arrow) and its open choice row.
     var toolsOpen by remember { mutableStateOf(false) }
+    // Video crop panel (top bar crop chip).
+    var cropOpen by remember { mutableStateOf(false) }
     var toolsChoice by remember { mutableStateOf<String?>(null) }
     val extrasNow = LocalCaptureExtras.current
     // Swipe-up mode change: the new mode's name shows briefly on the viewfinder.
@@ -335,6 +339,7 @@ internal fun X14uCaptureLayout(
             modeFlash = null
         }
     }
+    LaunchedEffect(isVideo, recordingLock) { if (!isVideo || recordingLock) cropOpen = false }
     LaunchedEffect(state.captureMode, state.selectedLensId) {
         // The zoom ruler stays open through the lens switches zooming makes.
         if (!(selected == ZOOM_KEY && zoomOn)) selected = null
@@ -343,10 +348,11 @@ internal fun X14uCaptureLayout(
     LaunchedEffect(selected) { if (selected != "wb") wbTint = false }
     val lensOptions = quick.lensOptions.firstOrNull { it.lensId == state.selectedLensId }
     val closeAll: () -> Boolean = {
-        val open = selected != null || panel != null || toolsOpen
+        val open = selected != null || panel != null || toolsOpen || cropOpen
         selected = null
         panel = null
         toolsOpen = false
+        cropOpen = false
         toolsChoice = null
         open
     }
@@ -354,6 +360,7 @@ internal fun X14uCaptureLayout(
         if (open) {
             selected = null
             panel = null
+            cropOpen = false
         }
         toolsOpen = open
         toolsChoice = null
@@ -568,7 +575,14 @@ internal fun X14uCaptureLayout(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .offset(y = top)
-                    .size(if (videoBleed) DpSize(frameWidth, frameWidth * 16f / 9f) else frame),
+                    .size(
+                        if (!isVideo) frame else {
+                            // The recording's shape at the frame's width, narrowed if it would run off the screen.
+                            val tallest = fullHeight - top - 8.dp
+                            val height = minOf(frameWidth * videoAspect, tallest)
+                            DpSize(height / videoAspect, height)
+                        }
+                    ),
                 slotFrame = frame,
                 forceCompact = isVideo,
                 forceTonemapStrip = isVideo,
@@ -724,14 +738,6 @@ internal fun X14uCaptureLayout(
                             else Modifier.align(Alignment.TopCenter).padding(top = 10.dp)
                     )
                 }
-                X14uRawrAeToggle(
-                    on = quick.rawrAe.enabled,
-                    enabled = !recordingLock,
-                    orientation = orientation,
-                    onToggle = { onQuickEvent(CaptureQuickEvent.SetRawrAeOption { it.copy(enabled = !it.enabled) }) },
-                    modifier = Modifier.align(Alignment.BottomEnd)
-                        .padding(bottom = (31.dp * s - 18.dp).coerceAtLeast(4.dp) + 40.dp + 10.dp, end = 7.dp)
-                )
                 X14uLensRow(
                     state = state,
                     dispatch = dispatch,
@@ -767,8 +773,28 @@ internal fun X14uCaptureLayout(
                 toggles = { X14uOptionToggles(quick, lensOptions, isVideo, enabled = !recordingLock, orientation, onQuickEvent) },
                 toggleCount = x14uOptionToggleCount(quick, lensOptions, isVideo),
                 toolsOpen = toolsOpen,
-                onToggleTools = { openTools(!toolsOpen) }
+                onToggleTools = { openTools(!toolsOpen) },
+                onVideoCrop = {
+                    val open = !cropOpen
+                    closeAll()
+                    cropOpen = open
+                }
             )
+            val buttonTestOn by com.rawr.camera.integration.ButtonTest.enabled.collectAsState()
+            if (buttonTestOn) {
+                X14uButtonTestOverlay(
+                    Modifier.align(Alignment.TopCenter).offset(y = top + 6.dp).padding(horizontal = 12.dp).fillMaxWidth()
+                )
+            }
+            if (cropOpen && isVideo) {
+                X14uVideoCropPanel(
+                    crop = state.videoCrop,
+                    onChange = { dispatch(com.rawr.camera.architecture.SetVideoCrop(it)) },
+                    onClose = { cropOpen = false },
+                    modifier = Modifier.align(Alignment.TopCenter).offset(y = top + 6.dp)
+                        .padding(horizontal = 12.dp).fillMaxWidth()
+                )
+            }
             val onCellTap: (String) -> Unit = { key ->
                 if (panoLocked) Unit
                 else if (panel == null) selected = if (selected == key) null else key
@@ -970,37 +996,6 @@ private fun X14uRoundButton(
                 else -> Color.White.copy(alpha = .9f)
             },
             modifier = Modifier.size(size * iconScale).then(if (turn) Modifier.uprightInLandscape(orientation) else Modifier)
-        )
-    }
-}
-
-/** R AE: Rawr AE on (accent) or Device AE (grey); S and I need Rawr AE. */
-@Composable
-private fun X14uRawrAeToggle(on: Boolean, enabled: Boolean, orientation: Orientation, onToggle: () -> Unit, modifier: Modifier) {
-    val haptics = LocalCaptureHaptics.current
-    Box(
-        modifier
-            .size(36.dp)
-            .background(Color.Black.copy(alpha = .5f), CircleShape)
-            .border(1.2.dp, if (on) CaptureColors.Accent else Color.White.copy(alpha = .25f), CircleShape)
-            .captureClickable(shape = CircleShape, enabled = enabled, role = Role.Switch) {
-                haptics.selection()
-                onToggle()
-            }
-            .semantics { contentDescription = if (on) "Rawr AE on. Tap for device AE." else "Device AE. Tap for Rawr AE." },
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            "R AE",
-            fontFamily = X14uFont,
-            fontWeight = FontWeight.Medium,
-            fontSize = dpText(10.5f),
-            maxLines = 1,
-            color = when {
-                !enabled -> Color.White.copy(alpha = .25f)
-                on -> CaptureColors.Accent
-                else -> Color.White.copy(alpha = .5f)
-            }
         )
     }
 }

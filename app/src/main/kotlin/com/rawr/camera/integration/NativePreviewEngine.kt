@@ -32,6 +32,7 @@ class NativePreviewEngine {
 
     /** X14U video horizon lock: roll past the kept framing (radians, clockwise in the camera's image) and crop (1 = off). */
     external fun setHorizonLock(roll: Float, scale: Float, natural: Boolean, viewRoll: Float, fit: Boolean)
+    external fun setVideoCropSource(width: Int, height: Int)
 
     /** X14U 50 MP shot: carry the viewfinder's white balance into the shot's session (true) or let go (false). */
     external fun setCarryWhiteBalance(on: Boolean)

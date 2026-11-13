@@ -1,6 +1,8 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
+#include <utility>
 
 namespace rawrcam::video {
 
@@ -15,13 +17,50 @@ struct VideoSourceRect {
     uint32_t width = 0;
     uint32_t height = 0;
     bool reduceCfa = false;
+    // Size the demosaic produces (the rect at 1:1, or halved when reduceCfa); a
+    // resample then brings it to the output size when the two differ.
+    uint32_t baseWidth = 0;
+    uint32_t baseHeight = 0;
 };
+
+// X14U video crop: the sensor window the recording uses (aspect or pixel crop),
+// set from the app before the recording pipeline is built. 0x0 keeps the
+// original rule (the output size, or twice it when that fits).
+inline std::atomic<uint64_t>& videoCropSourceSlot() noexcept {
+    static std::atomic<uint64_t> slot{0};
+    return slot;
+}
+inline void setVideoCropSource(uint32_t width, uint32_t height) noexcept {
+    videoCropSourceSlot().store((uint64_t(width) << 32) | height, std::memory_order_relaxed);
+}
+inline std::pair<uint32_t, uint32_t> videoCropSource() noexcept {
+    const uint64_t v = videoCropSourceSlot().load(std::memory_order_relaxed);
+    return {uint32_t(v >> 32), uint32_t(v & 0xffffffffu)};
+}
 
 // Source rect in full-RAW pixels for a recording output size. Returns an
 // empty rect (width/height 0) when the output does not fit the sensor.
 [[nodiscard]] inline VideoSourceRect videoSourceRect(uint32_t rawWidth, uint32_t rawHeight,
                                                      uint32_t outWidth, uint32_t outHeight) noexcept {
     VideoSourceRect rect{};
+    if (outWidth == 0 || outHeight == 0) return rect;
+    const auto [cropWidth, cropHeight] = videoCropSource();
+    if (cropWidth >= outWidth && cropHeight >= outHeight && cropWidth <= rawWidth && cropHeight <= rawHeight) {
+        // Configured window: 2x Bayer reduction when the output is at most half of it, then a resample.
+        const bool reduce = uint64_t(outWidth) * 2u <= cropWidth && uint64_t(outHeight) * 2u <= cropHeight;
+        const uint32_t baseWidth = reduce ? (cropWidth / 2u) & ~1u : cropWidth & ~1u;
+        const uint32_t baseHeight = reduce ? (cropHeight / 2u) & ~1u : cropHeight & ~1u;
+        if (baseWidth >= outWidth && baseHeight >= outHeight) {
+            rect.width = reduce ? baseWidth * 2u : baseWidth;
+            rect.height = reduce ? baseHeight * 2u : baseHeight;
+            rect.x = ((rawWidth - rect.width) / 2u) & ~1u;
+            rect.y = ((rawHeight - rect.height) / 2u) & ~1u;
+            rect.reduceCfa = reduce;
+            rect.baseWidth = baseWidth;
+            rect.baseHeight = baseHeight;
+            return rect;
+        }
+    }
     const bool reduce =
         uint64_t(outWidth) * 2u <= rawWidth && uint64_t(outHeight) * 2u <= rawHeight;
     const uint32_t sourceWidth = reduce ? outWidth * 2u : outWidth;
@@ -33,6 +72,8 @@ struct VideoSourceRect {
     rect.width = sourceWidth;
     rect.height = sourceHeight;
     rect.reduceCfa = reduce;
+    rect.baseWidth = outWidth;
+    rect.baseHeight = outHeight;
     return rect;
 }
 
@@ -44,6 +85,8 @@ struct VideoSourceRect {
                                                           uint32_t toHeight) noexcept {
     VideoSourceRect out{};
     out.reduceCfa = rect.reduceCfa;
+    out.baseWidth = rect.baseWidth;
+    out.baseHeight = rect.baseHeight;
     if (fromWidth == 0 || fromHeight == 0 || toWidth == 0 || toHeight == 0 || rect.width == 0 ||
         rect.height == 0)
         return VideoSourceRect{};

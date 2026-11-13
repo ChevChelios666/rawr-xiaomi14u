@@ -22,10 +22,10 @@ object CaptureReducer {
                 multiframeAlgorithm = action.multiframeAlgorithm,
                 captureLayout = action.captureLayout,
                 captureMode = action.captureMode,
-                videoResolution = action.videoResolution,
-                // X14U: 60 fps is 1080p only (4K/Open Gate can't develop in 16.6 ms).
+                videoCrop = action.videoCrop,
+                // X14U: 60 fps only for small, light crops (the rest can't develop in 16.6 ms).
                 videoFps = action.videoFps.coerceVideoFps()
-                    .let { if (it == 60 && action.videoResolution != VideoResolutionMode.HD1080) 30 else it },
+                    .let { if (it == 60 && !action.videoCrop.allowsSixty()) 30 else it },
                 videoLogEnabled = action.videoLogEnabled,
                 selfTimer = action.selfTimer,
                 // A restored preference never resumes a mid-flight countdown.
@@ -87,15 +87,25 @@ object CaptureReducer {
         }
 
         CycleVideoResolution -> {
-            val resolution = state.videoResolution.next()
-            state.copy(videoResolution = resolution,
-                videoFps = if (state.videoFps == 60 && resolution != VideoResolutionMode.HD1080) 30 else state.videoFps)
+            // The classic layout's chip: the former 1080p, 4K and Open Gate in turn.
+            val presets = listOf(
+                com.rawr.camera.video.VideoCrop.fromLegacy(VideoResolutionMode.HD1080),
+                com.rawr.camera.video.VideoCrop.fromLegacy(VideoResolutionMode.UHD4K),
+                com.rawr.camera.video.VideoCrop.fromLegacy(VideoResolutionMode.OPEN_GATE)
+            )
+            val crop = presets[(presets.indexOf(state.videoCrop) + 1) % presets.size]
+            state.copy(videoCrop = crop, videoFps = if (state.videoFps == 60 && !crop.allowsSixty()) 30 else state.videoFps)
         }
+
+        is SetVideoCrop -> state.copy(
+            videoCrop = action.crop,
+            videoFps = if (state.videoFps == 60 && !action.crop.allowsSixty()) 30 else state.videoFps
+        )
 
         ToggleVideoLog -> if (state.captureMode == CaptureMode.Video) state.copy(videoLogEnabled = !state.videoLogEnabled) else state
 
         CycleVideoFps -> {
-            val sixty = state.videoResolution == VideoResolutionMode.HD1080 && state.capabilities.videoSixtyFps
+            val sixty = state.videoCrop.allowsSixty() && state.capabilities.videoSixtyFps
             state.copy(videoFps = when (state.videoFps) { 24 -> 30; 30 -> if (sixty) 60 else 24; else -> 24 })
         }
 

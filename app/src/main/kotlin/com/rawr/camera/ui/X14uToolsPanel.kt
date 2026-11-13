@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -153,6 +154,7 @@ internal fun X14uToolsPanel(
     }
     val toggleChoice: (String) -> Unit = { key -> onChoice(if (choice == key) null else key) }
     val wb = state.whiteBalanceMode
+    val buttonTest by com.rawr.camera.integration.ButtonTest.enabled.collectAsState()
     val tiles = buildList {
         add(X14uTile("grid", "Grid", state.grid != GridMode.Off, X14uIcons.Grid, value = gridLabel(state.grid)) { toggleChoice("grid") })
         if (!video) {
@@ -203,6 +205,10 @@ internal fun X14uToolsPanel(
                     arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
                 )
             }
+        })
+        add(X14uTile("buttons", "Button\ntest", buttonTest, text = "KEY") {
+            com.rawr.camera.integration.ButtonTest.setEnabled(!buttonTest)
+            onClose()
         })
         add(X14uTile("settings", "Settings", false, Icons.Outlined.Settings) { onOpenSettings() })
         if (frontLens && !video) {

@@ -755,7 +755,7 @@ void RawPreview::recordColoropp(const RawPreviewRecordInfo& recordInfo, Coloropp
                             recordInfo.height,
                             0u,
                             0u,
-                            2u * cellScale};
+                            float(2u * cellScale)};
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, coloroppPipeline_);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, coloroppLayout_, 0, 1, &r.coloroppSet, 0, nullptr);
     vkCmdPushConstants(cmd, coloroppLayout_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), &push);

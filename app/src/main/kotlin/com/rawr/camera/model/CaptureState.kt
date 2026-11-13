@@ -147,8 +147,8 @@ data class CaptureUiState(
     val cameraContextGeneration: Long = 0L,
     val orientation: Orientation = Orientation.Portrait,
     val captureMode: CaptureMode = CaptureMode.Photo,
-    val videoResolution: com.rawr.camera.video.VideoResolutionMode =
-        com.rawr.camera.video.VideoResolutionMode.HD1080,
+    /** X14U video crop: sensor window and recording size (replaces the 1080p / 4K / Open Gate choice). */
+    val videoCrop: com.rawr.camera.video.VideoCrop = com.rawr.camera.video.VideoCrop.Default,
     /** Recording frame rate; only 24 and 30 are supported by the native recorder. */
     val videoFps: Int = 30,
     val videoLogEnabled: Boolean = false,

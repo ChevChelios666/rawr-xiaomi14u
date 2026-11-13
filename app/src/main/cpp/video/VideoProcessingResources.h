@@ -25,15 +25,19 @@ class VideoProcessingResources final {
         VkFormat outputFormat = VK_FORMAT_UNDEFINED;
         uint32_t fccSteps = 0;
         float defringeStrength = 0.0f;
+        // X14U video crop: the sensor window (0x0 = the original rule); part of the key so a new crop rebuilds.
+        uint32_t sourceWidth = 0, sourceHeight = 0;
         bool operator==(const ProcessingKey& o) const noexcept {
             return width == o.width && height == o.height && rawWidth == o.rawWidth && rawHeight == o.rawHeight &&
-                   outputFormat == o.outputFormat && fccSteps == o.fccSteps && defringeStrength == o.defringeStrength;
+                   outputFormat == o.outputFormat && fccSteps == o.fccSteps && defringeStrength == o.defringeStrength &&
+                   sourceWidth == o.sourceWidth && sourceHeight == o.sourceHeight;
         }
         bool operator!=(const ProcessingKey& o) const noexcept { return !(*this == o); }
         std::string describe() const {
             return std::to_string(width) + "x" + std::to_string(height) + " raw " + std::to_string(rawWidth) + "x" +
                    std::to_string(rawHeight) + " fmt " + std::to_string(outputFormat) + " fcc " +
-                   std::to_string(fccSteps) + " defringe " + std::to_string(defringeStrength);
+                   std::to_string(fccSteps) + " defringe " + std::to_string(defringeStrength) + " source " +
+                   std::to_string(sourceWidth) + "x" + std::to_string(sourceHeight);
         }
     };
     // Processing built ahead of a recording, possibly off the engine lock.

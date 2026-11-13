@@ -1,0 +1,49 @@
+#version 450
+#extension GL_EXT_control_flow_attributes : require
+
+// X14U video crop: brings the demosaiced crop (1:1, or 2x reduced) down to the recording size when the chosen
+// downscale isn't 1x or 2x. A tent filter as wide as the scale (at least one pixel) keeps it alias-free without
+// ringing; the clip state is OR-ed over the source texels each output texel covers.
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+layout(binding = 0, rgba16f) uniform readonly image2D sourceImage;
+layout(binding = 1, r16ui) uniform readonly uimage2D sourceClip;
+layout(binding = 2, rgba16f) uniform writeonly image2D targetImage;
+layout(binding = 3, r16ui) uniform writeonly uimage2D targetClip;
+
+layout(push_constant) uniform Push {
+    uint sourceWidth, sourceHeight, targetWidth, targetHeight;
+    float scaleX, scaleY;
+} pc;
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= int(pc.targetWidth) || p.y >= int(pc.targetHeight)) return;
+    vec2 scale = vec2(pc.scaleX, pc.scaleY);
+    vec2 center = (vec2(p) + 0.5) * scale;
+    vec2 radius = max(scale, vec2(1.0));
+    ivec2 lo = ivec2(floor(center - radius));
+    ivec2 hi = ivec2(ceil(center + radius));
+    ivec2 limit = ivec2(pc.sourceWidth, pc.sourceHeight) - 1;
+    vec4 sum = vec4(0.0);
+    float total = 0.0;
+    for (int y = lo.y; y <= hi.y; ++y) {
+        float wy = max(0.0, 1.0 - abs(float(y) + 0.5 - center.y) / radius.y);
+        if (wy <= 0.0) continue;
+        for (int x = lo.x; x <= hi.x; ++x) {
+            float w = wy * max(0.0, 1.0 - abs(float(x) + 0.5 - center.x) / radius.x);
+            if (w <= 0.0) continue;
+            sum += w * imageLoad(sourceImage, clamp(ivec2(x, y), ivec2(0), limit));
+            total += w;
+        }
+    }
+    imageStore(targetImage, p, vec4(sum.rgb / max(total, 1e-6), 1.0));
+    if ((p.x & 1) != 0 || (p.y & 1) != 0) return;
+    // Clip texel p/2 covers target pixels p..p+1, i.e. source pixels [p*scale, (p+2)*scale).
+    ivec2 clipLimit = ivec2(pc.sourceWidth, pc.sourceHeight) / 2 - 1;
+    ivec2 c0 = clamp(ivec2(floor(vec2(p) * scale * 0.5)), ivec2(0), clipLimit);
+    ivec2 c1 = clamp(ivec2(ceil((vec2(p) + 2.0) * scale * 0.5)) - 1, c0, clipLimit);
+    uint state = 0u;
+    for (int y = c0.y; y <= c1.y; ++y)
+        for (int x = c0.x; x <= c1.x; ++x) state |= imageLoad(sourceClip, ivec2(x, y)).r;
+    imageStore(targetClip, p / 2, uvec4(state, 0u, 0u, 0u));
+}

@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import com.rawr.camera.ui.icons.Icons
 import com.rawr.camera.ui.icons.outlined.AspectRatio
+import com.rawr.camera.ui.icons.outlined.Crop
 import com.rawr.camera.ui.icons.outlined.Hd
 import com.rawr.camera.ui.icons.outlined.HighQuality
 import com.rawr.camera.ui.icons.outlined.Settings
@@ -58,7 +59,9 @@ internal fun CaptureTopBar(
      * WB and Settings buttons, which live in the panel.
      */
     toolsOpen: Boolean? = null,
-    onToggleTools: () -> Unit = {}
+    onToggleTools: () -> Unit = {},
+    /** X14U: the crop chip opens the video crop panel (null: the chip cycles 1080p / 4K / Open Gate). */
+    onVideoCrop: (() -> Unit)? = null
 ) {
     val haptics = LocalCaptureHaptics.current
     Row(
@@ -76,10 +79,10 @@ internal fun CaptureTopBar(
             if (toolsOpen != null) repeat((videoRightSlots - videoLeftSlots).coerceAtLeast(0)) { TopBarSlot {} }
             TopBarSlot {
                 VideoTopBarChoice(
-                    icon = state.videoResolution.topBarIcon(),
-                    label = state.videoResolution.topBarLabel(),
+                    icon = if (onVideoCrop != null) Icons.Outlined.Crop else state.videoCrop.bitrateClass().topBarIcon(),
+                    label = if (onVideoCrop != null) state.videoCrop.chipLabel else state.videoCrop.bitrateClass().topBarLabel(),
                     testTag = CaptureTestTags.TOPBAR_VIDEO_RESOLUTION,
-                    description = "Video resolution ${state.videoResolution.label}. Tap to change.",
+                    description = "Video crop ${state.videoCrop.chipLabel}. Tap to change.",
                     enabled = !videoLocked,
                     orientation = state.orientation,
                     // X14U: resolution and frame rate stay as they are in landscape.
@@ -87,7 +90,7 @@ internal fun CaptureTopBar(
                     rotateIcon = false,
                     onClick = {
                         haptics.selection()
-                        dispatch(CycleVideoResolution)
+                        if (onVideoCrop != null) onVideoCrop() else dispatch(CycleVideoResolution)
                     }
                 )
             }

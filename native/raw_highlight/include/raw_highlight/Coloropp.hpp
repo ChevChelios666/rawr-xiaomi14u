@@ -13,7 +13,8 @@ struct ColoroppPush {
     float clipval;
     uint32_t gridEnabled, pad;
     float wb[4];
-    uint32_t sensorWidth, sensorHeight, cropX, cropY, sensorScale;
+    uint32_t sensorWidth, sensorHeight, cropX, cropY;
+    float sensorScale;  // sensor pixels per image pixel (X14U video crop: not always whole)
 };
 // coloropp.comp built with RAWR_COLOROPP_FUSED_WB=1: the vec4 gains follow at
 // the next 16-byte boundary.

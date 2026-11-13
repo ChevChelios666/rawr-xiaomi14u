@@ -71,7 +71,7 @@ internal fun SettingsValues.withCapturePreferenceChanges(
         after.experimentalMultiframeEnabled else experimentalMultiframeEnabled,
     captureControlLayout = if (before.captureLayout != after.captureLayout) after.captureLayout else captureControlLayout,
     captureModeId = if (before.captureMode != after.captureMode) after.captureMode.persistedId() else captureModeId,
-    videoResolutionId = if (before.videoResolution != after.videoResolution) after.videoResolution.persistedId() else videoResolutionId,
+    videoResolutionId = if (before.videoCrop != after.videoCrop) after.videoCrop.persistedId() else videoResolutionId,
     videoLogEnabled = if (before.videoLogEnabled != after.videoLogEnabled) after.videoLogEnabled else videoLogEnabled,
     videoFps = if (before.videoFps != after.videoFps) videoFpsOrDefault(after.videoFps) else videoFps,
     selfTimer = if (before.selfTimer != after.selfTimer) after.selfTimer else selfTimer
@@ -92,7 +92,7 @@ internal fun SettingsValues.capturePreferences() = com.rawr.camera.architecture.
     multiframeAlgorithm = multiframeTuning.mergeAlgorithm,
     captureLayout = captureControlLayout,
     captureMode = captureModeForId(captureModeId),
-    videoResolution = videoResolutionForId(videoResolutionId),
+    videoCrop = com.rawr.camera.video.VideoCrop.fromId(videoResolutionId),
     videoFps = videoFpsOrDefault(videoFps),
     videoLogEnabled = videoLogEnabled,
     selfTimer = selfTimer

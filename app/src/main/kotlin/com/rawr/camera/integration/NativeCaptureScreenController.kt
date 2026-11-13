@@ -93,7 +93,7 @@ class NativeCaptureScreenController(
 
     override fun dispatch(action: CaptureAction) {
         if (videoLocked() && (action is SetCaptureMode || action is ToggleVideoLog ||
-                action is CycleVideoResolution || action is CycleVideoFps)) return
+                action is CycleVideoResolution || action is SetVideoCrop || action is CycleVideoFps)) return
         if ((action is ScrubTone || action is ScrubRenderExposure || action is SetAgxControl ||
                 action is SetRenderExposureTenths) &&
             state.value.captureMode == CaptureMode.Video && state.value.videoLogEnabled) return
@@ -108,7 +108,7 @@ class NativeCaptureScreenController(
                 }
                 selfTimer.reconcile()
                 if (action is SetCaptureMode || action is CycleVideoFps || action is CycleVideoResolution ||
-                    action is RestoreCapturePreferences) {
+                    action is SetVideoCrop || action is RestoreCapturePreferences) {
                     val current = state.value
                     coordinator.setVideoMode(current.captureMode == CaptureMode.Video, current.videoFps)
                 }
@@ -276,7 +276,7 @@ class NativeCaptureScreenController(
         is ToggleOverlayArmed, is ToggleFalseColor, is ToggleScope, is SetGrid, is SetSingleScope -> true
         ToggleFilmSim, ToggleMultiframe -> true
         is SetCaptureLayout -> true
-        is SetCaptureMode, CycleVideoResolution, CycleVideoFps, ToggleVideoLog -> true
+        is SetCaptureMode, CycleVideoResolution, is SetVideoCrop, CycleVideoFps, ToggleVideoLog -> true
         CycleSelfTimer, is SetCaptureSelfTimer -> true
         else -> false
     }

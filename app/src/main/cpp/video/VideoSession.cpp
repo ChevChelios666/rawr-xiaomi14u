@@ -15,6 +15,7 @@
 #include "tonemap_video_linear.h"
 #include "tonemap_video_rgb10a2.h"
 #include "tonemap_video_rgba8.h"
+#include "video_pipeline/VideoCrop.h"
 #include "vulkan/VulkanContext.h"
 namespace rawrcam::video {
 VideoSession::VideoSession(vulkan::VulkanContext& context, std::mutex& transitionMutex,
@@ -68,13 +69,16 @@ void VideoSession::endMonitorTiming(VkCommandBuffer command, uint32_t slot) {
 }
 VideoSession::ProcessingKey VideoSession::predictedKey(uint32_t width, uint32_t height, uint32_t rawWidth,
                                                        uint32_t rawHeight, uint32_t bitDepth) const {
+    const auto [sourceWidth, sourceHeight] = videoCropSource();
     return ProcessingKey{width,
                          height,
                          rawWidth,
                          rawHeight,
                          output_.preferredFormat(bitDepth),
                          desiredConfig_.fccSteps,
-                         desiredConfig_.defringeStrength};
+                         desiredConfig_.defringeStrength,
+                         sourceWidth,
+                         sourceHeight};
 }
 void VideoSession::setProcessingConfig(const VideoProcessingConfig& config) noexcept {
     desiredConfig_ = config;
@@ -105,13 +109,16 @@ bool VideoSession::start(JNIEnv* env, jobject javaSurface, uint32_t width, uint3
         if (!output_.start(env, javaSurface, width, height, bitDepth)) return false;
         const double swapchainMs = sinceStartMs();
         activeConfig_ = desiredConfig_;
+        const auto [sourceWidth, sourceHeight] = videoCropSource();
         ProcessingKey key{width,
                           height,
                           rawWidth,
                           rawHeight,
                           output_.format(),
                           activeConfig_.fccSteps,
-                          activeConfig_.defringeStrength};
+                          activeConfig_.defringeStrength,
+                          sourceWidth,
+                          sourceHeight};
         const bool reused = hasProcessing(key);
         if (!reused) {
             resources_.release();

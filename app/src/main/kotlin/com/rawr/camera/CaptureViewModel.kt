@@ -374,11 +374,12 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     fun applyStartupVideoOverrides(resolution: VideoResolutionMode?, fps: Int?) {
         if (resolution == null && fps == null) return
         val next = settingsEditor.update { current -> current.copy(
-            videoResolutionId = resolution?.persistedId() ?: current.videoResolutionId,
+            videoResolutionId = resolution?.let { com.rawr.camera.video.VideoCrop.fromLegacy(it).persistedId() }
+                ?: current.videoResolutionId,
             videoFps = fps?.takeIf { it == 24 || it == 30 || it == 60 } ?: current.videoFps
         ) }
         controller.dispatch(next.withLensOverrides().capturePreferences())
-        settingsSync.updatePreviewCrop(controller.state.value.captureMode, controller.state.value.videoResolution)
+        settingsSync.updatePreviewCrop(controller.state.value.captureMode, controller.state.value.videoCrop)
     }
 
     private val mutableRenderProfiles = MutableStateFlow(settingsDefaults.toRenderProfileQuickState())
@@ -461,7 +462,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                         it.withCapturePreferenceChanges(before, after)
                     }
                 }
-                settingsSync.updatePreviewCrop(after.captureMode, after.videoResolution)
+                settingsSync.updatePreviewCrop(after.captureMode, after.videoCrop)
             }
         )
 
@@ -517,7 +518,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             effectiveValues.map { it.capturePreferences() }.distinctUntilChanged().collect { preferences ->
                 controller.dispatch(preferences)
-                settingsSync.updatePreviewCrop(controller.state.value.captureMode, controller.state.value.videoResolution)
+                settingsSync.updatePreviewCrop(controller.state.value.captureMode, controller.state.value.videoCrop)
             }
         }
         viewModelScope.launch {

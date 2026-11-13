@@ -326,6 +326,8 @@ class RawPreviewCoordinator(application: Application) : AutoCloseable {
     /** Straight to native atomics (sensor thread, many times a second). */
     fun setHorizonLock(roll: Float, crop: Float, natural: Boolean, viewRoll: Float, fit: Boolean) =
         native.setHorizonLock(roll, crop, natural, viewRoll, fit)
+    /** X14U video crop: the sensor window recordings use (0x0 = the original size rule). */
+    fun setVideoCropSource(width: Int, height: Int) = native.setVideoCropSource(width, height)
     fun setStabilizer(enabled: Boolean, focalNorm: Float) = native.setStabilizer(enabled, focalNorm)
     fun setCarryWhiteBalance(on: Boolean) = native.setCarryWhiteBalance(on)
     fun setViewfinderHold(on: Boolean) = native.setViewfinderHold(on)
