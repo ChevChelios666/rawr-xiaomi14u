@@ -28,6 +28,8 @@ import com.rawr.camera.ui.icons.outlined.Close
 @Composable
 internal fun X14uButtonTestOverlay(modifier: Modifier = Modifier) {
     val lines by ButtonTest.lines.collectAsState()
+    val usb by com.rawr.camera.integration.GripUsbReader.running.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
     Column(
         modifier
             .background(Color(0xF2282421), RoundedCornerShape(14.dp))
@@ -48,6 +50,19 @@ internal fun X14uButtonTestOverlay(modifier: Modifier = Modifier) {
                 "While this is open the buttons only show here.",
             color = Color.White.copy(alpha = .6f), fontFamily = X14uFont, fontSize = dpText(12f)
         )
+        // Raw USB: the dial's direction isn't in its key events, so read the grip's own reports.
+        Box(
+            Modifier.background(Color(0xFF2F2A24), RoundedCornerShape(50))
+                .clickable {
+                    if (usb) com.rawr.camera.integration.GripUsbReader.stop()
+                    else com.rawr.camera.integration.GripUsbReader.start(context)
+                }
+                .padding(horizontal = 14.dp, vertical = 8.dp)
+                .testTag("x14u_button_test_usb")
+        ) {
+            Text(if (usb) "Stop reading USB" else "Read the grip's USB data", color = CaptureColors.Accent,
+                fontFamily = X14uFont, fontSize = dpText(13f))
+        }
         if (lines.isEmpty()) {
             Text("Waiting for a button…", color = CaptureColors.Accent, fontFamily = X14uFont, fontSize = dpText(13f))
         }

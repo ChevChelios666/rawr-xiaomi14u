@@ -419,6 +419,8 @@ class MainActivity : ComponentActivity() {
         startGeneration++
         captureViewModel.stopPreviewAfterRecording()
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // The raw USB test gives the grip back when Rawr leaves the screen.
+        com.rawr.camera.integration.GripUsbReader.stop()
         super.onStop()
     }
 

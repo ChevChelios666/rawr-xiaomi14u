@@ -7,6 +7,7 @@ import android.view.MotionEvent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 /** Xiaomi 14 Ultra Photography Kit: the zoom lever steps the lens pill (+1 longer, -1 wider). */
 object GripEvents {
@@ -19,7 +20,7 @@ object GripEvents {
  * those events (Back still works). Each line also goes to the log ("RawrButtons").
  */
 object ButtonTest {
-    private const val MAX_LINES = 12
+    private const val MAX_LINES = 16
     private val enabledFlow = MutableStateFlow(false)
     private val linesFlow = MutableStateFlow<List<String>>(emptyList())
     val enabled: StateFlow<Boolean> = enabledFlow.asStateFlow()
@@ -27,8 +28,11 @@ object ButtonTest {
 
     fun setEnabled(on: Boolean) {
         enabledFlow.value = on
-        if (on) linesFlow.value = emptyList()
+        if (on) linesFlow.value = emptyList() else GripUsbReader.stop()
     }
+
+    /** A line from elsewhere (the raw USB reader); thread-safe. */
+    fun note(line: String) = add(line)
 
     /** True when the event was recorded (and must not act). */
     fun onKey(event: KeyEvent): Boolean {
@@ -71,6 +75,6 @@ object ButtonTest {
 
     private fun add(line: String) {
         Log.i("RawrButtons", line)
-        linesFlow.value = (listOf(line) + linesFlow.value).take(MAX_LINES)
+        linesFlow.update { (listOf(line) + it).take(MAX_LINES) }
     }
 }
