@@ -48,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -843,7 +844,7 @@ internal fun X14uCaptureLayout(
             val buttonTestOn by com.rawr.camera.integration.ButtonTest.enabled.collectAsState()
             if (buttonTestOn) {
                 X14uButtonTestOverlay(
-                    Modifier.align(Alignment.TopCenter).offset(y = top + 6.dp).padding(horizontal = 12.dp).fillMaxWidth()
+                    Modifier.zIndex(30f).align(Alignment.TopCenter).offset(y = top + 6.dp).padding(horizontal = 12.dp).fillMaxWidth()
                 )
             }
             if (cropOpen && isVideo) {
@@ -854,9 +855,10 @@ internal fun X14uCaptureLayout(
                     onChange = { dispatch(SetVideoCrop(it)) },
                     onClose = { cropOpen = false },
                     wide = landscape,
-                    modifier = if (landscape) Modifier.align(Alignment.Center).uprightLayoutInLandscape(orientation)
+                    // Over everything else on the screen (value row, lens pill, mode names).
+                    modifier = if (landscape) Modifier.zIndex(30f).align(Alignment.Center).uprightLayoutInLandscape(orientation)
                         .width(minOf(fullHeight - top * 2, 560.dp))
-                    else Modifier.align(Alignment.TopCenter).offset(y = top + 6.dp).padding(horizontal = 12.dp).fillMaxWidth()
+                    else Modifier.zIndex(30f).align(Alignment.TopCenter).offset(y = top + 6.dp).padding(horizontal = 12.dp).fillMaxWidth()
                 )
             }
             val onCellTap: (String) -> Unit = { key ->
