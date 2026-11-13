@@ -180,6 +180,45 @@ internal object X14uIcons {
         icon("X14u.ChevronUp") { stroke(2.2f) { moveTo(6.5f, 14.5f); lineTo(12f, 9f); lineTo(17.5f, 14.5f) } }
     }
 
+    private fun PathBuilder.focusBrackets() {
+        moveTo(3.5f, 8f); lineTo(3.5f, 3.5f); lineTo(8f, 3.5f)
+        moveTo(16f, 3.5f); lineTo(20.5f, 3.5f); lineTo(20.5f, 8f)
+        moveTo(20.5f, 16f); lineTo(20.5f, 20.5f); lineTo(16f, 20.5f)
+        moveTo(8f, 20.5f); lineTo(3.5f, 20.5f); lineTo(3.5f, 16f)
+    }
+
+    /** Burst focus AF-C: corner brackets around a circle (focus follows the subject). */
+    val FocusFollow: ImageVector by lazy {
+        icon("X14u.FocusFollow") {
+            stroke { focusBrackets() }
+            stroke { circle(12f, 12f, 3.6f) }
+        }
+    }
+
+    /** Burst focus AF-L: corner brackets around a padlock (focus held). */
+    val FocusLock: ImageVector by lazy {
+        icon("X14u.FocusLock") {
+            stroke { focusBrackets() }
+            stroke(1.7f) {
+                moveTo(8.8f, 11.5f); lineTo(15.2f, 11.5f); lineTo(15.2f, 16.8f); lineTo(8.8f, 16.8f); close()
+                moveTo(10.2f, 11.5f); lineTo(10.2f, 9.6f)
+                arcTo(1.8f, 1.8f, 0f, false, true, 13.8f, 9.6f); lineTo(13.8f, 11.5f)
+            }
+        }
+    }
+
+    /** Burst focus MF: corner brackets around a small focus scale. */
+    val FocusManual: ImageVector by lazy {
+        icon("X14u.FocusManual") {
+            stroke { focusBrackets() }
+            stroke(1.6f) {
+                moveTo(7.5f, 12f); lineTo(16.5f, 12f)
+                moveTo(9f, 10f); lineTo(9f, 12f); moveTo(12f, 9f); lineTo(12f, 12f); moveTo(15f, 10f); lineTo(15f, 12f)
+                moveTo(12f, 14f); lineTo(10.8f, 15.6f); lineTo(13.2f, 15.6f); close()
+            }
+        }
+    }
+
     /** Burst format JPEG: one photo sheet (a small landscape on it). */
     val SheetOne: ImageVector by lazy {
         icon("X14u.SheetOne") {

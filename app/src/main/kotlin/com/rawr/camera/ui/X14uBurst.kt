@@ -42,8 +42,6 @@ import com.rawr.camera.model.BurstUiState
 import com.rawr.camera.model.CaptureUiState
 import com.rawr.camera.model.FocusMode
 import com.rawr.camera.model.Orientation
-import com.rawr.camera.ui.icons.Icons
-import com.rawr.camera.ui.icons.outlined.CenterFocusStrong
 
 /**
  * X14U Burst shutter: hold to shoot, let go to stop. Ready: a dashed ring inside the outline marks it as a burst
@@ -147,14 +145,19 @@ internal fun X14uBurstToggles(
     val dng by com.rawr.camera.burst.BurstSettings.dng.collectAsState()
     val focus = state.focus.mode
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+        // Always lit (each is a choice): the icon says which.
         CompactSidePill(
-            icon = Icons.Outlined.CenterFocusStrong,
+            icon = when (focus) {
+                FocusMode.Af -> X14uIcons.FocusFollow
+                FocusMode.AfLock -> X14uIcons.FocusLock
+                FocusMode.Mf -> X14uIcons.FocusManual
+            },
             label = when (focus) {
                 FocusMode.Af -> "AF-C"
                 FocusMode.AfLock -> "AF-L"
                 FocusMode.Mf -> "MF"
             },
-            active = focus == FocusMode.Af,
+            active = true,
             testTag = "capture_x14u_burst_focus",
             contentDescription = when (focus) {
                 FocusMode.Af -> "Focus follows the subject during the burst. Tap to hold it."
