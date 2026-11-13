@@ -86,7 +86,7 @@ internal fun CaptureTopBar(
                     icon = if (onVideoCrop != null) Icons.Outlined.Crop else state.videoCrop.bitrateClass().topBarIcon(),
                     label = if (onVideoCrop != null) state.videoCrop.chipLabel else state.videoCrop.bitrateClass().topBarLabel(),
                     testTag = CaptureTestTags.TOPBAR_VIDEO_RESOLUTION,
-                    description = "Video crop ${state.videoCrop.chipLabel}. Tap to change.",
+                    description = "Video crop ${state.videoCrop.chipLabel.replace('\n', ' ')}. Tap to change.",
                     enabled = !videoLocked,
                     orientation = state.orientation,
                     // X14U: crop and frame rate turn as one piece (icon and label) in landscape.
@@ -333,9 +333,11 @@ private fun VideoTopBarChoice(
                 color = if (enabled) CaptureColors.Accent else CaptureColors.Muted,
                 fontFamily = CaptureMono,
                 fontSize = 8.sp,
-                lineHeight = 8.sp,
+                lineHeight = 9.sp,
                 fontWeight = FontWeight.Bold,
-                maxLines = 1,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                // Two lines when the label asks for it (crop: size over shape).
+                maxLines = if ('\n' in label) 2 else 1,
                 modifier = if (rotateLabel) Modifier.uprightInLandscape(orientation) else Modifier
             )
         }

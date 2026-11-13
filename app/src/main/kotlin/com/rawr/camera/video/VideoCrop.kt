@@ -31,11 +31,11 @@ data class VideoCrop(
     /** Sensor pixels per recorded pixel: 2 for 1080p (the Bayer reduction), else 1. */
     val factor: Float get() = if (size == VideoCropSize.HD) 2f else 1f
 
-    /** Top bar label: "4K", "1080p · 2.39", "OPEN". */
+    /** Top bar label: "4K", "OPEN", or the size over the shape ("1080p" / "2.39": one line is too wide for the chip). */
     val chipLabel: String get() = when {
         isOpenGate -> size.chip
         shape == 0 -> size.chip
-        else -> "${size.chip} · ${shapeInfo.chip}"
+        else -> "${size.chip}\n${shapeInfo.chip}"
     }
 
     /** Sensor window and recording size for a RAW frame of [rawWidth]×[rawHeight]. */
