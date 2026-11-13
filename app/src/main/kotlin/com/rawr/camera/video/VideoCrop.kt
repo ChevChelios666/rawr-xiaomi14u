@@ -18,7 +18,9 @@ data class VideoCrop(
     val kind: VideoCropKind = VideoCropKind.Pixel,
     val aspect: Int = 1,
     val pixel: Int = 0,
-    val downscale: Int = 3
+    val downscale: Int = 3,
+    /** Digital focal length on top of the lens (1 = none): the window shrinks, the recording size stays. */
+    val digitalZoom: Float = 1f
 ) {
     val shape: VideoCropShape get() = ASPECTS[aspect.coerceIn(0, ASPECTS.lastIndex)]
     val window: VideoFrameSize get() = PIXELS[pixel.coerceIn(0, PIXELS.lastIndex)]
@@ -58,8 +60,9 @@ data class VideoCrop(
             else ((sw / d / 16f).toInt() * 16).coerceAtLeast(16)
         val outHeight = even(outWidth * sh / sw).coerceAtLeast(2)
         // The window exactly d times the output, so both axes scale alike (2x lands on the Bayer reduction).
-        val srcWidth = even(outWidth * d).coerceAtMost(rw and -2)
-        val srcHeight = even(outHeight * d).coerceAtMost(rh and -2)
+        val zoom = digitalZoom.coerceIn(1f, 8f)
+        val srcWidth = even(outWidth * d / zoom).coerceIn(64, rw and -2)
+        val srcHeight = even(outHeight * d / zoom).coerceIn(64, rh and -2)
         return VideoFrameSize(srcWidth, srcHeight) to VideoFrameSize(outWidth, outHeight)
     }
 

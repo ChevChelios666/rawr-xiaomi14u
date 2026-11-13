@@ -107,6 +107,14 @@ internal fun reduceCaptureSettings(
         state.withValues(state.values.copy(panoProjection = action.value))
     }
 
+    is SetLensButtons -> {
+        state.withValues(state.values.copy(lensButtons = action.value))
+    }
+
+    is SetVideoAudioMeter -> {
+        state.withValues(state.values.copy(videoAudioMeter = action.value))
+    }
+
     is SetZoomMergeAlgorithm -> {
         state.withValues(state.values.copy(zoomMergeAlgorithm = action.value))
     }

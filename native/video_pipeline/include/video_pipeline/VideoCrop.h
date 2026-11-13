@@ -45,12 +45,13 @@ inline std::pair<uint32_t, uint32_t> videoCropSource() noexcept {
     VideoSourceRect rect{};
     if (outWidth == 0 || outHeight == 0) return rect;
     const auto [cropWidth, cropHeight] = videoCropSource();
-    if (cropWidth >= outWidth && cropHeight >= outHeight && cropWidth <= rawWidth && cropHeight <= rawHeight) {
+    // A digital focal length can make the window smaller than the output (it is then scaled up).
+    if (cropWidth >= 64u && cropHeight >= 64u && cropWidth <= rawWidth && cropHeight <= rawHeight) {
         // Configured window: 2x Bayer reduction when the output is at most half of it, then a resample.
         const bool reduce = uint64_t(outWidth) * 2u <= cropWidth && uint64_t(outHeight) * 2u <= cropHeight;
         const uint32_t baseWidth = reduce ? (cropWidth / 2u) & ~1u : cropWidth & ~1u;
         const uint32_t baseHeight = reduce ? (cropHeight / 2u) & ~1u : cropHeight & ~1u;
-        if (baseWidth >= outWidth && baseHeight >= outHeight) {
+        {
             rect.width = reduce ? baseWidth * 2u : baseWidth;
             rect.height = reduce ? baseHeight * 2u : baseHeight;
             rect.x = ((rawWidth - rect.width) / 2u) & ~1u;

@@ -17,6 +17,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -61,13 +62,16 @@ internal fun CaptureTopBar(
     toolsOpen: Boolean? = null,
     onToggleTools: () -> Unit = {},
     /** X14U: the crop chip opens the video crop panel (null: the chip cycles 1080p / 4K / Open Gate). */
-    onVideoCrop: (() -> Unit)? = null
+    onVideoCrop: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+    /** X14U video: over the picture, so only a light shade. */
+    transparent: Boolean = false
 ) {
     val haptics = LocalCaptureHaptics.current
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
-            .background(CaptureColors.Surface)
+            .background(if (transparent) Color.Black.copy(alpha = .18f) else CaptureColors.Surface)
             .height(CaptureDimens.TopBarHeight),
         verticalAlignment = Alignment.CenterVertically
     ) {

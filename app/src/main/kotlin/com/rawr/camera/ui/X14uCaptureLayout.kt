@@ -15,6 +15,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -75,6 +78,7 @@ import com.rawr.camera.architecture.LockWhiteBalance
 import com.rawr.camera.architecture.ScrubRenderExposure
 import com.rawr.camera.architecture.ScrubTone
 import com.rawr.camera.architecture.SelectLens
+import com.rawr.camera.architecture.SetVideoCrop
 import com.rawr.camera.architecture.SetCaptureMode
 import com.rawr.camera.architecture.SetExposureCandidate
 import com.rawr.camera.architecture.SetExposureMode
@@ -185,7 +189,9 @@ private data class X14uCell(
     val changed: Boolean = false,
     val enabled: Boolean = true,
     /** Starts a new group (thin divider before it). */
-    val groupStart: Boolean = false
+    val groupStart: Boolean = false,
+    /** On auto: a small A badge next to the label, the value is what the camera picked. */
+    val auto: Boolean = false
 )
 
 /** What the control area shows for the selected cell. */
@@ -253,7 +259,25 @@ internal fun X14uCaptureLayout(
     val recordingLock = (isVideo && videoLocked) || LocalCaptureExtras.current.fullSizeBusy
     // X14U video crop: the viewfinder takes the recording's shape (portrait: its height over its width).
     val videoAspect = if (isVideo) state.videoCrop.sizes().second.let { it.width.toFloat() / it.height } else 4f / 3f
-    val videoBleed = isVideo && videoAspect > 4f / 3f + .01f
+    // Video: the status bar hides so the picture can run to the top of the screen, like stock.
+    val hostView = androidx.compose.ui.platform.LocalView.current
+    androidx.compose.runtime.DisposableEffect(isVideo) {
+        var context = hostView.context
+        while (context is android.content.ContextWrapper && context !is android.app.Activity) context = context.baseContext
+        val window = (context as? android.app.Activity)?.window
+        val bars = window?.let { androidx.core.view.WindowCompat.getInsetsController(it, hostView) }
+        val statusBars = androidx.core.view.WindowInsetsCompat.Type.statusBars()
+        if (isVideo) {
+            bars?.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            bars?.hide(statusBars)
+        } else {
+            bars?.show(statusBars)
+        }
+        onDispose { bars?.show(statusBars) }
+    }
+    // With the status bar hidden, keep the controls clear of the camera cut-out.
+    val cutoutTop = if (isVideo) WindowInsets.displayCutout
+        .asPaddingValues().calculateTopPadding() else 0.dp
     val orientation = state.orientation
     var selected by remember { mutableStateOf<String?>(null) }
     var panel by remember { mutableStateOf<X14uPanel?>(null) }
@@ -340,6 +364,16 @@ internal fun X14uCaptureLayout(
         }
     }
     LaunchedEffect(isVideo, recordingLock) { if (!isVideo || recordingLock) cropOpen = false }
+    // Video digital focal length: kept only while its lens is in use (a lens chosen another way starts uncropped).
+    val videoStopButtons = LocalCaptureExtras.current.tools.lensButtons
+    LaunchedEffect(state.selectedLensId, isVideo) {
+        val crop = state.videoCrop
+        if (!isVideo || crop.digitalZoom <= 1.001f) return@LaunchedEffect
+        val kept = videoStopButtons.forMode(true).digital.filter { it.on }
+            .mapNotNull { com.rawr.camera.settings.model.resolveDigitalStop(it.mm, zoomChain) }
+            .any { it.lens == state.selectedLensId && kotlin.math.abs(it.crop - crop.digitalZoom) <= it.crop * .01f }
+        if (!kept) dispatch(SetVideoCrop(crop.copy(digitalZoom = 1f)))
+    }
     LaunchedEffect(state.captureMode, state.selectedLensId) {
         // The zoom ruler stays open through the lens switches zooming makes.
         if (!(selected == ZOOM_KEY && zoomOn)) selected = null
@@ -558,13 +592,20 @@ internal fun X14uCaptureLayout(
     val currentKey = if (panel == null) selected?.takeIf { k -> (k == PHOTO_FOCUS_KEY && simplePhoto) || (k == ZOOM_KEY && zoomOn) || cells.any { it.key == k } } else (panelKey?.takeIf { k -> cells.any { it.key == k } } ?: cells.firstOrNull()?.key)
 
     BoxWithConstraints(modifier) {
-        val s = (maxHeight / X14uGeometry.reference).coerceIn(.8f, 1.25f)
-        val top = maxOf(CaptureDimens.TopBarHeight + 4.dp, 65.dp * s)
+        val s = ((maxHeight - cutoutTop) / X14uGeometry.reference).coerceIn(.8f, 1.25f)
+        val top = cutoutTop + maxOf(CaptureDimens.TopBarHeight + 4.dp, 65.dp * s)
         val frameWidth = minOf(maxWidth - 16.dp, 379.dp * s, (maxHeight * .6f) * .75f)
         val frame = DpSize(frameWidth, frameWidth * 4f / 3f)
         val bottom = top + frame.height
         val fullHeight = maxHeight
         val shutterCenter = minOf(bottom + 175.dp * s, fullHeight - 50.dp)
+        // Video: the recording's shape across the whole width from the top of the screen (behind the top bar),
+        // narrowed if it would run past the bottom; the controls sit over it.
+        val audioMeterOn = isVideo && LocalCaptureExtras.current.tools.audioMeter
+        val videoRect = run {
+            val height = minOf(maxWidth * videoAspect, fullHeight)
+            DpSize(height / videoAspect, height)
+        }
         Box(Modifier.fillMaxSize()) {
             CaptureViewfinder(
                 state = state,
@@ -574,16 +615,12 @@ internal fun X14uCaptureLayout(
                 onSelectRenderProfile = onSelectRenderProfile,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .offset(y = top)
-                    .size(
-                        if (!isVideo) frame else {
-                            // The recording's shape at the frame's width, narrowed if it would run off the screen.
-                            val tallest = fullHeight - top - 8.dp
-                            val height = minOf(frameWidth * videoAspect, tallest)
-                            DpSize(height / videoAspect, height)
-                        }
-                    ),
+                    .offset(y = if (isVideo) 0.dp else top)
+                    .size(if (isVideo) videoRect else frame),
                 slotFrame = frame,
+                slotOffsetY = if (isVideo) top else 0.dp,
+                // Video: below the top bar (and the sound meter); photo: just inside the frame.
+                scopeTopInset = if (isVideo) top + (if (audioMeterOn) 18.dp else 6.dp) else 8.dp,
                 forceCompact = isVideo,
                 forceTonemapStrip = isVideo,
                 filmQuick = filmQuick,
@@ -614,15 +651,18 @@ internal fun X14uCaptureLayout(
                     }
                 }
             )
-            // Controls float over a 16:9 preview that runs past the photo frame.
-            if (videoBleed) {
-                Box(
-                    Modifier.fillMaxWidth().offset(y = bottom).height(fullHeight - bottom)
-                        .background(CaptureColors.Background.copy(alpha = .6f))
+            // Video: the corner marks sit on the picture's own corners.
+            if (isVideo) FrameBrackets(Modifier.align(Alignment.TopCenter).size(videoRect))
+            // Video: a small sound meter over the histogram's corner (Settings → Video can turn it off).
+            if (audioMeterOn) {
+                AudioMeter(
+                    videoControls.audio, recording = videoControls.recording, compact = true,
+                    modifier = Modifier.align(Alignment.TopEnd)
+                        .offset(x = -((maxWidth - videoRect.width) / 2 + 10.dp), y = top + 6.dp)
                 )
             }
             Box(Modifier.align(Alignment.TopCenter).offset(y = top).size(frame)) {
-                FrameBrackets(Modifier.fillMaxSize())
+                if (!isVideo) FrameBrackets(Modifier.fillMaxSize())
                 val tools = LocalCaptureExtras.current.tools
                 if (!isVideo && !pano) X14uAspectMask(tools.photoAspect, Modifier.fillMaxSize())
                 if (pano) X14uPanoOverlay(
@@ -760,16 +800,34 @@ internal fun X14uCaptureLayout(
                             null -> null
                         }
                     },
-                    onOpenLensSettings = onOpenLensSettings,
                     zoomLabel = zoomLabel,
                     onZoomRuler = if (zoomOn) ({ panel = null; selected = ZOOM_KEY }) else null,
-                    onLensTap = { id -> zoomChain.firstOrNull { it.first == id }?.let { zoom = it.second } },
+                    onLensTap = { id ->
+                        zoomChain.firstOrNull { it.first == id }?.let { zoom = it.second }
+                        if (isVideo && state.videoCrop.digitalZoom != 1f) dispatch(SetVideoCrop(state.videoCrop.copy(digitalZoom = 1f)))
+                    },
+                    buttons = LocalCaptureExtras.current.tools.lensButtons.forMode(isVideo),
+                    mmLabels = LocalCaptureExtras.current.tools.lensButtons.mmLabels,
+                    zoomChain = zoomChain,
+                    // Digital focal lengths: photo (and Photo+) through the zoom, video through the crop; not in Pano.
+                    stopsAvailable = !pano && (zoomOn || (isVideo && chainLens != null)),
+                    totalZoom = if (zoomOn) zoom else null,
+                    onStop = { stop ->
+                        if (isVideo) {
+                            dispatch(SetVideoCrop(state.videoCrop.copy(digitalZoom = stop.crop)))
+                            if (stop.lens != state.selectedLensId) dispatch(SelectLens(stop.lens))
+                        } else {
+                            setZoom(stop.zoom)
+                        }
+                    },
                     modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                         .padding(bottom = (31.dp * s - 18.dp).coerceAtLeast(4.dp), start = 7.dp, end = 7.dp)
                 )
             }
             CaptureTopBar(
                 state, dispatch, onOpenSettings, videoLocked = recordingLock, showLog = false,
+                modifier = Modifier.padding(top = cutoutTop),
+                transparent = isVideo,
                 toggles = { X14uOptionToggles(quick, lensOptions, isVideo, enabled = !recordingLock, orientation, onQuickEvent) },
                 toggleCount = x14uOptionToggleCount(quick, lensOptions, isVideo),
                 toolsOpen = toolsOpen,
@@ -789,7 +847,7 @@ internal fun X14uCaptureLayout(
             if (cropOpen && isVideo) {
                 X14uVideoCropPanel(
                     crop = state.videoCrop,
-                    onChange = { dispatch(com.rawr.camera.architecture.SetVideoCrop(it)) },
+                    onChange = { dispatch(SetVideoCrop(it)) },
                     onClose = { cropOpen = false },
                     modifier = Modifier.align(Alignment.TopCenter).offset(y = top + 6.dp)
                         .padding(horizontal = 12.dp).fillMaxWidth()
@@ -818,7 +876,8 @@ internal fun X14uCaptureLayout(
                     }
                 }
             } else {
-                X14uCellRow(cells = cells, selectedKey = currentKey, orientation = orientation, modifier = rowModifier, onTap = onCellTap)
+                X14uCellRow(cells = cells, selectedKey = currentKey, orientation = orientation, modifier = rowModifier,
+                    upright = panel == null, onTap = onCellTap)
             }
             Box(
                 Modifier.fillMaxWidth().offset(y = bottom + 58.dp * s).height(76.dp * s).padding(horizontal = 12.dp),
@@ -1011,19 +1070,46 @@ private fun X14uLensRow(
     onLookTab: (String) -> Unit,
     enabled: Boolean,
     onTogglePanel: (X14uPanel) -> Unit,
-    onOpenLensSettings: (String) -> Unit,
     modifier: Modifier,
     /** Digital zoom: the live value shown on the lens in use (e.g. "2.6x"); null = its own name. */
     zoomLabel: String? = null,
-    /** Long-press on the lens in use: the zoom ruler. */
+    /** Long-press on any lens: the zoom ruler (null where there is no digital zoom). */
     onZoomRuler: (() -> Unit)? = null,
     /** Tap on a lens: its own zoom (crop 1). */
-    onLensTap: (String) -> Unit = {}
+    onLensTap: (String) -> Unit = {},
+    /** This mode's lens set (hidden lenses, digital focal lengths). */
+    buttons: com.rawr.camera.settings.model.LensButtonSet = com.rawr.camera.settings.model.LensButtonSet(),
+    /** Labels as focal lengths (number over "mm"). */
+    mmLabels: Boolean = false,
+    zoomChain: List<Pair<String, Float>> = emptyList(),
+    stopsAvailable: Boolean = false,
+    /** Photo: the total zoom in use (chain units); null in video. */
+    totalZoom: Float? = null,
+    onStop: (com.rawr.camera.settings.model.ResolvedStop) -> Unit = {}
 ) {
     val haptics = LocalCaptureHaptics.current
     val extras = LocalCaptureExtras.current
     val orientation = state.orientation
     val lenses = state.capabilities.lenses.filterNot { isFrontLens(it.id, it.displayName) }
+        .filter { it.id !in buttons.hidden || it.id == state.selectedLensId }
+    val stops = if (!stopsAvailable) emptyList() else buttons.digital.filter { it.on }
+        .mapNotNull { com.rawr.camera.settings.model.resolveDigitalStop(it.mm, zoomChain) }
+    // The stop in use: photo by its total zoom, video by its lens and crop.
+    val activeStop = stops.firstOrNull { stop ->
+        if (totalZoom != null) kotlin.math.abs(totalZoom - stop.zoom) <= stop.zoom * .01f
+        else stop.lens == state.selectedLensId && kotlin.math.abs(state.videoCrop.digitalZoom - stop.crop) <= stop.crop * .01f
+    }
+    val lensMm: (String) -> Int? = { id -> com.rawr.camera.settings.model.ZoomChain.factorOf(id)?.let { com.rawr.camera.settings.model.LensButtons.mmOf(it) } }
+    // Lenses in their order, each digital stop before the first lens longer than it.
+    val items: List<Any> = buildList {
+        val pending = stops.sortedBy { it.mm }.toMutableList()
+        lenses.forEach { lens ->
+            val mm = lensMm(lens.id)
+            if (mm != null) while (pending.isNotEmpty() && pending.first().mm < mm) add(pending.removeAt(0))
+            add(lens)
+        }
+        addAll(pending)
+    }
     val groups = quick.overrideGroups
     Box(modifier.height(40.dp)) {
         Box(Modifier.align(Alignment.CenterStart)) {
@@ -1064,45 +1150,70 @@ private fun X14uLensRow(
                 X14uPanel.Exposure -> PillItem(
                     if (quick.rawrAe.enabled) "RAWR AE" else "DEVICE AE", true, orientation, width = null
                 ) { onTogglePanel(X14uPanel.Exposure) }
-                null -> lenses.forEach { lens ->
-                    val isSelected = state.selectedLensId == lens.id
+                null -> items.forEach { item ->
+                    val lens = item as? com.rawr.camera.model.LensCapability
+                    val stop = item as? com.rawr.camera.settings.model.ResolvedStop
+                    val isSelected = if (lens != null) state.selectedLensId == lens.id && activeStop == null else stop == activeStop
+                    val name = lens?.displayName ?: "${stop!!.mm} mm"
+                    // Label: the zoom factor ("1x", "2.2x") or the focal length over "mm".
+                    val liveZoom = if (lens != null && isSelected && zoomLabel != null) totalZoom else null
+                    val mm: Int? = when {
+                        stop != null -> stop.mm
+                        liveZoom != null -> (liveZoom * com.rawr.camera.settings.model.LensButtons.MAIN_MM).roundToInt()
+                        else -> lensMm(lens!!.id)
+                    }
+                    val factorText = when {
+                        stop != null -> zoomText(stop.zoom)
+                        isSelected && zoomLabel != null -> zoomLabel
+                        else -> lens!!.displayName
+                    }
                     Box(
                         Modifier
                             .size(42.dp, 36.dp)
                             .captureCombinedClickable(
                                 shape = CircleShape,
                                 enabled = enabled,
-                                onLongClickLabel = if (isSelected && onZoomRuler != null) "Zoom" else "${lens.displayName} lens settings",
-                                onLongClick = {
-                                    haptics.selection()
-                                    // The lens in use opens the zoom ruler; another lens its settings.
-                                    if (isSelected && onZoomRuler != null) onZoomRuler() else onOpenLensSettings(lens.id)
-                                }
+                                onLongClickLabel = if (onZoomRuler != null) "Zoom" else null,
+                                // Any lens: the zoom ruler at the zoom in use (never settings).
+                                onLongClick = onZoomRuler?.let { open -> { haptics.selection(); open() } }
                             ) {
                                 haptics.selection()
-                                onLensTap(lens.id)
-                                if (!isSelected) dispatch(SelectLens(lens.id))
+                                if (lens != null) {
+                                    onLensTap(lens.id)
+                                    if (state.selectedLensId != lens.id) dispatch(SelectLens(lens.id))
+                                } else onStop(stop!!)
                             }
                             .semantics {
-                                contentDescription = "Lens ${lens.displayName}"
+                                contentDescription = "Lens $name"
                                 role = Role.RadioButton
                                 this.selected = isSelected
                             },
                         contentAlignment = Alignment.Center
                     ) {
                         if (isSelected) Box(Modifier.size(32.dp).background(Color.Black.copy(alpha = .55f), CircleShape))
-                        Text(
-                            if (isSelected && zoomLabel != null) zoomLabel else lens.displayName,
-                            fontFamily = X14uFont,
-                            fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
-                            fontSize = dpText(if (isSelected) 13f else 14f),
-                            maxLines = 1,
-                            color = when {
-                                isSelected -> if (enabled) CaptureColors.Accent else CaptureColors.Accent.copy(alpha = .45f)
-                                else -> Color.White.copy(alpha = if (enabled) .9f else .3f)
-                            },
-                            modifier = Modifier.uprightInLandscape(orientation)
-                        )
+                        val color = when {
+                            isSelected -> if (enabled) CaptureColors.Accent else CaptureColors.Accent.copy(alpha = .45f)
+                            else -> Color.White.copy(alpha = if (enabled) .9f else .3f)
+                        }
+                        if (mmLabels && mm != null) {
+                            Column(Modifier.uprightInLandscape(orientation), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(mm.toString(), fontFamily = X14uFont,
+                                    fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
+                                    fontSize = dpText(13f), lineHeight = dpText(14f), maxLines = 1, color = color)
+                                Text("mm", fontFamily = X14uFont, fontSize = dpText(8.5f), lineHeight = dpText(9f),
+                                    maxLines = 1, color = color.copy(alpha = color.alpha * .8f))
+                            }
+                        } else {
+                            Text(
+                                factorText,
+                                fontFamily = X14uFont,
+                                fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
+                                fontSize = dpText(if (isSelected) 13f else 14f),
+                                maxLines = 1,
+                                color = color,
+                                modifier = Modifier.uprightInLandscape(orientation)
+                            )
+                        }
                     }
                 }
             }
@@ -1179,23 +1290,25 @@ private fun exposureCells(state: CaptureUiState, quick: ViewfinderQuickState, op
     val aperture = if (row >= 0) options!!.options[row].choices.getOrNull(options.picks.getOrElse(row) { 0 })?.label.orEmpty()
     else quick.nativeApertures[state.selectedLensId]?.let { "f/" + "%.1f".format(it).removeSuffix(".0") } ?: "f/–"
     val wbManual = CaptureTransitions.isWhiteBalanceLocked(state)
+    // Auto values show what the camera picked (white balance in Kelvin, focus as a distance), with an A badge.
     val af = when (state.focus.mode) {
-        FocusMode.Af -> "AF"
+        FocusMode.Af -> state.focusDistanceLabel().takeIf { it != "AUTO" } ?: "AF"
         FocusMode.AfLock -> "AF-L"
         FocusMode.Mf -> "MF"
     }
+    val awb = state.autoWhiteBalanceTemperatureK?.let { "${(it / 10f).roundToInt() * 10}K" } ?: "AWB"
     return listOf(
         X14uCell("ev", ev, "EV", evManual),
         X14uCell("f", aperture.replace("f/", "F"), "A", enabled = row >= 0),
-        X14uCell("ss", ss, "S", ssManual),
-        X14uCell("iso", iso, "ISO", isoManual),
-        X14uCell("wb", if (wbManual) "${state.whiteBalanceTemperatureK}K" else "AWB",
+        X14uCell("ss", ss, "S", ssManual, auto = !ssManual),
+        X14uCell("iso", iso, "ISO", isoManual, auto = !isoManual),
+        X14uCell("wb", if (wbManual) "${state.whiteBalanceTemperatureK}K" else awb,
             // A tint away from 0 shows under the value.
             if (wbManual && state.whiteBalanceTint != 0) "WB ${if (state.whiteBalanceTint > 0) "+" else ""}${state.whiteBalanceTint}" else "WB",
             wbManual,
-            enabled = state.capabilities.manualWhiteBalanceSupported || wbManual),
+            enabled = state.capabilities.manualWhiteBalanceSupported || wbManual, auto = !wbManual),
         X14uCell("af", if (state.focus.mode == FocusMode.Mf) state.focusDistanceLabel() else af, "F",
-            state.focus.mode != FocusMode.Af)
+            state.focus.mode != FocusMode.Af, auto = state.focus.mode == FocusMode.Af)
     )
 }
 
@@ -1205,6 +1318,8 @@ private fun X14uCellRow(
     selectedKey: String?,
     orientation: Orientation,
     modifier: Modifier,
+    /** The exposure row turns upright in landscape (panel rows stay). */
+    upright: Boolean = false,
     onTap: (String) -> Unit
 ) {
     val scroll = cells.size > 6
@@ -1221,6 +1336,7 @@ private fun X14uCellRow(
             X14uCellView(
                 cell, cell.key == selectedKey, orientation, compact = scroll,
                 modifier = (if (scroll) Modifier.width(66.dp) else Modifier.weight(1f)).fillMaxHeight(),
+                upright = upright,
                 onTap = onTap
             )
         }
@@ -1234,6 +1350,7 @@ private fun X14uCellView(
     orientation: Orientation,
     compact: Boolean,
     modifier: Modifier,
+    upright: Boolean = false,
     onTap: (String) -> Unit
 ) {
     val haptics = LocalCaptureHaptics.current
@@ -1249,8 +1366,9 @@ private fun X14uCellView(
             },
         contentAlignment = Alignment.Center
     ) {
-        // Panel cells stay as they are in landscape (user's choice).
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // Panel cells stay as they are in landscape; the exposure row turns upright (user's choice).
+        Column(if (upright) Modifier.uprightInLandscape(orientation) else Modifier,
+            horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 cell.value,
                 fontFamily = X14uFont,
@@ -1265,14 +1383,24 @@ private fun X14uCellView(
                     else -> Color.White
                 }
             )
-            Text(
-                cell.label,
-                fontFamily = X14uFont,
-                fontSize = dpText(10.5f),
-                lineHeight = dpText(12f),
-                maxLines = 1,
-                color = if (isOpen) CaptureColors.Accent else Color.White.copy(alpha = if (cell.enabled) .55f else .25f)
-            )
+            val labelColor = if (isOpen) CaptureColors.Accent else Color.White.copy(alpha = if (cell.enabled) .55f else .25f)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    cell.label,
+                    fontFamily = X14uFont,
+                    fontSize = dpText(10.5f),
+                    lineHeight = dpText(12f),
+                    maxLines = 1,
+                    color = labelColor
+                )
+                if (cell.auto) {
+                    Spacer(Modifier.width(3.dp))
+                    Box(Modifier.size(10.dp).background(labelColor, CircleShape), contentAlignment = Alignment.Center) {
+                        Text("A", fontFamily = X14uFont, fontWeight = FontWeight.Medium, fontSize = dpText(7f),
+                            lineHeight = dpText(8f), maxLines = 1, color = Color.Black)
+                    }
+                }
+            }
         }
     }
 }
@@ -1302,7 +1430,7 @@ private fun X14uPhotoRow(
                 if (liveShutter != null) X14uLiveValue(liveShutter, orientation, enabled, onLiveTap)
                 cells.filter { it.key != "f" }.forEach { cell ->
                     X14uCellView(cell, cell.key == selectedKey, orientation, compact = false,
-                        modifier = Modifier.width(66.dp).fillMaxHeight(), onTap = onTap)
+                        modifier = Modifier.width(66.dp).fillMaxHeight(), upright = true, onTap = onTap)
                 }
                 if (liveIso != null) X14uLiveValue(liveIso, orientation, enabled, onLiveTap)
             }
@@ -1310,7 +1438,7 @@ private fun X14uPhotoRow(
         Box(Modifier.size(1.dp, 22.dp).background(Color.White.copy(alpha = .15f)))
         if (aperture != null) {
             X14uCellView(aperture, aperture.key == selectedKey, orientation, compact = false,
-                modifier = Modifier.width(64.dp).fillMaxHeight(), onTap = onTap)
+                modifier = Modifier.width(64.dp).fillMaxHeight(), upright = true, onTap = onTap)
         }
     }
 }
@@ -1948,46 +2076,59 @@ private fun X14uChoiceChips(
     modifier: Modifier,
     onPick: (Int) -> Unit
 ) {
+    // Style C (user's choice): one dark track with the selected choice highlighted. Short sets share the width
+    // evenly; long ones (profiles, presets) keep their own widths and scroll inside the track.
     val haptics = LocalCaptureHaptics.current
-    Row(
-        modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        labels.forEachIndexed { index, label ->
-            val isSelected = index == selected
-            val shape = RoundedCornerShape(17.dp)
-            Box(
-                Modifier
-                    // Chips stay as they are in landscape (user's choice).
-                    .height(34.dp)
-                    .widthIn(min = 44.dp)
-                    .background(if (isSelected) CaptureColors.Accent.copy(alpha = .18f) else Color.White.copy(alpha = .07f), shape)
-                    .border(1.dp, if (isSelected) CaptureColors.Accent else Color.White.copy(alpha = .12f), shape)
-                    .captureClickable(shape = shape, enabled = enabled) {
-                        haptics.selection()
-                        onPick(index)
-                    }
-                    .semantics {
-                        contentDescription = label
-                        role = Role.RadioButton
-                        this.selected = isSelected
-                    }
-                    .padding(horizontal = 12.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    label,
-                    fontFamily = X14uFont,
-                    fontSize = dpText(13f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = when {
-                        !enabled -> Color.White.copy(alpha = .3f)
-                        isSelected -> CaptureColors.Accent
-                        else -> Color.White.copy(alpha = .85f)
-                    }
-                )
+    val even = labels.size in 2..6 && labels.all { it.length <= 7 }
+    val track = RoundedCornerShape(50)
+    Box(modifier, contentAlignment = Alignment.Center) {
+        Row(
+            Modifier
+                .then(if (even) Modifier.fillMaxWidth() else Modifier)
+                .height(36.dp)
+                .background(Color(0xD91C1A17), track)
+                .padding(3.dp)
+                .then(if (even) Modifier else Modifier.horizontalScroll(rememberScrollState())),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            labels.forEachIndexed { index, label ->
+                val isSelected = index == selected
+                val shape = RoundedCornerShape(50)
+                Box(
+                    Modifier
+                        // The track stays as it is in landscape (user's choice).
+                        .then(if (even) Modifier.weight(1f) else Modifier.widthIn(min = 44.dp))
+                        .fillMaxHeight()
+                        .then(
+                            if (isSelected) Modifier.background(Color(0xFF2F2A24), shape).border(1.dp, CaptureColors.Accent, shape)
+                            else Modifier
+                        )
+                        .captureClickable(shape = shape, enabled = enabled) {
+                            haptics.selection()
+                            onPick(index)
+                        }
+                        .semantics {
+                            contentDescription = label
+                            role = Role.RadioButton
+                            this.selected = isSelected
+                        }
+                        .padding(horizontal = if (even) 4.dp else 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        label,
+                        fontFamily = X14uFont,
+                        fontSize = dpText(13f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = when {
+                            !enabled -> Color.White.copy(alpha = .3f)
+                            isSelected -> CaptureColors.Accent
+                            else -> Color.White.copy(alpha = .8f)
+                        }
+                    )
+                }
             }
         }
     }

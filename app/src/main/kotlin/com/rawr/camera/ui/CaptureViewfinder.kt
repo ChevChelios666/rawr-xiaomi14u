@@ -64,7 +64,11 @@ internal fun CaptureViewfinder(
     /** X14U: double-tap at a viewfinder point (fractions); null = no double-tap (single taps act at once). */
     onViewfinderDoubleTap: ((Float, Float) -> Unit)? = null,
     /** X14U digital zoom: two-finger pinch, as a scale factor per move; null = no pinch. */
-    onViewfinderPinch: ((Float) -> Unit)? = null
+    onViewfinderPinch: ((Float) -> Unit)? = null,
+    /** X14U video: the picture starts behind the top bar, so the control frame sits this far down. */
+    slotOffsetY: androidx.compose.ui.unit.Dp = 0.dp,
+    /** X14U: the compact histogram's distance from the top of the viewfinder. */
+    scopeTopInset: androidx.compose.ui.unit.Dp = 8.dp
 ) {
     val haptics = LocalCaptureHaptics.current
     val latestViewfinderTap by rememberUpdatedState(onViewfinderTap)
@@ -173,7 +177,7 @@ internal fun CaptureViewfinder(
                 )
         )
 
-        ScopeLayer(state, dispatch, preview)
+        ScopeLayer(state, dispatch, preview, x14u = x14uClean, topInset = scopeTopInset)
         Box(Modifier.matchParentSize().then(if (popupOpen) Modifier else Modifier.zIndex(2f))) {
             if (preview.nativeContent) preview.faceOverlay() else FaceBoxes(state.faceDetections)
             AfTarget(state, dispatch)
@@ -184,6 +188,7 @@ internal fun CaptureViewfinder(
         // slot above the z20 dismiss scrim, and modal palettes still cover it.
         val controlFrameModifier = Modifier
             .align(Alignment.TopCenter)
+            .offset(y = slotOffsetY)
             .then(if (slotFrame != null) Modifier.size(slotFrame) else Modifier.matchParentSize())
         Box(
             controlFrameModifier

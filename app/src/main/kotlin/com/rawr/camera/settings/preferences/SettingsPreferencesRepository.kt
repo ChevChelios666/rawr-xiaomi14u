@@ -539,6 +539,8 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
             panoMerge = p[Keys.panoMerge] ?: d.panoMerge,
             panoKeepFrames = p[Keys.panoKeepFrames] ?: d.panoKeepFrames,
             panoProjection = enumOrDefault(p[Keys.panoProjection], d.panoProjection),
+            lensButtons = p[Keys.lensButtons]?.let { com.rawr.camera.settings.model.LensButtons.decode(it) } ?: d.lensButtons,
+            videoAudioMeter = p[Keys.videoAudioMeter] ?: d.videoAudioMeter,
             zoomMergeAlgorithm = when (val saved = p[Keys.zoomMerge]) {
                 null -> d.zoomMergeAlgorithm
                 "same" -> null
@@ -814,6 +816,8 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
         p[Keys.panoMerge] = v.panoMerge
         p[Keys.panoKeepFrames] = v.panoKeepFrames
         p[Keys.panoProjection] = v.panoProjection.name
+        p[Keys.lensButtons] = v.lensButtons.encode()
+        p[Keys.videoAudioMeter] = v.videoAudioMeter
         p[Keys.zoomMerge] = v.zoomMergeAlgorithm?.name ?: "same"
         p[Keys.inSensorZoomOff] = v.inSensorZoomLensesOffOnce
         p[Keys.dcpDefaultsOnce] = v.dcpDefaultsOnce
@@ -1144,6 +1148,8 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
         val panoMerge = booleanPreferencesKey("x14u_pano_merge")
         val panoKeepFrames = booleanPreferencesKey("x14u_pano_keep_frames")
         val panoProjection = stringPreferencesKey("x14u_pano_projection")
+        val lensButtons = stringPreferencesKey("x14u_lens_buttons")
+        val videoAudioMeter = booleanPreferencesKey("x14u_video_audio_meter")
         val inSensorZoomOff = booleanPreferencesKey("x14u_in_sensor_zoom_off_once")
         val dcpDefaultsOnce = booleanPreferencesKey("x14u_dcp_defaults_once")
         val loupeOnMf = booleanPreferencesKey("x14u_loupe_on_mf")

@@ -62,7 +62,13 @@ private class ChannelBallistics {
  * and clears at each record start.
  */
 @Composable
-internal fun AudioMeter(input: VideoAudioInput, recording: Boolean, modifier: Modifier = Modifier) {
+internal fun AudioMeter(
+    input: VideoAudioInput,
+    recording: Boolean,
+    modifier: Modifier = Modifier,
+    /** X14U: two thin bars only (no label or clip lamp), the width of the compact histogram. */
+    compact: Boolean = false
+) {
     val context = LocalContext.current
     var monitor by remember { mutableStateOf<AudioLevelMonitor?>(null) }
     // Resume, not start: the permission dialog only pauses, so a grant opens the meter on return.
@@ -109,8 +115,9 @@ internal fun AudioMeter(input: VideoAudioInput, recording: Boolean, modifier: Mo
             .clickable { clipLatched = false },
         verticalAlignment = Alignment.CenterVertically
     ) {
-        MonitorLabel("MIC")
-        Canvas(Modifier.padding(start = 3.dp).width(64.dp).height(if (channelCount == 2) 7.dp else 3.dp)) {
+        if (!compact) MonitorLabel("MIC")
+        Canvas(Modifier.padding(start = if (compact) 0.dp else 3.dp).width(if (compact) 92.dp else 64.dp)
+            .height(if (channelCount == 2) 7.dp else 3.dp)) {
             frame // Redraw on every polled frame.
             val gap = 1.dp.toPx()
             val bar = (size.height - gap * (channelCount - 1)) / channelCount
@@ -130,7 +137,7 @@ internal fun AudioMeter(input: VideoAudioInput, recording: Boolean, modifier: Mo
             }
             for (tick in TICKS_DB) drawRect(CaptureColors.Surface, Offset(x(tick), 0f), Size(1f, size.height))
         }
-        Canvas(Modifier.padding(start = 3.dp).width(5.dp).height(5.dp)) {
+        if (!compact || clipLatched) Canvas(Modifier.padding(start = 3.dp).width(5.dp).height(5.dp)) {
             drawCircle(if (clipLatched) CaptureColors.Danger else Color.White.copy(alpha = .18f))
         }
     }

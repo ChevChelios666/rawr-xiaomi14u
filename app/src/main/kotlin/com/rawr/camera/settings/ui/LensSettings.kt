@@ -56,6 +56,7 @@ internal fun LensSettings(state: SettingsUiState, dispatch: SettingsDispatch) {
     val haptics = LocalSettingsHaptics.current
 
     SettingsPageContainer {
+        LensButtonsGroup(state, dispatch)
         SettingsGroup(
             description =
                 "Lenses on the capture screen, in this order. Drag to reorder, uncheck to hide, tap to edit." +

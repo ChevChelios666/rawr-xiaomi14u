@@ -25,12 +25,22 @@ import com.rawr.camera.architecture.ToggleScopeExpanded
 import com.rawr.camera.model.*
 
 @Composable
-internal fun ScopeLayer(state: CaptureUiState, dispatch: CaptureDispatch, preview: CapturePreview) {
+internal fun ScopeLayer(
+    state: CaptureUiState,
+    dispatch: CaptureDispatch,
+    preview: CapturePreview,
+    /** X14U: stock-sized wide boxes without a title, [topInset] from the top of the viewfinder. */
+    x14u: Boolean = false,
+    topInset: androidx.compose.ui.unit.Dp = 16.dp
+) {
     val haptics = LocalCaptureHaptics.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
         fun geometry(index: Int, expanded: Boolean): ScopeGeometry = calculateScopeGeometry(
             maxWidth, maxHeight, state.orientation == Orientation.Landscape,
-            state.activeScopes.size, index, expanded, preview.deviceRotationDegrees
+            state.activeScopes.size, index, expanded, preview.deviceRotationDegrees,
+            compactWidth = if (x14u) 92.dp else CaptureDimens.ScopeCompactWidth,
+            compactHeight = if (x14u) 34.dp else CaptureDimens.ScopeCompactHeight,
+            topInset = if (x14u) topInset else 16.dp
         )
         val geometries = state.activeScopes.mapIndexed { index, scope -> geometry(index, state.expandedScope == scope) }
         val presentation = state.activeScopes.take(3).mapIndexed { index, scope ->
@@ -69,6 +79,7 @@ internal fun ScopeLayer(state: CaptureUiState, dispatch: CaptureDispatch, previe
                     },
                 title = if (scope == ScopeType.Waveform &&
                     (state.waveformMode == WaveformMode.Histogram || state.waveformMode == WaveformMode.HistogramRgb)) "HISTOGRAM" else null,
+                showTitle = !x14u || expanded,
                 orientation = state.orientation,
                 logicalWidth = g.logicalWidth,
                 logicalHeight = g.logicalHeight,
@@ -92,6 +103,7 @@ private fun ScopeCard(
     variantLabel: String?,
     /** Heading instead of the scope type's name (the luma histogram is drawn from the waveform measurement). */
     title: String? = null,
+    showTitle: Boolean = true,
     orientation: Orientation,
     logicalWidth: androidx.compose.ui.unit.Dp,
     logicalHeight: androidx.compose.ui.unit.Dp,
@@ -126,9 +138,9 @@ private fun ScopeCard(
                 Modifier
                     .requiredSize(logicalWidth, logicalHeight)
                     .uprightInLandscape(orientation)
-                    .padding(if (expanded) 10.dp else 7.dp)
+                    .padding(if (expanded) 10.dp else if (showTitle) 7.dp else 3.dp)
             ) {
-                Text(
+                if (showTitle) Text(
                     (title ?: type.name.uppercase()).let { if (variantLabel == null) it else "$it · $variantLabel" },
                     color = Color.White.copy(alpha = .62f),
                     fontFamily = CaptureMono,

@@ -99,13 +99,13 @@ private enum class HistogramChoice(val label: String, val short: String, val sco
     Histogram("Histogram", "Luma", ScopeType.Waveform, WaveformMode.Histogram),
     HistogramRgb("RGB histogram", "RGB", ScopeType.Waveform, WaveformMode.HistogramRgb),
     Waveform("Waveform", "Wave", ScopeType.Waveform, WaveformMode.Luma),
-    WaveformRgb("RGB waveform", "RGB wave", ScopeType.Waveform, WaveformMode.RgbOverlay),
-    Vector("Vectorscope", "Vector", ScopeType.Vectorscope, null)
+    WaveformRgb("RGB waveform", "RGB wave", ScopeType.Waveform, WaveformMode.RgbOverlay)
 }
 
 private fun CaptureUiState.histogramChoice(): HistogramChoice = when {
     activeScopes.isEmpty() -> HistogramChoice.Off
-    activeScopes.first() == ScopeType.Vectorscope -> HistogramChoice.Vector
+    // The vectorscope is gone from X14U (the compact box is wide, not square).
+    activeScopes.first() == ScopeType.Vectorscope -> HistogramChoice.Off
     else -> HistogramChoice.entries.firstOrNull { it.mode == waveformMode } ?: HistogramChoice.Waveform
 }
 

@@ -22,7 +22,8 @@ object CaptureReducer {
                 multiframeAlgorithm = action.multiframeAlgorithm,
                 captureLayout = action.captureLayout,
                 captureMode = action.captureMode,
-                videoCrop = action.videoCrop,
+                // The digital focal length isn't saved: settings restores keep the one in use.
+                videoCrop = action.videoCrop.copy(digitalZoom = state.videoCrop.digitalZoom),
                 // X14U: 60 fps only for small, light crops (the rest can't develop in 16.6 ms).
                 videoFps = action.videoFps.coerceVideoFps()
                     .let { if (it == 60 && !action.videoCrop.allowsSixty()) 30 else it },

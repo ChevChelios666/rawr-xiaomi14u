@@ -261,7 +261,11 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         /** Video horizon Follow (the Level tile's Follow). */
         val horizonFollow: Boolean = false,
         /** Video stabilisation (the Stabilise tile). */
-        val stabilize: com.rawr.camera.settings.model.VideoStabilize = com.rawr.camera.settings.model.VideoStabilize.Off
+        val stabilize: com.rawr.camera.settings.model.VideoStabilize = com.rawr.camera.settings.model.VideoStabilize.Off,
+        /** The lens pill: labels and per-mode sets with digital focal lengths. */
+        val lensButtons: com.rawr.camera.settings.model.LensButtons = com.rawr.camera.settings.model.LensButtons(),
+        /** Video: the small sound meter above the histogram. */
+        val audioMeter: Boolean = true
     )
     val tools: StateFlow<ToolsState> = settingsEditor.state
         .map { v ->
@@ -273,7 +277,9 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 com.rawr.camera.settings.model.ZoomChain.of(v.effectiveLensProfiles(DeviceLensDefaults.lenses)),
                 v.videoHorizonLock,
                 v.videoHorizonFollow,
-                v.videoStabilize
+                v.videoStabilize,
+                v.lensButtons,
+                v.videoAudioMeter
             )
         }
         .distinctUntilChanged()

@@ -19,7 +19,11 @@ internal fun calculateScopeGeometry(
     scopeCount: Int,
     index: Int,
     expanded: Boolean,
-    deviceRotationDegrees: Int
+    deviceRotationDegrees: Int,
+    compactWidth: androidx.compose.ui.unit.Dp = CaptureDimens.ScopeCompactWidth,
+    compactHeight: androidx.compose.ui.unit.Dp = CaptureDimens.ScopeCompactHeight,
+    /** Portrait: from the top of the viewfinder to the first compact scope. */
+    topInset: androidx.compose.ui.unit.Dp = 16.dp
 ): ScopeGeometry {
     val availablePhysicalWidth = maxWidth - 32.dp
     val availablePhysicalHeight = maxHeight - 80.dp
@@ -33,10 +37,10 @@ internal fun calculateScopeGeometry(
                 minOf(300.dp, availablePhysicalWidth, availablePhysicalHeight * (4f / 3f))
             }
         } else {
-            CaptureDimens.ScopeCompactWidth
+            compactWidth
         }
     val safeLogicalWidth = logicalWidth.coerceAtLeast(1.dp)
-    val logicalHeight = if (expanded) safeLogicalWidth * .75f else CaptureDimens.ScopeCompactHeight
+    val logicalHeight = if (expanded) safeLogicalWidth * .75f else compactHeight
     val physicalWidth = if (landscape) logicalHeight else safeLogicalWidth
     val physicalHeight = if (landscape) safeLogicalWidth else logicalHeight
     // Compact scopes use physical dp margins instead of container fractions. This keeps
@@ -78,7 +82,7 @@ internal fun calculateScopeGeometry(
         } else if (landscape) {
             compactSideInset + if (index == 2) physicalHeight + compactGap else 0.dp
         } else {
-            compactSideInset + if (index == 2) physicalHeight + compactGap else 0.dp
+            topInset + if (index == 2) physicalHeight + compactGap else 0.dp
         }
     return ScopeGeometry(
         logicalWidth = safeLogicalWidth,

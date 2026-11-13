@@ -61,6 +61,14 @@ internal fun VideoEncoderSettings(state: SettingsUiState, dispatch: SettingsDisp
                 ) { dispatch.invoke(com.rawr.camera.settings.architecture.SetHorizonLockRange(range)) }
             }
         }
+        SettingsGroup {
+            SettingsSwitchRow(
+                title = "Sound meter",
+                checked = state.values.videoAudioMeter,
+                supportingText = "Two small level bars over the histogram's corner in Video",
+                onCheckedChange = { dispatch.invoke(com.rawr.camera.settings.architecture.SetVideoAudioMeter(it)) }
+            )
+        }
         SettingsGroup(
             title = "Shutter display",
             description = "How the video shutter reads: as a time (1/60) or as a shutter angle (180° = half the " +
