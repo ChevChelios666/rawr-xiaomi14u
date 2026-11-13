@@ -81,8 +81,9 @@ data class VideoCrop(
         val (source, output) = sizes()
         val outPixels = output.width.toLong() * output.height
         val srcPixels = source.width.toLong() * source.height
-        // Up to about 2.4 MP out: the former 1080p and the full-width 16:9 at 2x (2048 x 1152).
-        return outPixels <= 2_400_000L && (factor >= 2f || srcPixels <= 2_400_000L)
+        // Up to about 1080p out (2.2 MP): the full-width 16:9 at 2x (2048 x 1152) ran out of time at 60 with the
+        // histogram on (diagnostics 13 Nov: video 12.2 ms + preview), so it stays at 30.
+        return outPixels <= 2_200_000L && (factor >= 2f || srcPixels <= 2_200_000L)
     }
 
     fun persistedId(): String = "crop:${if (kind == VideoCropKind.Aspect) "a" else "p"}:$aspect:$pixel:$downscale"
