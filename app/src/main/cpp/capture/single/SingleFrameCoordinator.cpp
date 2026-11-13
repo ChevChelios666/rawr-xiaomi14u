@@ -259,7 +259,14 @@ class SingleFrameCoordinator::Impl {
             // cutoff). Its RAW destination may still be allocating (100 MB at
             // 50 MP): wait for it rather than letting this frame pass, or the
             // photo is taken from a later moment than the press.
-            if (!entry->prepared.load()) waitPrepared(*entry, kPreparationWait);
+            if (!entry->prepared.load()) {
+                const auto start = std::chrono::steady_clock::now();
+                waitPrepared(*entry, kPreparationWait);
+                if (diagnostic_)
+                    diagnostic_("RAW_STILL_PREPARE_WAIT requestId=" + std::to_string(entry->id) + " waitedMs=" +
+                                std::to_string(std::chrono::duration<double, std::milli>(
+                                                   std::chrono::steady_clock::now() - start).count()));
+            }
             if (!entry->prepared.load() || !entry->shot->captureRequested()) continue;
             // X14U: advance() above skipped this entry while its RAW destination was still allocating, so a long
             // exposure's "wait for my own frame" was never applied and the next viewfinder frame was taken

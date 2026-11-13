@@ -75,7 +75,10 @@ uint64_t SessionEngine::requestRawStillCapture(rawrcam::encoding::dng::DngCaptur
                                             std::chrono::steady_clock::now() - start)
                                             .count()));
     }
+    // Burst sizing (Nov 14): this call blocked ~120 ms on most burst frames; where.
+    const auto lockStart = std::chrono::steady_clock::now();
     std::unique_lock<std::mutex> lock(mu_);
+    const auto lockAt = std::chrono::steady_clock::now();
     dngContext.autoKeyEv = appliedAutoKeyEv();
     if (dngContext.captureTone) {
         auto capturedTone = std::make_shared<tonemap::TonemapParams>(*dngContext.captureTone);
@@ -89,9 +92,17 @@ uint64_t SessionEngine::requestRawStillCapture(rawrcam::encoding::dng::DngCaptur
     if (longExposure)
         capture_.single().expectOptimizedFrameForNextRequest(
             std::chrono::milliseconds(longExposure->exposureTimeNs / 1'000'000 + 1000));
+    const auto requestStart = std::chrono::steady_clock::now();
     const uint64_t requestId = capture_.requestSingle(std::move(dngContext), std::move(jpegContext), [this] {
         return ingressQueue_.latestTimestamp(realtime_.generation());
     });
+    {
+        const auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
+        appendDiagnostic("RAW_STILL_REQUEST_TIMING requestId=" + std::to_string(requestId) +
+                         " lockWaitMs=" + std::to_string(ms(lockStart, lockAt)) +
+                         " toneMs=" + std::to_string(ms(lockAt, requestStart)) +
+                         " requestMs=" + std::to_string(ms(requestStart, std::chrono::steady_clock::now())));
+    }
     if (requestId != 0 && fullSize) {
         // Capture-stream lens: the photo is the full-size still this request asks for.
         // The sensor switch takes ~0.4 s at 50 MP; a 200 MP still takes ~1 s

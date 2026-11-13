@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
@@ -177,5 +178,26 @@ internal fun X14uBurstToggles(
             minWidth = SidePillWidth,
             modifier = pillModifier
         )
+    }
+}
+
+/** Burst running: the count and the speed reached, large, in the control area above the shutter. */
+@Composable
+internal fun X14uBurstCounter(burst: BurstUiState, orientation: Orientation) {
+    val elapsed = android.os.SystemClock.uptimeMillis() - burst.startedAtMs
+    val rate = if (elapsed > 700L && burst.shots > 1) (burst.shots * 1000f / elapsed).toInt() else burst.fps
+    Row(
+        Modifier.uprightInLandscape(orientation)
+            .background(Color.Black.copy(alpha = .55f), androidx.compose.foundation.shape.RoundedCornerShape(22.dp))
+            .padding(horizontal = 18.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text("${burst.shots}", color = CaptureColors.Accent, fontFamily = X14uFont, fontWeight = FontWeight.Medium,
+            fontSize = dpText(30f), maxLines = 1)
+        Column {
+            Text("of ${burst.limit}", color = Color.White.copy(alpha = .75f), fontFamily = X14uFont, fontSize = dpText(12f), maxLines = 1)
+            Text("$rate fps", color = Color.White, fontFamily = X14uFont, fontSize = dpText(12f), maxLines = 1)
+        }
     }
 }

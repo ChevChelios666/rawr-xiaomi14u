@@ -1013,7 +1013,10 @@ internal fun X14uCaptureLayout(
                 contentAlignment = Alignment.Center
             ) {
                 val key = currentKey
-                if (key != null) {
+                if (burst && state.burst.running) {
+                    // Burst: the count and speed above the finger (the shutter is under it).
+                    X14uBurstCounter(state.burst, orientation)
+                } else if (key != null) {
                     X14uEditorView(editorFor(key), orientation)
                 } else if (panel == null) {
                     X14uIdleControlArea(state, dispatch, videoControls, showNumbers, enabled = !recordingLock,
