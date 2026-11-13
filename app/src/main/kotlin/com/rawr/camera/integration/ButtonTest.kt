@@ -9,9 +9,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
-/** Xiaomi 14 Ultra Photography Kit: the zoom lever steps the lens pill (+1 longer, -1 wider). */
+/** Xiaomi 14 Ultra Photography Kit: what its controls ask the capture screen to do. */
 object GripEvents {
+    /** Zoom lever: the lens pill one step (+1 longer, -1 wider). */
     val lensSteps = kotlinx.coroutines.flow.MutableSharedFlow<Int>(extraBufferCapacity = 4)
+    /** Dial: clicks (+ / -) for the control chosen in Settings. */
+    val dialSteps = kotlinx.coroutines.flow.MutableSharedFlow<Int>(extraBufferCapacity = 16)
+    enum class Action { Focus, Shutter, Record }
+    val actions = kotlinx.coroutines.flow.MutableSharedFlow<Action>(extraBufferCapacity = 4)
 }
 
 /**

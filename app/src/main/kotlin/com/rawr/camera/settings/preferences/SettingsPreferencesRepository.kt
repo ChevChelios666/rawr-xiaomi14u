@@ -541,6 +541,9 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
             panoProjection = enumOrDefault(p[Keys.panoProjection], d.panoProjection),
             lensButtons = p[Keys.lensButtons]?.let { com.rawr.camera.settings.model.LensButtons.decode(it) } ?: d.lensButtons,
             videoAudioMeter = p[Keys.videoAudioMeter] ?: d.videoAudioMeter,
+            gripUsb = p[Keys.gripUsb] ?: d.gripUsb,
+            gripDial = enumOrDefault(p[Keys.gripDial], d.gripDial),
+            gripDialReverse = p[Keys.gripDialReverse] ?: d.gripDialReverse,
             zoomMergeAlgorithm = when (val saved = p[Keys.zoomMerge]) {
                 null -> d.zoomMergeAlgorithm
                 "same" -> null
@@ -818,6 +821,9 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
         p[Keys.panoProjection] = v.panoProjection.name
         p[Keys.lensButtons] = v.lensButtons.encode()
         p[Keys.videoAudioMeter] = v.videoAudioMeter
+        p[Keys.gripUsb] = v.gripUsb
+        p[Keys.gripDial] = v.gripDial.name
+        p[Keys.gripDialReverse] = v.gripDialReverse
         p[Keys.zoomMerge] = v.zoomMergeAlgorithm?.name ?: "same"
         p[Keys.inSensorZoomOff] = v.inSensorZoomLensesOffOnce
         p[Keys.dcpDefaultsOnce] = v.dcpDefaultsOnce
@@ -1150,6 +1156,9 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
         val panoProjection = stringPreferencesKey("x14u_pano_projection")
         val lensButtons = stringPreferencesKey("x14u_lens_buttons")
         val videoAudioMeter = booleanPreferencesKey("x14u_video_audio_meter")
+        val gripUsb = booleanPreferencesKey("x14u_grip_usb")
+        val gripDial = stringPreferencesKey("x14u_grip_dial")
+        val gripDialReverse = booleanPreferencesKey("x14u_grip_dial_reverse")
         val inSensorZoomOff = booleanPreferencesKey("x14u_in_sensor_zoom_off_once")
         val dcpDefaultsOnce = booleanPreferencesKey("x14u_dcp_defaults_once")
         val loupeOnMf = booleanPreferencesKey("x14u_loupe_on_mf")

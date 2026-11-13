@@ -17,6 +17,7 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.rawr.camera.architecture.TriggerCapture
 import com.rawr.camera.integration.NativeCameraUiSnapshot
 import com.rawr.camera.model.CaptureMode
@@ -82,6 +83,21 @@ class MainActivity : ComponentActivity() {
             }
         )
         enableEdgeToEdge()
+        // Photography Kit grip (read over USB): half press focuses, full press shoots, the red button records.
+        lifecycleScope.launch {
+            repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                com.rawr.camera.integration.GripEvents.actions.collect { action ->
+                    when (action) {
+                        com.rawr.camera.integration.GripEvents.Action.Shutter -> triggerShutter()
+                        com.rawr.camera.integration.GripEvents.Action.Focus ->
+                            captureViewModel.controller.dispatch(com.rawr.camera.architecture.Refocus)
+                        com.rawr.camera.integration.GripEvents.Action.Record ->
+                            if (captureViewModel.controller.state.value.captureMode == CaptureMode.Video) toggleVideoRecording()
+                            else captureViewModel.controller.dispatch(com.rawr.camera.architecture.SetCaptureMode(CaptureMode.Video))
+                    }
+                }
+            }
+        }
         if (intent.getBooleanExtra("video_capability_probe", false)) {
             lifecycleScope.launch {
                 val report = withContext(Dispatchers.IO) { VideoCapabilityProbe.report().toString(2) }
@@ -293,9 +309,29 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Photography Kit grip over USB (Settings → Display & Control): read while on screen, also when plugged in later.
+    private var gripAttach: android.content.BroadcastReceiver? = null
+    private fun startGrip() {
+        if (captureViewModel.tools.value.gripUsb) com.rawr.camera.integration.GripUsbReader.start(this, quiet = true)
+    }
+
     override fun onStart() {
         super.onStart()
         started = true
+        startGrip()
+        if (gripAttach == null) {
+            val receiver = object : android.content.BroadcastReceiver() {
+                override fun onReceive(context: android.content.Context, intent: android.content.Intent) {
+                    if (intent.action == android.hardware.usb.UsbManager.ACTION_USB_DEVICE_ATTACHED) startGrip()
+                    else com.rawr.camera.integration.GripUsbReader.stop()
+                }
+            }
+            androidx.core.content.ContextCompat.registerReceiver(this, receiver, android.content.IntentFilter().apply {
+                addAction(android.hardware.usb.UsbManager.ACTION_USB_DEVICE_ATTACHED)
+                addAction(android.hardware.usb.UsbManager.ACTION_USB_DEVICE_DETACHED)
+            }, androidx.core.content.ContextCompat.RECEIVER_EXPORTED)
+            gripAttach = receiver
+        }
         // A viewfinder you are only looking at must not time out; onStop clears this.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val generation = ++startGeneration
@@ -419,8 +455,10 @@ class MainActivity : ComponentActivity() {
         startGeneration++
         captureViewModel.stopPreviewAfterRecording()
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        // The raw USB test gives the grip back when Rawr leaves the screen.
+        // The grip goes back to the system when Rawr leaves the screen.
         com.rawr.camera.integration.GripUsbReader.stop()
+        gripAttach?.let { runCatching { unregisterReceiver(it) } }
+        gripAttach = null
         super.onStop()
     }
 

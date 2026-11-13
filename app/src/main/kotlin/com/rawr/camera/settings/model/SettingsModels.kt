@@ -1265,6 +1265,10 @@ data class SettingsValues(
     val lensButtons: LensButtons = LensButtons(),
     /** X14U video: the small sound meter above the histogram. */
     val videoAudioMeter: Boolean = true,
+    /** Photography Kit grip: Rawr reads the grip itself over USB (dial direction, record button). */
+    val gripUsb: Boolean = true,
+    val gripDial: GripDial = GripDial.Ev,
+    val gripDialReverse: Boolean = false,
     /** X14U digital zoom: the multiframe merge for zoomed shots; null = the usual merge. */
     val zoomMergeAlgorithm: MultiframeMergeAlgorithm? = MultiframeMergeAlgorithm.Wronski,
     /** X14U: the in-sensor-zoom lenses (2x) were turned off once, so zoom crops the main camera; they can be re-enabled. */

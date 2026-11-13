@@ -265,7 +265,11 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         /** The lens pill: labels and per-mode sets with digital focal lengths. */
         val lensButtons: com.rawr.camera.settings.model.LensButtons = com.rawr.camera.settings.model.LensButtons(),
         /** Video: the small sound meter above the histogram. */
-        val audioMeter: Boolean = true
+        val audioMeter: Boolean = true,
+        /** Photography Kit grip read over USB, and what its dial turns. */
+        val gripUsb: Boolean = true,
+        val gripDial: com.rawr.camera.settings.model.GripDial = com.rawr.camera.settings.model.GripDial.Ev,
+        val gripDialReverse: Boolean = false
     )
     val tools: StateFlow<ToolsState> = settingsEditor.state
         .map { v ->
@@ -279,7 +283,10 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 v.videoHorizonFollow,
                 v.videoStabilize,
                 v.lensButtons,
-                v.videoAudioMeter
+                v.videoAudioMeter,
+                v.gripUsb,
+                v.gripDial,
+                v.gripDialReverse
             )
         }
         .distinctUntilChanged()

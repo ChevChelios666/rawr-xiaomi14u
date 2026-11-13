@@ -115,6 +115,12 @@ internal fun reduceCaptureSettings(
         state.withValues(state.values.copy(videoAudioMeter = action.value))
     }
 
+    is SetGripUsb -> state.withValues(state.values.copy(gripUsb = action.value))
+
+    is SetGripDial -> state.withValues(state.values.copy(gripDial = action.value))
+
+    is SetGripDialReverse -> state.withValues(state.values.copy(gripDialReverse = action.value))
+
     is SetZoomMergeAlgorithm -> {
         state.withValues(state.values.copy(zoomMergeAlgorithm = action.value))
     }

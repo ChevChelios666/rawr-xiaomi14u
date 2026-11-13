@@ -39,6 +39,32 @@ internal fun DisplayControlsSettings(state: SettingsUiState, dispatch: SettingsD
                 }
             )
         }
+        SettingsGroup(
+            title = "Photography Kit grip",
+            description = "Rawr reads the grip over USB while it's open (asks for USB permission): shutter half and " +
+                "full press, the record button, the zoom lever (lens steps) and the dial. Off: only the shutter and " +
+                "the lever work, through Android."
+        ) {
+            SettingsSwitchRow(
+                title = "Read the grip over USB",
+                checked = state.values.gripUsb,
+                onCheckedChange = { dispatch.invoke(com.rawr.camera.settings.architecture.SetGripUsb(it)) }
+            )
+            SettingDivider()
+            DropdownChoiceRow(
+                title = "Dial",
+                selected = state.values.gripDial,
+                values = com.rawr.camera.settings.model.GripDial.entries.toList(),
+                label = { it.label },
+                onSelect = { dispatch.invoke(com.rawr.camera.settings.architecture.SetGripDial(it)) }
+            )
+            SettingDivider()
+            SettingsSwitchRow(
+                title = "Reverse the dial",
+                checked = state.values.gripDialReverse,
+                onCheckedChange = { dispatch.invoke(com.rawr.camera.settings.architecture.SetGripDialReverse(it)) }
+            )
+        }
     }
 }
 

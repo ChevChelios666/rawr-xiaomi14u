@@ -590,6 +590,33 @@ internal fun X14uCaptureLayout(
             }
         }
     }
+    // Photography Kit dial (read over USB): clicks move the chosen control's ruler or choices, which open to show it.
+    val gripTools = LocalCaptureExtras.current.tools
+    val dialStep by androidx.compose.runtime.rememberUpdatedState { clicks: Int ->
+        val key = gripTools.gripDial.key.let { if (it == "zoom") ZOOM_KEY else it }
+        val steps = if (gripTools.gripDialReverse) -clicks else clicks
+        val editor = when {
+            panoLocked || (recordingLock && key in setOf("f", ZOOM_KEY)) -> null
+            key == ZOOM_KEY -> if (zoomOn) zoomRuler(zoom, zoomChain, setZoom) else null
+            else -> exposureEditor(key, state, dispatch, lensOptions, recordingLock, onQuickEvent, wbTint, { wbTint = !wbTint }, onMfTouch)
+        }
+        when (editor) {
+            is X14uEditor.Ruler -> if (editor.enabled) {
+                val next = (editor.index + steps).coerceIn(0, editor.count - 1)
+                if (next != editor.index) editor.onIndex(next, editor.index)
+                panel = null
+                selected = key
+            }
+            is X14uEditor.Chips -> if (editor.enabled && editor.labels.isNotEmpty()) {
+                val next = (editor.selected + steps).coerceIn(0, editor.labels.lastIndex)
+                if (next != editor.selected) editor.onPick(next)
+                panel = null
+                selected = key
+            }
+            else -> Unit
+        }
+    }
+    LaunchedEffect(Unit) { com.rawr.camera.integration.GripEvents.dialSteps.collect { dialStep(it) } }
     val currentKey = if (panel == null) selected?.takeIf { k -> (k == PHOTO_FOCUS_KEY && simplePhoto) || (k == ZOOM_KEY && zoomOn) || cells.any { it.key == k } } else (panelKey?.takeIf { k -> cells.any { it.key == k } } ?: cells.firstOrNull()?.key)
 
     BoxWithConstraints(modifier) {

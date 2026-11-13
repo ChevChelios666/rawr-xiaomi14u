@@ -79,6 +79,9 @@ data class SetPanoKeepFrames(val value: Boolean) : SettingsApplicationAction
 data class SetPanoProjection(val value: com.rawr.camera.settings.model.PanoProjection) : SettingsApplicationAction
 data class SetLensButtons(val value: com.rawr.camera.settings.model.LensButtons) : SettingsApplicationAction
 data class SetVideoAudioMeter(val value: Boolean) : SettingsApplicationAction
+data class SetGripUsb(val value: Boolean) : SettingsApplicationAction
+data class SetGripDial(val value: com.rawr.camera.settings.model.GripDial) : SettingsApplicationAction
+data class SetGripDialReverse(val value: Boolean) : SettingsApplicationAction
 /** X14U: merge for digitally zoomed multiframe shots (null = the usual merge). */
 data class SetZoomMergeAlgorithm(val value: com.rawr.camera.settings.model.MultiframeMergeAlgorithm?) : SettingsApplicationAction
 
