@@ -20,9 +20,9 @@ import kotlinx.coroutines.flow.asStateFlow
  * all, so Rawr reads the grip's own HID reports while it is on screen (Settings → Display & Control) and gives the
  * grip back to the system when it leaves. Reports (button test, Nov 2026), one HID interface, endpoint 0x81:
  *  - 01 dd 00 00 00 05 e8: the dial, dd = +1 (01) or -1 (ff) per click.
- *  - 02 00 00 00 00 e8 00 00: the red record button (e8 while pressed).
- *  - 04 aa aa bb bb: up to two Linux key codes held (little endian): 528 half press, 212 full press (418 / 419
- *    for the zoom lever didn't work, Nov 13: the lever is tried as consumer control, report 03, too).
+ *  - 02 aa aa bb bb cc cc xx: up to three key codes held (little endian): 418 zoom lever T (02 a2 01 …), 419 W
+ *    (02 00 00 a3 01 …), 232 the red record button (02 00 00 00 00 e8 00 00); xx = the lever's last way.
+ *  - 04 aa aa bb bb: up to two Linux key codes held (little endian): 528 half press, 212 full press.
  * While the button test is open the reports are only listed there.
  */
 object GripUsbReader {
@@ -36,8 +36,7 @@ object GripUsbReader {
 
     @Volatile private var connection: UsbDeviceConnection? = null
     private var heldKeys: Set<Int> = emptySet()
-    private var heldUsages: Set<Int> = emptySet()
-    private var recordHeld = false
+    private var heldKeys2: Set<Int> = emptySet()
     private var claimed: List<UsbInterface> = emptyList()
     private var threads: List<Thread> = emptyList()
     private var receiver: BroadcastReceiver? = null
@@ -146,27 +145,21 @@ object GripUsbReader {
                 val clicks = report[1].toInt() // signed: +1 / -1
                 if (clicks != 0 && act) GripEvents.dialSteps.tryEmit(clicks)
             }
-            3 -> {
-                // Consumer control (a guess for the zoom lever): AC Zoom In 0x022D, AC Zoom Out 0x022E (Android's
-                // ZOOM_IN / ZOOM_OUT), 16-bit little endian.
-                val usages = buildSet {
-                    var i = 1
-                    while (i + 1 < n) {
-                        val u = (report[i].toInt() and 0xFF) or ((report[i + 1].toInt() and 0xFF) shl 8)
-                        if (u != 0) add(u)
-                        i += 2
+            2 -> {
+                // Up to three held key codes, 16-bit little endian at bytes 1, 3, 5 (byte 7 = the lever's last way,
+                // ignored): 418 zoom lever T, 419 W, 232 (e8) the red record button.
+                val keys = buildSet {
+                    for (i in intArrayOf(1, 3, 5)) if (i + 1 < n) {
+                        val code = (report[i].toInt() and 0xFF) or ((report[i + 1].toInt() and 0xFF) shl 8)
+                        if (code != 0) add(code)
                     }
                 }
-                if (act) for (u in usages - heldUsages) when (u) {
-                    0x022D -> GripEvents.lensSteps.tryEmit(1)
-                    0x022E -> GripEvents.lensSteps.tryEmit(-1)
+                if (act) for (code in keys - heldKeys2) when (code) {
+                    418 -> GripEvents.lensSteps.tryEmit(1)
+                    419 -> GripEvents.lensSteps.tryEmit(-1)
+                    232 -> GripEvents.actions.tryEmit(GripEvents.Action.Record)
                 }
-                heldUsages = usages
-            }
-            2 -> {
-                val held = (1 until n).any { report[it] == 0xE8.toByte() }
-                if (held && !recordHeld && act) GripEvents.actions.tryEmit(GripEvents.Action.Record)
-                recordHeld = held
+                heldKeys2 = keys
             }
             4 -> {
                 val keys = buildSet {
@@ -180,8 +173,6 @@ object GripUsbReader {
                 if (act) for (code in keys - heldKeys) when (code) {
                     528 -> GripEvents.actions.tryEmit(GripEvents.Action.Focus)
                     212 -> GripEvents.actions.tryEmit(GripEvents.Action.Shutter)
-                    418 -> GripEvents.lensSteps.tryEmit(1)
-                    419 -> GripEvents.lensSteps.tryEmit(-1)
                 }
                 heldKeys = keys
             }
@@ -200,8 +191,7 @@ object GripUsbReader {
         claimed.forEach { runCatching { conn?.releaseInterface(it) } }
         claimed = emptyList()
         heldKeys = emptySet()
-        heldUsages = emptySet()
-        recordHeld = false
+        heldKeys2 = emptySet()
         runCatching { conn?.close() }
         ButtonTest.note("USB: stopped, the grip is back to normal")
     }
