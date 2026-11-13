@@ -519,6 +519,9 @@ class NativeCaptureScreenController(
                 withContext(NonCancellable) {
                     // The frames already queued still count (they are on their way to the worker).
                     while (burstWaiting.get() > 0) delay(20L)
+                    val ms = android.os.SystemClock.uptimeMillis() - state.value.burst.startedAtMs
+                    android.util.Log.i("RawrCamCapture", "BURST_RUN fps=${action.fps} queued=$queued " +
+                        "accepted=${state.value.burst.shots} ms=$ms refused=${burstRefused.get()}")
                     update { it.copy(burst = it.burst.copy(running = false, lastCount = it.burst.shots,
                         stoppedFull = burstRefused.get())) }
                 }

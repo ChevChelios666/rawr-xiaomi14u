@@ -155,8 +155,11 @@ class StillCaptureCoordinator(
 
     private fun captureInternal(jpegEnabled: Boolean, input: CaptureInput): Long {
         val now = input.captureTime.wallClockUnixMillis
+        // Timing of each step (Burst sizing: frames came 170-200 ms apart, Nov 14).
+        val t0 = android.os.SystemClock.elapsedRealtimeNanos()
         val current = try { CaptureRecipe.freezeAssets(application, input.settings) }
             finally { input.releaseAssets() }
+        val tFrozen = android.os.SystemClock.elapsedRealtimeNanos()
         input.frozenAssetId = current.selectedUserLutProfileId
         val filmDescription =
             if (current.filmSimEnabled) current.filmSimLook.describeFilm() else null
@@ -195,6 +198,7 @@ class StillCaptureCoordinator(
                 com.rawr.camera.storage.releaseCaptureAssets(application.filesDir, current.selectedUserLutProfileId.orEmpty())
                 return 0L
             }
+        val tPrepared = android.os.SystemClock.elapsedRealtimeNanos()
         val diagnosticsEnabled = current.pipelineDiagnosticsEnabled
         val zslPersistRequested = current.experimentalMultiframeEnabled && current.persistZslRingOnShutterEnabled
         val artifactExportRequested = diagnosticsEnabled
@@ -336,7 +340,11 @@ class StillCaptureCoordinator(
                     jpegDone = jpegFd < 0,
                     requestedAtNs = input.requestedAtNs
                 )
-            Log.i(TAG, "CAPTURE_ACCEPTED requestId=$requestId requestedNs=${input.requestedAtNs} jpeg=${output.jpeg != null}")
+            val tDone = android.os.SystemClock.elapsedRealtimeNanos()
+            Log.i(TAG, "CAPTURE_ACCEPTED requestId=$requestId requestedNs=${input.requestedAtNs} jpeg=${output.jpeg != null} " +
+                "queueMs=${(t0 - input.requestedAtNs) / 1_000_000} freezeMs=${(tFrozen - t0) / 1_000_000} " +
+                "outputsMs=${(tPrepared - tFrozen) / 1_000_000} nativeMs=${(tDone - tPrepared) / 1_000_000} " +
+                "name=${output.jobName}")
             if (zslPersistRequested) {
                 val baseName = output.jobName.removeSuffix(".dng")
                 ContextCompat.startForegroundService(
