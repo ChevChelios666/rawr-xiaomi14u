@@ -699,6 +699,11 @@ class RawPreviewCoordinator(application: Application) : AutoCloseable {
     /** An accepted still still needs the camera session (frames due or not yet copied out). */
     fun stillCaptureHoldsCamera(): Boolean = native.stillCaptureHoldsCamera(nativeHandle)
 
+    /** X14U Burst: still RAW buffers allocated ahead so a burst starts at full speed. */
+    fun prewarmStillBuffers(count: Int) {
+        if (nativeHandle != 0L) native.prewarmStillBuffers(nativeHandle, count)
+    }
+
     fun pollJpegWriteCompletion(): String = native.pollJpegWriteCompletion(nativeHandle)
 
     @Synchronized

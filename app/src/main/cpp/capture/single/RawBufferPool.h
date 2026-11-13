@@ -39,6 +39,22 @@ class RawBufferPool final {
         buffers().push_back(std::move(owned));
     }
 
+    // Burst mode entered: fill the pool ahead (on a worker), so the first frames don't wait either.
+    static void prewarm(std::size_t bytes, std::size_t count) {
+        if (!bytes) return;
+        for (std::size_t i = 0; i < count; ++i) {
+            {
+                std::lock_guard<std::mutex> lock(mutex());
+                std::size_t fitting = 0;
+                for (const auto& b : buffers()) fitting += b.capacity() >= bytes ? 1 : 0;
+                if (fitting >= count || pooledBytes() + bytes > kMaxBytes) return;
+            }
+            std::vector<uint8_t> fresh;
+            fresh.resize(bytes);  // zero-fill also brings the pages in
+            give(std::move(fresh));
+        }
+    }
+
    private:
     static constexpr std::size_t kMaxBytes = std::size_t(128) * 1024 * 1024;
     static std::mutex& mutex() {

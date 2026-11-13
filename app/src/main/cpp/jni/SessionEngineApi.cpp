@@ -225,6 +225,9 @@ uint64_t requestRawStillCapture(EngineHandle h, rawrcam::encoding::dng::DngCaptu
 }
 std::string pollDngWriteCompletion(EngineHandle h) { return h ? engine(h)->pollDngWriteCompletion() : std::string{}; }
 bool stillCaptureHoldsCamera(EngineHandle h) { return h && engine(h)->stillCaptureHoldsCamera(); }
+void prewarmStillBuffers(EngineHandle h, int count) {
+    if (h) engine(h)->prewarmStillBuffers(count);
+}
 std::string pollJpegWriteCompletion(EngineHandle h) { return h ? engine(h)->pollJpegWriteCompletion() : std::string{}; }
 uint64_t recoverStill(EngineHandle h, const std::string& name, bool multiframe, int dng, int merged, int jpeg) {
     if (h) return engine(h)->recoverStill(name, multiframe, dng, merged, jpeg);

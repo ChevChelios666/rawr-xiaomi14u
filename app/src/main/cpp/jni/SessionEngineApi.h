@@ -88,6 +88,8 @@ uint64_t requestRawStillCapture(EngineHandle handle, rawrcam::encoding::dng::Dng
                                 rawrcam::capture::JpegCaptureRequest jpegContext) noexcept;
 std::string pollDngWriteCompletion(EngineHandle handle);
 bool stillCaptureHoldsCamera(EngineHandle handle);
+// X14U Burst: allocate still RAW buffers ahead (a worker thread), so a burst's first frames don't wait for them.
+void prewarmStillBuffers(EngineHandle handle, int count);
 std::string pollJpegWriteCompletion(EngineHandle handle);
 uint64_t recoverStill(EngineHandle handle, const std::string& name, bool multiframe, int dng, int merged, int jpeg);
 std::string runHighlightReplay(EngineHandle handle, const std::string& inputPath);

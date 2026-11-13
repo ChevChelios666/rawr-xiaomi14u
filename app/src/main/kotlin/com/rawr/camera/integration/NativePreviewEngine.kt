@@ -287,6 +287,7 @@ class NativePreviewEngine {
     external fun pollDngWriteCompletion(handle: Long): String
 
     external fun stillCaptureHoldsCamera(handle: Long): Boolean
+    external fun prewarmStillBuffers(handle: Long, count: Int)
 
     external fun pollJpegWriteCompletion(handle: Long): String
 

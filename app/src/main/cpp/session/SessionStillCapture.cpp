@@ -7,6 +7,7 @@
 #include "capture/BurstLimits.h"
 #include "capture/multiframe/BracketExposure.h"
 #include "capture/persistence/CaptureJob.h"
+#include "capture/single/RawBufferPool.h"
 #include "develop/render/DenoiseProfile.h"
 #include "local_tone/ExposureFusion.h"
 // Still + multiframe capture routing.
@@ -141,6 +142,18 @@ uint64_t SessionEngine::requestRawStillCapture(rawrcam::encoding::dng::DngCaptur
     }
     finalizeDeferredSurfaceDetach();
     return requestId;
+}
+
+void SessionEngine::prewarmStillBuffers(int count) {
+    uint64_t bytes = 0;
+    {
+        std::lock_guard<std::mutex> lock(mu_);
+        bytes = capture_.single().rawSnapshotBytes();
+    }
+    if (!bytes || count <= 0) return;
+    std::thread([bytes, count] {
+        rawrcam::capture::RawBufferPool::prewarm(static_cast<std::size_t>(bytes), static_cast<std::size_t>(count));
+    }).detach();
 }
 
 bool SessionEngine::stillCaptureHoldsCamera() {

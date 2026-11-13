@@ -121,6 +121,7 @@ class SessionEngine {
     std::string pollDngWriteCompletion();
     // Some accepted still still needs the camera session (see CaptureCoordinator::holdsCameraFrames).
     bool stillCaptureHoldsCamera();
+    void prewarmStillBuffers(int count);
     std::string pollJpegWriteCompletion();
     void setPersistZslRingEnabled(bool enabled);
     void setExperimentalMultiframeEnabled(bool enabled);
