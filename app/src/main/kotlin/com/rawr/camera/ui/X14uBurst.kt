@@ -44,7 +44,6 @@ import com.rawr.camera.model.FocusMode
 import com.rawr.camera.model.Orientation
 import com.rawr.camera.ui.icons.Icons
 import com.rawr.camera.ui.icons.outlined.CenterFocusStrong
-import com.rawr.camera.ui.icons.outlined.HighQuality
 
 /**
  * X14U Burst shutter: hold to shoot, let go to stop. Ready: a dashed ring inside the outline marks it as a burst
@@ -168,10 +167,11 @@ internal fun X14uBurstToggles(
             minWidth = SidePillWidth,
             modifier = pillModifier
         )
+        // Always lit (both are a choice, not on / off): one sheet = JPEG, two = JPEG + DNG.
         CompactSidePill(
-            icon = Icons.Outlined.HighQuality,
-            label = if (dng) "+DNG" else "JPEG",
-            active = dng,
+            icon = if (dng) X14uIcons.SheetTwo else X14uIcons.SheetOne,
+            label = if (dng) "JPEG+DNG" else "JPEG",
+            active = true,
             testTag = "capture_x14u_burst_format",
             contentDescription = if (dng) "Burst saves JPEG and DNG. Tap for JPEG only." else "Burst saves JPEG. Tap to add DNG.",
             onClick = { if (enabled) com.rawr.camera.burst.BurstSettings.setDng(!dng) },

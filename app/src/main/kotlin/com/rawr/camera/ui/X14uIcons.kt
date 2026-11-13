@@ -180,6 +180,36 @@ internal object X14uIcons {
         icon("X14u.ChevronUp") { stroke(2.2f) { moveTo(6.5f, 14.5f); lineTo(12f, 9f); lineTo(17.5f, 14.5f) } }
     }
 
+    /** Burst format JPEG: one photo sheet (a small landscape on it). */
+    val SheetOne: ImageVector by lazy {
+        icon("X14u.SheetOne") {
+            stroke {
+                moveTo(8f, 3f); lineTo(16f, 3f)
+                arcTo(1.5f, 1.5f, 0f, false, true, 17.5f, 4.5f); lineTo(17.5f, 19.5f)
+                arcTo(1.5f, 1.5f, 0f, false, true, 16f, 21f); lineTo(8f, 21f)
+                arcTo(1.5f, 1.5f, 0f, false, true, 6.5f, 19.5f); lineTo(6.5f, 4.5f)
+                arcTo(1.5f, 1.5f, 0f, false, true, 8f, 3f); close()
+            }
+            stroke(1.6f) { moveTo(8.8f, 17f); lineTo(11f, 13.8f); lineTo(13f, 15.8f); lineTo(14.2f, 14.6f); lineTo(15.4f, 17f) }
+        }
+    }
+
+    /** Burst format JPEG + DNG: two overlapping sheets (the back one shows above and right of the front). */
+    val SheetTwo: ImageVector by lazy {
+        icon("X14u.SheetTwo") {
+            stroke { moveTo(9.5f, 5.5f); lineTo(9.5f, 3.5f); arcTo(1f, 1f, 0f, false, true, 10.5f, 2.5f); lineTo(19f, 2.5f)
+                arcTo(1f, 1f, 0f, false, true, 20f, 3.5f); lineTo(20f, 17f); arcTo(1f, 1f, 0f, false, true, 19f, 18f); lineTo(16.5f, 18f) }
+            stroke {
+                moveTo(5.5f, 6f); lineTo(14f, 6f)
+                arcTo(1.5f, 1.5f, 0f, false, true, 15.5f, 7.5f); lineTo(15.5f, 20f)
+                arcTo(1.5f, 1.5f, 0f, false, true, 14f, 21.5f); lineTo(5.5f, 21.5f)
+                arcTo(1.5f, 1.5f, 0f, false, true, 4f, 20f); lineTo(4f, 7.5f)
+                arcTo(1.5f, 1.5f, 0f, false, true, 5.5f, 6f); close()
+            }
+            stroke(1.6f) { moveTo(6.2f, 18f); lineTo(8.4f, 14.8f); lineTo(10.4f, 16.8f); lineTo(11.6f, 15.6f); lineTo(12.8f, 18f) }
+        }
+    }
+
     /** Microphone. */
     val Mic: ImageVector by lazy {
         icon("X14u.Mic") {
