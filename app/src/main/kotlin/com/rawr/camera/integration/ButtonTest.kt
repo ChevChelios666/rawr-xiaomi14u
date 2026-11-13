@@ -40,7 +40,10 @@ object ButtonTest {
         }
         // Repeats only once in a while, so a held key doesn't flood the list.
         if (event.repeatCount > 0 && event.repeatCount % 10 != 0) return true
-        add("${KeyEvent.keyCodeToString(event.keyCode)} (${event.keyCode}) $action · scan ${event.scanCode} · ${device(event.device)}")
+        // Flags and meta state too: the grip's dial sends the same key both ways, so any difference counts.
+        add("${KeyEvent.keyCodeToString(event.keyCode)} (${event.keyCode}) $action · scan ${event.scanCode} · " +
+            "flags 0x${Integer.toHexString(event.flags)} · meta 0x${Integer.toHexString(event.metaState)} · " +
+            "source 0x${Integer.toHexString(event.source)} · ${device(event.device)}")
         return true
     }
 
