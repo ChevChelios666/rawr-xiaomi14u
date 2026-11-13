@@ -336,11 +336,16 @@ internal fun X14uCaptureLayout(
     var loupeAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
     var mfTouch by remember { mutableStateOf(0L) }
     val onMfTouch: () -> Unit = {
-        if (loupeSettings.onManualFocus) {
+        if (loupeSettings.onManualFocus && !isVideo) {
             if (!loupeOpen) loupeAt = null
             loupeOpen = true
             mfTouch = System.nanoTime()
         }
+    }
+    // The loupe is a Photo / Photo+ / Pano aid: it closes on a mode change (one opened in Video doesn't wait there).
+    LaunchedEffect(state.captureMode) {
+        loupeOpen = false
+        loupeAt = null
     }
     LaunchedEffect(mfTouch) {
         if (mfTouch != 0L && loupeAt == null) {
@@ -738,7 +743,7 @@ internal fun X14uCaptureLayout(
                 x14uClean = true,
                 onViewfinderTap = closeAll,
                 onViewfinderPinch = if (!zoomOn) null else { factor -> setZoom(zoom * factor) },
-                onViewfinderDoubleTap = if (!loupeSettings.doubleTap) null else { fx, fy ->
+                onViewfinderDoubleTap = if (!loupeSettings.doubleTap || isVideo) null else { fx, fy ->
                     if (loupeOpen) {
                         loupeOpen = false
                     } else {

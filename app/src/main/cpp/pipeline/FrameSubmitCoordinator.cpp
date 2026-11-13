@@ -671,9 +671,10 @@ void FrameSubmitCoordinator::submitSplitVideoAndMonitor(const SubmitParams& para
         vkCheck(vkBeginCommandBuffer(slot->command, &begin), "video monitor begin command");
         videoOutput_->beginMonitorTiming(slot->command, slotIndex);
         const auto extent = videoOutput_->extent();
-        // Scopes: a new measurement about every 60 ms; frames in between show the last one (its slot's images).
+        // Scopes: a new measurement about 8 times a second (60 ms still dropped the odd frame at 4K30 / 1080p60,
+        // Nov 13); frames in between show the last one (its slot's images).
         const auto now = std::chrono::steady_clock::now();
-        const bool measureScopes = lastVideoScopeSlot_ < 0 || now - lastVideoScopeUpdate_ >= std::chrono::milliseconds(60);
+        const bool measureScopes = lastVideoScopeSlot_ < 0 || now - lastVideoScopeUpdate_ >= std::chrono::milliseconds(125);
         const uint32_t scopeSlot = measureScopes ? slotIndex : uint32_t(lastVideoScopeSlot_);
         if (measureScopes) {
             resources_.recorder()->recordVideoScopes(slot->command, slotIndex, videoOutput_->monitorView(slotIndex),

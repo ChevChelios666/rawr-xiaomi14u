@@ -21,8 +21,8 @@ import kotlinx.coroutines.flow.asStateFlow
  * grip back to the system when it leaves. Reports (button test, Nov 2026), one HID interface, endpoint 0x81:
  *  - 01 dd 00 00 00 05 e8: the dial, dd = +1 (01) or -1 (ff) per click.
  *  - 02 00 00 00 00 e8 00 00: the red record button (e8 while pressed).
- *  - 04 aa aa bb bb: up to two Linux key codes held (little endian): 528 half press, 212 full press, 418 / 419 the
- *    zoom lever.
+ *  - 04 aa aa bb bb: up to two Linux key codes held (little endian): 528 half press, 212 full press (418 / 419
+ *    for the zoom lever didn't work, Nov 13: the lever is tried as consumer control, report 03, too).
  * While the button test is open the reports are only listed there.
  */
 object GripUsbReader {
@@ -36,6 +36,7 @@ object GripUsbReader {
 
     @Volatile private var connection: UsbDeviceConnection? = null
     private var heldKeys: Set<Int> = emptySet()
+    private var heldUsages: Set<Int> = emptySet()
     private var recordHeld = false
     private var claimed: List<UsbInterface> = emptyList()
     private var threads: List<Thread> = emptyList()
@@ -97,6 +98,14 @@ object GripUsbReader {
                 continue
             }
             taken += intf
+            // Button test: the HID report descriptor (how every report is laid out), for mapping what isn't known yet.
+            if (ButtonTest.enabled.value) {
+                val desc = ByteArray(1024)
+                val n = conn.controlTransfer(0x81, 0x06, 0x2200, intf.id, desc, desc.size, 1000)
+                if (n > 0) (0 until n).chunked(48).forEachIndexed { i, part ->
+                    ButtonTest.note("USB descriptor #${intf.id} ${i + 1}: " + part.joinToString(" ") { "%02x".format(desc[it]) })
+                } else ButtonTest.note("USB: no report descriptor ($n)")
+            }
             for (e in 0 until intf.endpointCount) {
                 val ep = intf.getEndpoint(e)
                 if (ep.direction != UsbConstants.USB_DIR_IN) continue
@@ -137,6 +146,23 @@ object GripUsbReader {
                 val clicks = report[1].toInt() // signed: +1 / -1
                 if (clicks != 0 && act) GripEvents.dialSteps.tryEmit(clicks)
             }
+            3 -> {
+                // Consumer control (a guess for the zoom lever): AC Zoom In 0x022D, AC Zoom Out 0x022E (Android's
+                // ZOOM_IN / ZOOM_OUT), 16-bit little endian.
+                val usages = buildSet {
+                    var i = 1
+                    while (i + 1 < n) {
+                        val u = (report[i].toInt() and 0xFF) or ((report[i + 1].toInt() and 0xFF) shl 8)
+                        if (u != 0) add(u)
+                        i += 2
+                    }
+                }
+                if (act) for (u in usages - heldUsages) when (u) {
+                    0x022D -> GripEvents.lensSteps.tryEmit(1)
+                    0x022E -> GripEvents.lensSteps.tryEmit(-1)
+                }
+                heldUsages = usages
+            }
             2 -> {
                 val held = (1 until n).any { report[it] == 0xE8.toByte() }
                 if (held && !recordHeld && act) GripEvents.actions.tryEmit(GripEvents.Action.Record)
@@ -174,6 +200,7 @@ object GripUsbReader {
         claimed.forEach { runCatching { conn?.releaseInterface(it) } }
         claimed = emptyList()
         heldKeys = emptySet()
+        heldUsages = emptySet()
         recordHeld = false
         runCatching { conn?.close() }
         ButtonTest.note("USB: stopped, the grip is back to normal")
