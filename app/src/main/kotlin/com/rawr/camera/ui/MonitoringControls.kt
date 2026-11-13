@@ -13,6 +13,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -31,17 +32,40 @@ internal fun ScopeLayer(
     preview: CapturePreview,
     /** X14U: stock-sized wide boxes without a title, [topInset] from the top of the viewfinder. */
     x14u: Boolean = false,
-    topInset: androidx.compose.ui.unit.Dp = 16.dp
+    topInset: androidx.compose.ui.unit.Dp = 16.dp,
+    /** X14U: a 92 x 7 dp strip (the sound meter) on the compact histogram's top edge as the phone is held. */
+    header: (@Composable () -> Unit)? = null
 ) {
     val haptics = LocalCaptureHaptics.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        fun geometry(index: Int, expanded: Boolean): ScopeGeometry = calculateScopeGeometry(
-            maxWidth, maxHeight, state.orientation == Orientation.Landscape,
-            state.activeScopes.size, index, expanded, preview.deviceRotationDegrees,
-            compactWidth = if (x14u) 92.dp else CaptureDimens.ScopeCompactWidth,
-            compactHeight = if (x14u) 34.dp else CaptureDimens.ScopeCompactHeight,
-            topInset = if (x14u) topInset else 16.dp
-        )
+        val landscape = state.orientation == Orientation.Landscape
+        // Landscape turns the boxes a quarter clockwise (or anticlockwise at 270°): their top edge faces +x (or -x).
+        val clockwise = preview.deviceRotationDegrees != 270
+        val headerSpace = if (x14u && header != null) 12.dp else 0.dp
+        fun geometry(index: Int, expanded: Boolean, count: Int = state.activeScopes.size): ScopeGeometry {
+            val g = calculateScopeGeometry(
+                maxWidth, maxHeight, landscape,
+                count, index, expanded, preview.deviceRotationDegrees,
+                compactWidth = if (x14u) 92.dp else CaptureDimens.ScopeCompactWidth,
+                compactHeight = if (x14u) 34.dp else CaptureDimens.ScopeCompactHeight,
+                topInset = if (x14u) topInset + (if (landscape) 0.dp else headerSpace) else 16.dp
+            )
+            // Room for the header on the side the boxes' top faces (landscape, clockwise: the right).
+            return if (!expanded && landscape && clockwise && headerSpace > 0.dp && g.x > maxWidth / 2) g.copy(x = g.x - headerSpace) else g
+        }
+        if (header != null) {
+            val g = geometry(0, false, state.activeScopes.size.coerceAtLeast(1))
+            val (cx, cy) = when {
+                !landscape -> (g.x + g.physicalWidth / 2) to (g.y - 5.dp - 3.5.dp)
+                clockwise -> (g.x + g.physicalWidth + 5.dp + 3.5.dp) to (g.y + g.physicalHeight / 2)
+                else -> (g.x - 5.dp - 3.5.dp) to (g.y + g.physicalHeight / 2)
+            }
+            Box(
+                Modifier.offset(x = cx - 46.dp, y = cy - 3.5.dp).size(92.dp, 7.dp)
+                    .graphicsLayer { rotationZ = if (!landscape) 0f else if (clockwise) 90f else 270f },
+                contentAlignment = Alignment.Center
+            ) { header() }
+        }
         val geometries = state.activeScopes.mapIndexed { index, scope -> geometry(index, state.expandedScope == scope) }
         val presentation = state.activeScopes.take(3).mapIndexed { index, scope ->
             val g = geometries[index]

@@ -80,7 +80,7 @@ internal fun calculateScopeGeometry(
         if (expanded) {
             (maxHeight - physicalHeight) / 2
         } else if (landscape) {
-            compactSideInset + if (index == 2) physicalHeight + compactGap else 0.dp
+            topInset + if (index == 2) physicalHeight + compactGap else 0.dp
         } else {
             topInset + if (index == 2) physicalHeight + compactGap else 0.dp
         }

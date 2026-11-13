@@ -42,7 +42,9 @@ internal fun X14uVideoCropPanel(
     crop: VideoCrop,
     onChange: (VideoCrop) -> Unit,
     onClose: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Landscape: the panel is turned, so it is wide and low (one row of shapes). */
+    wide: Boolean = false
 ) {
     val accent = CaptureColors.Accent
     val (_, output) = crop.sizes()
@@ -75,7 +77,7 @@ internal fun X14uVideoCropPanel(
         if (crop.kind == VideoCropKind.Aspect) {
             CropTiles(
                 count = VideoCrop.ASPECTS.size,
-                columns = 3,
+                columns = if (wide) VideoCrop.ASPECTS.size else 3,
                 selected = crop.aspect,
                 accent = accent,
                 title = { VideoCrop.ASPECTS[it].label },
@@ -85,7 +87,7 @@ internal fun X14uVideoCropPanel(
             val rawWidth = VideoCrop.lastRawWidth.toFloat()
             CropTiles(
                 count = VideoCrop.PIXELS.size,
-                columns = 2,
+                columns = if (wide) VideoCrop.PIXELS.size else 2,
                 selected = crop.pixel,
                 accent = accent,
                 title = { VideoCrop.PIXELS[it].let { w -> "${w.width} × ${w.height}" } },

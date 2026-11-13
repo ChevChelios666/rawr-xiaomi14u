@@ -68,7 +68,9 @@ internal fun CaptureViewfinder(
     /** X14U video: the picture starts behind the top bar, so the control frame sits this far down. */
     slotOffsetY: androidx.compose.ui.unit.Dp = 0.dp,
     /** X14U: the compact histogram's distance from the top of the viewfinder. */
-    scopeTopInset: androidx.compose.ui.unit.Dp = 8.dp
+    scopeTopInset: androidx.compose.ui.unit.Dp = 8.dp,
+    /** X14U video: the sound meter, kept on the histogram's top edge as the phone is held. */
+    scopeHeader: (@Composable () -> Unit)? = null
 ) {
     val haptics = LocalCaptureHaptics.current
     val latestViewfinderTap by rememberUpdatedState(onViewfinderTap)
@@ -177,7 +179,7 @@ internal fun CaptureViewfinder(
                 )
         )
 
-        ScopeLayer(state, dispatch, preview, x14u = x14uClean, topInset = scopeTopInset)
+        ScopeLayer(state, dispatch, preview, x14u = x14uClean, topInset = scopeTopInset, header = scopeHeader)
         Box(Modifier.matchParentSize().then(if (popupOpen) Modifier else Modifier.zIndex(2f))) {
             if (preview.nativeContent) preview.faceOverlay() else FaceBoxes(state.faceDetections)
             AfTarget(state, dispatch)

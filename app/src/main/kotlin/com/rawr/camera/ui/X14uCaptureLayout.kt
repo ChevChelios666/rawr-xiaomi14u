@@ -606,7 +606,6 @@ internal fun X14uCaptureLayout(
             val height = minOf(maxWidth * videoAspect, fullHeight)
             DpSize(height / videoAspect, height)
         }
-        val videoSide = (maxWidth - videoRect.width) / 2
         Box(Modifier.fillMaxSize()) {
             CaptureViewfinder(
                 state = state,
@@ -620,8 +619,12 @@ internal fun X14uCaptureLayout(
                     .size(if (isVideo) videoRect else frame),
                 slotFrame = frame,
                 slotOffsetY = if (isVideo) top else 0.dp,
-                // Video: below the top bar (and the sound meter); photo: just inside the frame.
-                scopeTopInset = if (isVideo) top + (if (audioMeterOn) 18.dp else 6.dp) else 8.dp,
+                // Video: below the top bar; photo: just inside the frame. The sound meter sits on the histogram's
+                // top edge as the phone is held (Settings → Video can turn it off).
+                scopeTopInset = if (isVideo) top + 6.dp else 8.dp,
+                scopeHeader = if (!audioMeterOn) null else ({
+                    AudioMeter(videoControls.audio, recording = videoControls.recording, compact = true)
+                }),
                 forceCompact = isVideo,
                 forceTonemapStrip = isVideo,
                 filmQuick = filmQuick,
@@ -654,14 +657,7 @@ internal fun X14uCaptureLayout(
             )
             // Video: the corner marks sit on the picture's own corners.
             if (isVideo) FrameBrackets(Modifier.align(Alignment.TopCenter).size(videoRect))
-            // Video: a small sound meter over the histogram's corner (Settings → Video can turn it off).
-            if (audioMeterOn) {
-                AudioMeter(
-                    videoControls.audio, recording = videoControls.recording, compact = true,
-                    modifier = Modifier.align(Alignment.TopEnd)
-                        .offset(x = -(videoSide + 10.dp), y = top + 6.dp)
-                )
-            }
+
             Box(Modifier.align(Alignment.TopCenter).offset(y = top).size(frame)) {
                 if (!isVideo) FrameBrackets(Modifier.fillMaxSize())
                 val tools = LocalCaptureExtras.current.tools
@@ -846,12 +842,16 @@ internal fun X14uCaptureLayout(
                 )
             }
             if (cropOpen && isVideo) {
+                // Landscape: the whole panel turns, centred on the screen.
+                val landscape = orientation == Orientation.Landscape
                 X14uVideoCropPanel(
                     crop = state.videoCrop,
                     onChange = { dispatch(SetVideoCrop(it)) },
                     onClose = { cropOpen = false },
-                    modifier = Modifier.align(Alignment.TopCenter).offset(y = top + 6.dp)
-                        .padding(horizontal = 12.dp).fillMaxWidth()
+                    wide = landscape,
+                    modifier = if (landscape) Modifier.align(Alignment.Center).uprightLayoutInLandscape(orientation)
+                        .width(minOf(fullHeight - top * 2, 560.dp))
+                    else Modifier.align(Alignment.TopCenter).offset(y = top + 6.dp).padding(horizontal = 12.dp).fillMaxWidth()
                 )
             }
             val onCellTap: (String) -> Unit = { key ->

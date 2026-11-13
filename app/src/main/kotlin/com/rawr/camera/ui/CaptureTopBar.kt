@@ -89,9 +89,10 @@ internal fun CaptureTopBar(
                     description = "Video crop ${state.videoCrop.chipLabel}. Tap to change.",
                     enabled = !videoLocked,
                     orientation = state.orientation,
-                    // X14U: resolution and frame rate stay as they are in landscape.
+                    // X14U: crop and frame rate turn as one piece (icon and label) in landscape.
                     rotateLabel = false,
                     rotateIcon = false,
+                    rotateWhole = true,
                     onClick = {
                         haptics.selection()
                         if (onVideoCrop != null) onVideoCrop() else dispatch(CycleVideoResolution)
@@ -108,6 +109,7 @@ internal fun CaptureTopBar(
                     orientation = state.orientation,
                     rotateLabel = false,
                     rotateIcon = false,
+                    rotateWhole = true,
                     onClick = {
                         haptics.selection()
                         dispatch(CycleVideoFps)
@@ -305,6 +307,8 @@ private fun VideoTopBarChoice(
     orientation: com.rawr.camera.model.Orientation,
     rotateLabel: Boolean = true,
     rotateIcon: Boolean = true,
+    /** Icon and label turn together (X14U crop and frame rate). */
+    rotateWhole: Boolean = false,
     onClick: () -> Unit
 ) {
     TextButton(
@@ -314,7 +318,10 @@ private fun VideoTopBarChoice(
             .semantics { contentDescription = description },
         contentPadding = PaddingValues(0.dp)
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            if (rotateWhole) Modifier.uprightInLandscape(orientation) else Modifier,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
             Icon(
                 icon,
                 contentDescription = null,
