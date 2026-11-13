@@ -123,7 +123,10 @@ internal fun X14uBurstShutter(
                 Column(Modifier.uprightInLandscape(orientation), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("${burst.shots}", color = Color(0xFF1A1A1A), fontFamily = X14uFont, fontWeight = FontWeight.Medium,
                         fontSize = dpText(18f), maxLines = 1)
-                    Text("$fps fps", color = Color(0xFF555555), fontFamily = X14uFont, fontSize = dpText(9f), maxLines = 1)
+                    // The speed reached (after the first moment), so a slower save path shows honestly.
+                    val elapsed = android.os.SystemClock.uptimeMillis() - burst.startedAtMs
+                    val rate = if (elapsed > 700L && burst.shots > 1) (burst.shots * 1000f / elapsed).toInt() else fps
+                    Text("$rate fps", color = Color(0xFF555555), fontFamily = X14uFont, fontSize = dpText(9f), maxLines = 1)
                 }
             }
         }

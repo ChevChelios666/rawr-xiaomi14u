@@ -493,7 +493,7 @@ class NativeCaptureScreenController(
         val tag = "_BURST" + java.text.SimpleDateFormat("HHmmss", java.util.Locale.US).format(java.util.Date())
         com.rawr.camera.storage.CaptureFileNames.startBurst(tag)
         update { it.copy(burst = it.burst.copy(running = true, shots = 0, fps = action.fps, limit = action.limit,
-            stoppedFull = false)) }
+            stoppedFull = false, startedAtMs = android.os.SystemClock.uptimeMillis())) }
         val interval = (1000L / action.fps.coerceIn(1, 60)).coerceAtLeast(1L)
         burstJob = scope.launch {
             var queued = 0

@@ -291,5 +291,7 @@ data class BurstUiState(
     /** The last finished run's frame count (0: none since entering Burst). */
     val lastCount: Int = 0,
     /** The last run stopped because the save queue was full. */
-    val stoppedFull: Boolean = false
+    val stoppedFull: Boolean = false,
+    /** uptimeMillis when the run started (for the measured speed). */
+    val startedAtMs: Long = 0L
 )
