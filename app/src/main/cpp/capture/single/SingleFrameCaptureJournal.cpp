@@ -2,6 +2,8 @@
 
 #include <utility>
 
+#include "capture/single/RawBufferPool.h"
+
 #include "capture/persistence/ProcessingRecipe.h"
 #include "diagnostics/logging/RuntimeTraceRecorder.h"
 
@@ -40,8 +42,9 @@ void SingleFrameCaptureJournal::commit(SingleFrameSnapshot& deferred) {
     persistence::save(durablePath_, job);
     if (!keepRawResident_.load()) {
         // Waiting payloads leave RAM; the worker reloads them when their turn comes.
-        job.frame.raw16.clear();
-        job.frame.raw16.shrink_to_fit();
+        // Its buffer goes back to the pool for the next request (Burst speed).
+        RawBufferPool::give(std::move(job.frame.raw16));
+        job.frame.raw16 = {};
         reservation_.reset();
     }
     *deferred.frame = std::move(job.frame);

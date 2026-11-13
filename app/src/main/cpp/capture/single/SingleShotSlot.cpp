@@ -14,6 +14,8 @@
 #include <stdexcept>
 #include <utility>
 
+#include "capture/single/RawBufferPool.h"
+
 namespace rawrcam::capture {
 
 SingleShotSlot::SingleShotSlot(Diagnostic diagnostic) : diagnostic_(std::move(diagnostic)) {}
@@ -57,7 +59,7 @@ void SingleShotSlot::prepareStagingSlot() {
     slot_.width = configuredWidth_;
     slot_.height = configuredHeight_;
     slot_.packedRowStrideBytes = static_cast<uint32_t>(packedRowBytes);
-    slot_.raw16.resize(static_cast<size_t>(totalBytes));
+    slot_.raw16 = RawBufferPool::take(static_cast<size_t>(totalBytes));
 }
 
 void SingleShotSlot::disable(const std::string& reason) {
