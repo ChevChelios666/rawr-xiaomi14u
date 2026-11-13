@@ -268,6 +268,14 @@ class NativeCaptureScreenController(
             TriggerCapture -> {
                 selfTimer.trigger()
             }
+
+            is StartBurst -> startBurst(action)
+            StopBurst -> stopBurst()
+            EndBurstMode -> {
+                stopBurst()
+                com.rawr.camera.storage.CaptureFileNames.endBurst()
+                update { it.copy(burst = it.burst.copy(lastCount = 0, stoppedFull = false)) }
+            }
         }
     }
 
@@ -445,6 +453,7 @@ class NativeCaptureScreenController(
     }
 
     private fun captureStill(format: CaptureOutputFormat) {
+        val burstFrame = burstWaiting.get() > 0
         val nativeRequestId = try {
             requestStillCapture(format)
         } catch (error: RuntimeException) {
@@ -453,11 +462,72 @@ class NativeCaptureScreenController(
         } finally {
             settleBracketHoldPress()
         }
+        if (burstFrame) {
+            burstWaiting.decrementAndGet()
+            if (nativeRequestId == 0L) {
+                // The save queue (memory or storage budget) is full: the run ends here.
+                burstRefused.set(true)
+            } else {
+                update { it.copy(burst = it.burst.copy(shots = it.burst.shots + 1)) }
+            }
+        }
         if (nativeRequestId == 0L) {
-            capturePresentation.rejected(format.jpeg)
+            if (!burstFrame) capturePresentation.rejected(format.jpeg)
             return
         }
         capturePresentation.accepted(nativeRequestId, format)
+    }
+
+    // ---- X14U Burst ------------------------------------------------------------------------------------------
+    // While the shutter is held, one ordinary still request per frame interval goes to the capture worker; each
+    // takes the next camera frame and is developed and saved in the background like any photo. At most two wait for
+    // the worker, so a slow moment skips frames instead of shooting them late.
+    private var burstJob: Job? = null
+    private val burstWaiting = java.util.concurrent.atomic.AtomicInteger(0)
+    private val burstRefused = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    private fun startBurst(action: StartBurst) {
+        if (burstJob?.isActive == true) return
+        val token = foregroundToken() ?: return
+        burstRefused.set(false)
+        val tag = "_BURST" + java.text.SimpleDateFormat("HHmmss", java.util.Locale.US).format(java.util.Date())
+        com.rawr.camera.storage.CaptureFileNames.startBurst(tag)
+        update { it.copy(burst = it.burst.copy(running = true, shots = 0, fps = action.fps, limit = action.limit,
+            stoppedFull = false)) }
+        val interval = (1000L / action.fps.coerceIn(1, 60)).coerceAtLeast(1L)
+        burstJob = scope.launch {
+            var queued = 0
+            var next = android.os.SystemClock.uptimeMillis()
+            try {
+                while (isActive && queued < action.limit && !burstRefused.get()) {
+                    if (burstWaiting.get() < 2) {
+                        com.rawr.camera.storage.CaptureFileNames.burstFrameQueued()
+                        burstWaiting.incrementAndGet()
+                        if (!captureQueue.enqueue(action.format) { foregroundToken() === token }) {
+                            burstWaiting.decrementAndGet()
+                            com.rawr.camera.storage.CaptureFileNames.burstFrameDropped()
+                            break
+                        }
+                        queued++
+                    }
+                    next += interval
+                    val now = android.os.SystemClock.uptimeMillis()
+                    if (next < now) next = now
+                    delay(next - now)
+                }
+            } finally {
+                withContext(NonCancellable) {
+                    // The frames already queued still count (they are on their way to the worker).
+                    while (burstWaiting.get() > 0) delay(20L)
+                    update { it.copy(burst = it.burst.copy(running = false, lastCount = it.burst.shots,
+                        stoppedFull = burstRefused.get())) }
+                }
+            }
+        }
+    }
+
+    private fun stopBurst() {
+        burstJob?.cancel()
     }
 
     // Native has armed (or skipped) this press's bracket: hand the hold over to

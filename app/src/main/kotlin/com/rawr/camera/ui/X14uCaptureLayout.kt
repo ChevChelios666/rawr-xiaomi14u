@@ -150,11 +150,14 @@ internal fun dpText(value: Float): TextUnit = with(LocalDensity.current) { value
 
 /** The mode selector: Pro (new screen, photos), Photo (classic Rawr screen), Video (new screen). */
 /** Photo+ (enum Pro) sits behind Photo: swipe up on the viewfinder, or tap the lit Photo label, to switch. */
-internal enum class X14uMode(val label: String) { Photo("Photo"), Pro("Photo+"), Video("Video"), Pano("Pano") }
+internal enum class X14uMode(val label: String) {
+    Photo("Photo"), Pro("Photo+"), Video("Video"), Burst("Burst"), Pano("Pano")
+}
 
-internal fun currentX14uMode(state: CaptureUiState, proUi: Boolean, pano: Boolean = false): X14uMode = when {
+internal fun currentX14uMode(state: CaptureUiState, proUi: Boolean, pano: Boolean = false, burst: Boolean = false): X14uMode = when {
     state.captureMode == CaptureMode.Video -> X14uMode.Video
     pano -> X14uMode.Pano
+    burst -> X14uMode.Burst
     proUi -> X14uMode.Pro
     else -> X14uMode.Photo
 }
@@ -163,14 +166,22 @@ internal fun selectX14uMode(target: X14uMode, state: CaptureUiState, dispatch: C
     when (target) {
         X14uMode.Video -> {
             extras.onSetPano(false)
+            extras.onSetBurst(false)
             if (state.captureMode != CaptureMode.Video) dispatch(SetCaptureMode(CaptureMode.Video))
         }
         X14uMode.Pano -> {
+            extras.onSetBurst(false)
             extras.onSetPano(true)
+            if (state.captureMode != CaptureMode.Photo) dispatch(SetCaptureMode(CaptureMode.Photo))
+        }
+        X14uMode.Burst -> {
+            extras.onSetPano(false)
+            extras.onSetBurst(true)
             if (state.captureMode != CaptureMode.Photo) dispatch(SetCaptureMode(CaptureMode.Photo))
         }
         else -> {
             extras.onSetPano(false)
+            extras.onSetBurst(false)
             extras.onSetProUi(target == X14uMode.Pro)
             if (state.captureMode != CaptureMode.Photo) dispatch(SetCaptureMode(CaptureMode.Photo))
         }
@@ -257,7 +268,8 @@ internal fun X14uCaptureLayout(
     val isVideo = state.captureMode == CaptureMode.Video
     val videoLocked = videoControls.busy || videoControls.recording
     // Video recording, or a 50 MP shot running (its camera switch must not meet a lens change).
-    val recordingLock = (isVideo && videoLocked) || LocalCaptureExtras.current.fullSizeBusy
+    // A burst run too (a lens or mode change mid-run would mix cameras).
+    val recordingLock = (isVideo && videoLocked) || LocalCaptureExtras.current.fullSizeBusy || state.burst.running
     // X14U video crop: the viewfinder takes the recording's shape (portrait: its height over its width).
     val videoAspect = if (isVideo) state.videoCrop.sizes().second.let { it.width.toFloat() / it.height } else 4f / 3f
     // Video: the status bar hides so the picture can run to the top of the screen, like stock.
@@ -419,6 +431,9 @@ internal fun X14uCaptureLayout(
     // Photo (not Pro): the AMSI row instead of the full exposure row.
     // Pano runs Photo's simpler row; its set locks the controls that must match frame to frame.
     val pano = !isVideo && LocalCaptureExtras.current.pano
+    // Burst: hold the shutter to shoot (stills as Photo, one frame each).
+    val burst = !isVideo && !pano && LocalCaptureExtras.current.burst
+    val burstFps by com.rawr.camera.burst.BurstSettings.fps.collectAsState()
     val simplePhoto = !isVideo && (!LocalCaptureExtras.current.proUi || pano)
     // Lens pill memory: the focal length last in use per mode (digital ones too) comes back when the screen starts,
     // and a hidden lens is never landed on at its own focal length (start, mode change, a lens picked elsewhere): the
@@ -757,7 +772,7 @@ internal fun X14uCaptureLayout(
                         direction > 0 -> openTools(true)
                         toolsOpen -> openTools(false)
                         // Swipe up: Photo <-> Pro (stills only, not while recording).
-                        !isVideo && !recordingLock && !pano -> {
+                        !isVideo && !recordingLock && !pano && !burst -> {
                             closeAll()
                             extrasNow.onSetProUi(!extrasNow.proUi)
                             modeFlash = if (extrasNow.proUi) "PHOTO" else "PHOTO+"
@@ -943,7 +958,9 @@ internal fun X14uCaptureLayout(
                     val open = !cropOpen
                     closeAll()
                     cropOpen = open
-                }
+                },
+                burstFps = if (burst) burstFps else null,
+                onBurstFps = com.rawr.camera.burst.BurstSettings::cycleFps
             )
             val buttonTestOn by com.rawr.camera.integration.ButtonTest.enabled.collectAsState()
             if (buttonTestOn) {
@@ -1008,7 +1025,8 @@ internal fun X14uCaptureLayout(
                 onOpenMultiframeSettings, onOpenLensSettings, onQuickEvent, videoControls, onToggleVideoRecording,
                 enabled = !recordingLock,
                 modifier = Modifier.fillMaxWidth().offset(y = shutterCenter - 46.dp).height(92.dp),
-                pano = if (!pano) null else PanoShutter(panoShoot, if (panoSet.frames > 0) panoUndo else null, panoLocked)
+                pano = if (!pano) null else PanoShutter(panoShoot, if (panoSet.frames > 0) panoUndo else null, panoLocked),
+                burst = burst
             )
             // Tools panel, stock size and place: full width less 10 dp a side, its bottom 67 dp above the shutter's
             // centre (over the exposure row and mode strip, within thumb reach). Above everything else.
@@ -2434,9 +2452,10 @@ private fun X14uIdleControlArea(
 ) {
     val haptics = LocalCaptureHaptics.current
     val extras = LocalCaptureExtras.current
-    val current = currentX14uMode(state, extras.proUi, extras.pano)
-    // The strip shows the stills mode last used (Photo or Photo+; swipe up on the viewfinder switches), Video and Pano.
-    val stripModes = listOf(if (extras.proUi) X14uMode.Pro else X14uMode.Photo, X14uMode.Video, X14uMode.Pano)
+    val current = currentX14uMode(state, extras.proUi, extras.pano, extras.burst)
+    // The strip shows the stills mode last used (Photo or Photo+; swipe up on the viewfinder switches), Video, Burst
+    // and Pano.
+    val stripModes = listOf(if (extras.proUi) X14uMode.Pro else X14uMode.Photo, X14uMode.Video, X14uMode.Burst, X14uMode.Pano)
     var dismissed by remember { mutableStateOf<VideoTakeSummary?>(null) }
     val take = video.lastTake
     LaunchedEffect(take) {
@@ -2629,7 +2648,9 @@ private fun X14uShutterRow(
     onToggleVideoRecording: () -> Unit,
     enabled: Boolean,
     modifier: Modifier,
-    pano: PanoShutter? = null
+    pano: PanoShutter? = null,
+    /** Burst mode: the hold-to-shoot shutter and Burst's own focus and format buttons. */
+    burst: Boolean = false
 ) {
     val isVideo = state.captureMode == CaptureMode.Video
     val extras = LocalCaptureExtras.current
@@ -2645,8 +2666,24 @@ private fun X14uShutterRow(
     }
     Row(modifier.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Row(Modifier.weight(1f), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-            Thumbnail(state = state, imageUri = latestImageUri, onClick = onOpenLatestImage, onLongClick = onOpenRenderer,
-                modifier = turn)
+            Box(contentAlignment = Alignment.Center) {
+                // Burst: the last run's frames stack behind the newest one, with their count.
+                if (burst && state.burst.lastCount > 1 && !state.burst.running) {
+                    Box(Modifier.uprightInLandscape(orientation).offset(x = 5.dp, y = (-5).dp).size(CaptureDimens.Thumbnail)
+                        .background(Color(0xFF3A3530), RoundedCornerShape(12.dp)))
+                }
+                Thumbnail(state = state, imageUri = latestImageUri, onClick = onOpenLatestImage, onLongClick = onOpenRenderer,
+                    modifier = turn)
+                if (burst && state.burst.lastCount > 1 && !state.burst.running) {
+                    Text(
+                        "${state.burst.lastCount}",
+                        color = Color(0xFF1A1A1A), fontFamily = X14uFont, fontWeight = FontWeight.Medium,
+                        fontSize = dpText(11f), maxLines = 1,
+                        modifier = Modifier.align(Alignment.BottomEnd).offset(x = 6.dp, y = 6.dp).uprightInLandscape(orientation)
+                            .background(CaptureColors.Accent, RoundedCornerShape(9.dp)).padding(horizontal = 6.dp, vertical = 1.dp)
+                    )
+                }
+            }
             // Pano: undo the last frame (during a set) instead of the front camera.
             if (pano != null) {
                 X14uRoundButton(
@@ -2676,6 +2713,14 @@ private fun X14uShutterRow(
                 orientation = orientation,
                 onClick = onToggleVideoRecording,
                 countingDown = state.selfTimerRemainingMs != null
+            )
+        } else if (burst) {
+            X14uBurstShutter(
+                burst = state.burst,
+                fps = com.rawr.camera.burst.BurstSettings.fps.collectAsState().value,
+                orientation = orientation,
+                onStart = { dispatch(com.rawr.camera.burst.BurstControl.start()) },
+                onStop = { dispatch(com.rawr.camera.architecture.StopBurst) }
             )
         } else {
             Shutter(
@@ -2722,6 +2767,8 @@ private fun X14uShutterRow(
                         modifier = turn
                     )
                 }
+            } else if (burst) {
+                X14uBurstToggles(state, dispatch, enabled = !state.burst.running, pillModifier = turn)
             } else {
                 // Locked during a pano set: every frame keeps frame 1's merge and look.
                 Box(Modifier.fillMaxWidth().alpha(if (pano?.locked == true) .45f else 1f)) {

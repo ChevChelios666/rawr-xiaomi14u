@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import com.rawr.camera.ui.icons.Icons
 import com.rawr.camera.ui.icons.outlined.AspectRatio
+import com.rawr.camera.ui.icons.outlined.BurstMode
 import com.rawr.camera.ui.icons.outlined.Crop
 import com.rawr.camera.ui.icons.outlined.Hd
 import com.rawr.camera.ui.icons.outlined.HighQuality
@@ -65,7 +66,10 @@ internal fun CaptureTopBar(
     onVideoCrop: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     /** X14U video: over the picture, so only a light shade. */
-    transparent: Boolean = false
+    transparent: Boolean = false,
+    /** X14U Burst: the speed chip (fps) in the format button's place; null outside Burst. */
+    burstFps: Int? = null,
+    onBurstFps: () -> Unit = {}
 ) {
     val haptics = LocalCaptureHaptics.current
     Row(
@@ -135,6 +139,32 @@ internal fun CaptureTopBar(
             }
             // X14U: the timer sits right of the centred tools chevron (below).
             if (toolsOpen == null) TopBarSlot {
+                SelfTimerTopBarChoice(
+                    state = state,
+                    dispatch = dispatch,
+                    orientation = state.orientation
+                )
+            }
+        } else if (burstFps != null) {
+            // Burst: its speed instead of the photo format (Burst keeps its own format, beside the shutter).
+            TopBarSlot {
+                VideoTopBarChoice(
+                    icon = Icons.Outlined.BurstMode,
+                    label = "$burstFps",
+                    testTag = "capture_x14u_burst_fps",
+                    description = "Burst speed $burstFps frames a second. Tap to change.",
+                    enabled = true,
+                    orientation = state.orientation,
+                    rotateLabel = false,
+                    rotateIcon = false,
+                    rotateWhole = true,
+                    onClick = {
+                        haptics.selection()
+                        onBurstFps()
+                    }
+                )
+            }
+            TopBarSlot {
                 SelfTimerTopBarChoice(
                     state = state,
                     dispatch = dispatch,

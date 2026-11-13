@@ -172,3 +172,13 @@ data object FinishSpotAeMove : ApplicationCaptureAction
 data object CancelSpotAe : ApplicationCaptureAction
 
 data object TriggerCapture : ApplicationCaptureAction
+
+/** X14U Burst: the shutter is held — frames at [fps] until [StopBurst], [limit] frames or a full save queue. */
+data class StartBurst(val fps: Int, val format: com.rawr.camera.model.CaptureOutputFormat, val limit: Int) :
+    ApplicationCaptureAction
+
+/** X14U Burst: the shutter is let go. */
+data object StopBurst : ApplicationCaptureAction
+
+/** X14U: leaving Burst mode (stops a run, forgets the last count). */
+data object EndBurstMode : ApplicationCaptureAction

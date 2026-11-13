@@ -28,6 +28,9 @@ data class CaptureExtras(
     /** Pano mode (after Video): stills run as Photo with the Pano guide. */
     val pano: Boolean = false,
     val onSetPano: (Boolean) -> Unit = {},
+    /** Burst mode (between Video and Pano): hold the shutter to shoot; stills run as Photo, one frame each. */
+    val burst: Boolean = false,
+    val onSetBurst: (Boolean) -> Unit = {},
     /** Delete the files of a Pano frame by its name tag. */
     val onPanoUndo: (String) -> Unit = {},
     /** A Pano set ended: merge its frames (tag, frame count, start time) when the setting is on. */

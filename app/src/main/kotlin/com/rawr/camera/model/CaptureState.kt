@@ -211,6 +211,8 @@ data class CaptureUiState(
     val selfTimerRemainingMs: Long? = null,
     /** Monotonic run id; ticks from a stale run are ignored. */
     val selfTimerRunId: Long = 0L,
+    /** X14U Burst: the run while the shutter is held, and the last one's count (gallery stack). */
+    val burst: BurstUiState = BurstUiState(),
     /** Mirrors settings experimentalMultiframeEnabled for the V2 shutter-row toggle. */
     val experimentalMultiframeEnabled: Boolean = false,
     /** Settings multiframe merge is HDR+ Bracketed. */
@@ -277,3 +279,17 @@ data class LongExposureUiState(
         if (!active) null
         else (spanMs - (uptimeMs - startMs).toDouble()).coerceAtLeast(0.0).toLong()
 }
+
+/** X14U Burst mode: hold the shutter to shoot at [fps]; frames are saved in the background. */
+data class BurstUiState(
+    val running: Boolean = false,
+    /** Frames native accepted in this run. */
+    val shots: Int = 0,
+    val fps: Int = 20,
+    /** Most frames per run (the ring fills toward it). */
+    val limit: Int = 200,
+    /** The last finished run's frame count (0: none since entering Burst). */
+    val lastCount: Int = 0,
+    /** The last run stopped because the save queue was full. */
+    val stoppedFull: Boolean = false
+)

@@ -174,6 +174,7 @@ object GripUsbReader {
                     528 -> GripEvents.actions.tryEmit(GripEvents.Action.Focus)
                     212 -> GripEvents.actions.tryEmit(GripEvents.Action.Shutter)
                 }
+                if (act && 212 in heldKeys && 212 !in keys) GripEvents.actions.tryEmit(GripEvents.Action.ShutterRelease)
                 heldKeys = keys
             }
         }

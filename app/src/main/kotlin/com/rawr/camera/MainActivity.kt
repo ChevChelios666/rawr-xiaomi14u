@@ -89,6 +89,7 @@ class MainActivity : ComponentActivity() {
                 com.rawr.camera.integration.GripEvents.actions.collect { action ->
                     when (action) {
                         com.rawr.camera.integration.GripEvents.Action.Shutter -> triggerShutter()
+                        com.rawr.camera.integration.GripEvents.Action.ShutterRelease -> shutterReleased()
                         com.rawr.camera.integration.GripEvents.Action.Focus ->
                             captureViewModel.controller.dispatch(com.rawr.camera.architecture.Refocus)
                         com.rawr.camera.integration.GripEvents.Action.Record ->
@@ -210,6 +211,7 @@ class MainActivity : ComponentActivity() {
             val videoDiagnostics by captureViewModel.videoDiagnostics.collectAsStateWithLifecycle()
             val proUi by captureViewModel.proUi.collectAsStateWithLifecycle()
             val pano by captureViewModel.pano.collectAsStateWithLifecycle()
+            val burst by captureViewModel.burst.collectAsStateWithLifecycle()
             val panoStatus by captureViewModel.panoStatus.collectAsStateWithLifecycle()
             val fullSizeShot by captureViewModel.fullSizeShot.collectAsStateWithLifecycle()
             val fullSizeBusy by captureViewModel.fullSizeBusy.collectAsStateWithLifecycle()
@@ -279,6 +281,8 @@ class MainActivity : ComponentActivity() {
                     onSetProUi = captureViewModel::setProUi,
                     pano = pano,
                     onSetPano = captureViewModel::setPano,
+                    burst = burst,
+                    onSetBurst = captureViewModel::setBurst,
                     onPanoUndo = captureViewModel::deletePanoFrame,
                     onPanoMerge = captureViewModel::mergePano,
                     panoStatus = panoStatus,
@@ -494,13 +498,24 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean = when (keyCode) {
-        KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_CAMERA, KeyEvent.KEYCODE_FOCUS,
-        KeyEvent.KEYCODE_ZOOM_IN, KeyEvent.KEYCODE_ZOOM_OUT -> true
+        KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_CAMERA -> {
+            shutterReleased()
+            true
+        }
+        KeyEvent.KEYCODE_FOCUS, KeyEvent.KEYCODE_ZOOM_IN, KeyEvent.KEYCODE_ZOOM_OUT -> true
         else -> super.onKeyUp(keyCode, event)
     }
 
+    /** Burst: a shutter key let go ends the run. */
+    private fun shutterReleased() {
+        if (captureViewModel.burst.value) captureViewModel.controller.dispatch(com.rawr.camera.architecture.StopBurst)
+    }
+
     private fun triggerShutter() {
-        if (captureViewModel.controller.state.value.captureMode == CaptureMode.Video) {
+        if (captureViewModel.burst.value && captureViewModel.controller.state.value.captureMode != CaptureMode.Video) {
+            // Burst: held key = a run (ends on the key's release).
+            captureViewModel.controller.dispatch(com.rawr.camera.burst.BurstControl.start())
+        } else if (captureViewModel.controller.state.value.captureMode == CaptureMode.Video) {
             toggleVideoRecording()
         } else if (captureViewModel.tryShootFullSize()) {
             Unit

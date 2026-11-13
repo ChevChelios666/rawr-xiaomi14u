@@ -109,6 +109,15 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         if (!on) com.rawr.camera.storage.CaptureFileNames.setNextStillSuffix("")
     }
 
+    /** X14U Burst mode (stills run as Photo, one frame each, no merge). Not kept across restarts, like Pano. */
+    private val burstFlow = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val burst: StateFlow<Boolean> = burstFlow
+    fun setBurst(on: Boolean) {
+        if (burstFlow.value == on) return
+        burstFlow.value = on
+        if (!on) controller.dispatch(com.rawr.camera.architecture.EndBurstMode)
+    }
+
     /** X14U Pano merge on the phone: progress and result for the viewfinder (clears a few seconds after the end). */
     private val panoStatusFlow = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     val panoStatus: StateFlow<String?> = panoStatusFlow
@@ -160,7 +169,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
      */
     fun tryShootFullSize(): Boolean {
         val state = controller.state.value
-        if (state.captureMode == com.rawr.camera.model.CaptureMode.Video || panoFlow.value) return false
+        if (state.captureMode == com.rawr.camera.model.CaptureMode.Video || panoFlow.value || burstFlow.value) return false
         val lens = latestSettings.effectiveLensProfiles(DeviceLensDefaults.lenses)
             .firstOrNull { it.name.trim().equals(state.selectedLensId.trim(), ignoreCase = true) } ?: return false
         if (lens.runAsTarget() == null) return false
@@ -430,9 +439,14 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             settings = {
                 latestSettings.let { s ->
                     val zoomMerge = s.zoomMergeAlgorithm
-                    if (digitalZoomCrop > 1.01f && s.experimentalMultiframeEnabled && zoomMerge != null) s.copy(
-                        multiframeTuning = s.multiframeTuning.copy(mergeAlgorithm = zoomMerge)
-                    ) else s
+                    when {
+                        // Burst: every frame its own photo (no merge).
+                        burstFlow.value -> s.copy(experimentalMultiframeEnabled = false)
+                        digitalZoomCrop > 1.01f && s.experimentalMultiframeEnabled && zoomMerge != null -> s.copy(
+                            multiframeTuning = s.multiframeTuning.copy(mergeAlgorithm = zoomMerge)
+                        )
+                        else -> s
+                    }
                 }
             },
             onJpegPublished = ::onJpegPublished,
@@ -526,6 +540,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     }
 
     init {
+        com.rawr.camera.burst.BurstSettings.init(application)
         refreshLatestGalleryImage()
         viewModelScope.launch { recordingBackend.recoverInterrupted() }
         viewModelScope.launch {
