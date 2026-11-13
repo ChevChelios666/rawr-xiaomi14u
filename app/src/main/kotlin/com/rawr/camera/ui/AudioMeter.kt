@@ -4,6 +4,9 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -66,7 +69,7 @@ internal fun AudioMeter(
     input: VideoAudioInput,
     recording: Boolean,
     modifier: Modifier = Modifier,
-    /** X14U: two thin bars only (no label or clip lamp), the width of the compact histogram. */
+    /** X14U: stock style, a box like the compact histogram's with two thick level bars (no label). */
     compact: Boolean = false
 ) {
     val context = LocalContext.current
@@ -108,6 +111,38 @@ internal fun AudioMeter(
             }
         }
     }
+    if (compact) {
+        val shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+        androidx.compose.foundation.layout.Box(
+            modifier
+                .testTag(CaptureTestTags.VIDEO_AUDIO_METER)
+                .size(80.dp, 29.dp)
+                .background(Color.Black.copy(alpha = .3f), shape)
+                .border(1.dp, if (clipLatched) CaptureColors.Danger else Color.White.copy(alpha = .35f), shape)
+                .clickable { clipLatched = false }
+                .padding(horizontal = 6.dp, vertical = 6.dp)
+        ) {
+            Canvas(Modifier.matchParentSize()) {
+                frame // Redraw on every polled frame.
+                val gap = 3.dp.toPx()
+                val bar = (size.height - gap * (channelCount - 1)) / channelCount
+                fun x(db: Float) = size.width * (db - FLOOR_DB) / -FLOOR_DB
+                for (c in 0 until channelCount) {
+                    val top = c * (bar + gap)
+                    val meter = channels[c]
+                    val end = x(meter.barDb)
+                    val color = when {
+                        meter.barDb > -6f -> CaptureColors.Danger
+                        meter.barDb > -18f -> Amber
+                        else -> Color(0xFF7BD15A)
+                    }
+                    drawRect(color, Offset(0f, top), Size(end, bar))
+                    if (meter.holdDb > FLOOR_DB) drawRect(Color.White, Offset(x(meter.holdDb) - 1f, top), Size(2f, bar))
+                }
+            }
+        }
+        return
+    }
     Row(
         modifier
             .testTag(CaptureTestTags.VIDEO_AUDIO_METER)
@@ -115,9 +150,8 @@ internal fun AudioMeter(
             .clickable { clipLatched = false },
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (!compact) MonitorLabel("MIC")
-        Canvas(Modifier.padding(start = if (compact) 0.dp else 3.dp).width(if (compact) 92.dp else 64.dp)
-            .height(if (channelCount == 2) 7.dp else 3.dp)) {
+        MonitorLabel("MIC")
+        Canvas(Modifier.padding(start = 3.dp).width(64.dp).height(if (channelCount == 2) 7.dp else 3.dp)) {
             frame // Redraw on every polled frame.
             val gap = 1.dp.toPx()
             val bar = (size.height - gap * (channelCount - 1)) / channelCount
@@ -137,7 +171,7 @@ internal fun AudioMeter(
             }
             for (tick in TICKS_DB) drawRect(CaptureColors.Surface, Offset(x(tick), 0f), Size(1f, size.height))
         }
-        if (!compact || clipLatched) Canvas(Modifier.padding(start = 3.dp).width(5.dp).height(5.dp)) {
+        Canvas(Modifier.padding(start = 3.dp).width(5.dp).height(5.dp)) {
             drawCircle(if (clipLatched) CaptureColors.Danger else Color.White.copy(alpha = .18f))
         }
     }

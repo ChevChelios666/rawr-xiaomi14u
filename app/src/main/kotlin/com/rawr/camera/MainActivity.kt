@@ -432,14 +432,32 @@ class MainActivity : ComponentActivity() {
     // Volume down is a hardware shutter: photo capture, or start/stop in video.
     // Held-key repeats are dropped so one press is one shot, and the key is
     // consumed so the system volume panel never appears over the viewfinder.
+    // Photography Kit grip (button test, Nov 2026): full press KEYCODE_CAMERA, half press KEYCODE_FOCUS, zoom lever
+    // KEYCODE_ZOOM_IN / ZOOM_OUT. Its record button reaches no app; the dial sends KEYCODE_UNKNOWN (scan 240).
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        if (keyCode != KeyEvent.KEYCODE_VOLUME_DOWN) return super.onKeyDown(keyCode, event)
-        if (started && event.repeatCount == 0) triggerShutter()
+        when (keyCode) {
+            KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_CAMERA -> {
+                if (started && event.repeatCount == 0) triggerShutter()
+            }
+            // Half press: focus (and meter) where the focus point is.
+            KeyEvent.KEYCODE_FOCUS -> {
+                if (started && event.repeatCount == 0) captureViewModel.controller.dispatch(com.rawr.camera.architecture.Refocus)
+            }
+            KeyEvent.KEYCODE_ZOOM_IN, KeyEvent.KEYCODE_ZOOM_OUT -> {
+                if (started && event.repeatCount == 0) {
+                    com.rawr.camera.integration.GripEvents.lensSteps.tryEmit(if (keyCode == KeyEvent.KEYCODE_ZOOM_IN) 1 else -1)
+                }
+            }
+            else -> return super.onKeyDown(keyCode, event)
+        }
         return true
     }
 
-    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean =
-        if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) true else super.onKeyUp(keyCode, event)
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean = when (keyCode) {
+        KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_CAMERA, KeyEvent.KEYCODE_FOCUS,
+        KeyEvent.KEYCODE_ZOOM_IN, KeyEvent.KEYCODE_ZOOM_OUT -> true
+        else -> super.onKeyUp(keyCode, event)
+    }
 
     private fun triggerShutter() {
         if (captureViewModel.controller.state.value.captureMode == CaptureMode.Video) {

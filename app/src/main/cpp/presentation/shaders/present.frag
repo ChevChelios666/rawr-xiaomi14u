@@ -116,7 +116,11 @@ void main(){
             float roundedDistance = length(max(d, vec2(0.0))) + min(max(d.x, d.y), 0.0) - r;
             if (roundedDistance > 0.0) discard;
         }
-        outColor = texture(srcImage, s);
+        // Stock-style card: the trace stays solid, the empty background lets the picture through (the scope
+        // pipeline blends; the main one ignores alpha).
+        vec4 c = texture(srcImage, s);
+        float trace = max(max(c.r, c.g), c.b);
+        outColor = vec4(c.rgb, trace > 0.04 ? 1.0 : 0.45);
         return;
     }
 

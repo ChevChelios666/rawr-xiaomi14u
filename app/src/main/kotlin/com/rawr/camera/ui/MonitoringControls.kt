@@ -33,7 +33,7 @@ internal fun ScopeLayer(
     /** X14U: stock-sized wide boxes without a title, [topInset] from the top of the viewfinder. */
     x14u: Boolean = false,
     topInset: androidx.compose.ui.unit.Dp = 16.dp,
-    /** X14U: a 92 x 7 dp strip (the sound meter) on the compact histogram's top edge as the phone is held. */
+    /** X14U: an 80 x 29 dp box (the sound meter) on the compact histogram's top edge as the phone is held. */
     header: (@Composable () -> Unit)? = null
 ) {
     val haptics = LocalCaptureHaptics.current
@@ -41,13 +41,14 @@ internal fun ScopeLayer(
         val landscape = state.orientation == Orientation.Landscape
         // Landscape turns the boxes a quarter clockwise (or anticlockwise at 270°): their top edge faces +x (or -x).
         val clockwise = preview.deviceRotationDegrees != 270
-        val headerSpace = if (x14u && header != null) 12.dp else 0.dp
+        // Stock proportions: 80 x 29 dp boxes, 8 dp apart.
+        val headerSpace = if (x14u && header != null) 37.dp else 0.dp
         fun geometry(index: Int, expanded: Boolean, count: Int = state.activeScopes.size): ScopeGeometry {
             val g = calculateScopeGeometry(
                 maxWidth, maxHeight, landscape,
                 count, index, expanded, preview.deviceRotationDegrees,
-                compactWidth = if (x14u) 92.dp else CaptureDimens.ScopeCompactWidth,
-                compactHeight = if (x14u) 34.dp else CaptureDimens.ScopeCompactHeight,
+                compactWidth = if (x14u) 80.dp else CaptureDimens.ScopeCompactWidth,
+                compactHeight = if (x14u) 29.dp else CaptureDimens.ScopeCompactHeight,
                 topInset = if (x14u) topInset + (if (landscape) 0.dp else headerSpace) else 16.dp
             )
             // Room for the header on the side the boxes' top faces (landscape, clockwise: the right).
@@ -56,12 +57,12 @@ internal fun ScopeLayer(
         if (header != null) {
             val g = geometry(0, false, state.activeScopes.size.coerceAtLeast(1))
             val (cx, cy) = when {
-                !landscape -> (g.x + g.physicalWidth / 2) to (g.y - 5.dp - 3.5.dp)
-                clockwise -> (g.x + g.physicalWidth + 5.dp + 3.5.dp) to (g.y + g.physicalHeight / 2)
-                else -> (g.x - 5.dp - 3.5.dp) to (g.y + g.physicalHeight / 2)
+                !landscape -> (g.x + g.physicalWidth / 2) to (g.y - 8.dp - 14.5.dp)
+                clockwise -> (g.x + g.physicalWidth + 8.dp + 14.5.dp) to (g.y + g.physicalHeight / 2)
+                else -> (g.x - 8.dp - 14.5.dp) to (g.y + g.physicalHeight / 2)
             }
             Box(
-                Modifier.offset(x = cx - 46.dp, y = cy - 3.5.dp).size(92.dp, 7.dp)
+                Modifier.offset(x = cx - 40.dp, y = cy - 14.5.dp).size(80.dp, 29.dp)
                     .graphicsLayer { rotationZ = if (!landscape) 0f else if (clockwise) 90f else 270f },
                 contentAlignment = Alignment.Center
             ) { header() }
@@ -77,7 +78,7 @@ internal fun ScopeLayer(
                 y = g.y.value / maxHeight.value,
                 width = g.physicalWidth.value / maxWidth.value,
                 height = g.physicalHeight.value / maxHeight.value,
-                cornerFraction = (9.dp.value / g.physicalHeight.value).coerceIn(0f, .5f)
+                cornerFraction = ((if (x14u) 4.dp else 9.dp).value / g.physicalHeight.value).coerceIn(0f, .5f)
             )
         }
         val onPresentation = androidx.compose.runtime.rememberUpdatedState(preview.onScopePresentation)
@@ -104,6 +105,7 @@ internal fun ScopeLayer(
                 title = if (scope == ScopeType.Waveform &&
                     (state.waveformMode == WaveformMode.Histogram || state.waveformMode == WaveformMode.HistogramRgb)) "HISTOGRAM" else null,
                 showTitle = !x14u || expanded,
+                x14uCard = x14u,
                 orientation = state.orientation,
                 logicalWidth = g.logicalWidth,
                 logicalHeight = g.logicalHeight,
@@ -128,13 +130,15 @@ private fun ScopeCard(
     /** Heading instead of the scope type's name (the luma histogram is drawn from the waveform measurement). */
     title: String? = null,
     showTitle: Boolean = true,
+    /** Stock-style card: small corners, a light outline. */
+    x14uCard: Boolean = false,
     orientation: Orientation,
     logicalWidth: androidx.compose.ui.unit.Dp,
     logicalHeight: androidx.compose.ui.unit.Dp,
     modifier: Modifier,
     onClick: () -> Unit
 ) {
-    val scopeShape = RoundedCornerShape(9.dp)
+    val scopeShape = RoundedCornerShape(if (x14uCard) 4.dp else 9.dp)
     Surface(
         onClick = onClick,
         modifier =
@@ -155,7 +159,7 @@ private fun ScopeCard(
                 },
         shape = scopeShape,
         color = Color.Transparent,
-        border = if (nativeContent) BorderStroke(1.dp, Color.White.copy(alpha = .10f)) else null
+        border = if (nativeContent) BorderStroke(1.dp, Color.White.copy(alpha = if (x14uCard) .35f else .10f)) else null
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(

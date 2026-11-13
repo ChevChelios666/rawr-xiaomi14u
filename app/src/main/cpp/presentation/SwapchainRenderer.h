@@ -134,6 +134,7 @@ class SwapchainRenderer final {
     VkDescriptorSetLayout descriptorSetLayout_ = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
     VkPipeline pipeline_ = VK_NULL_HANDLE;
+    VkPipeline scopePipeline_ = VK_NULL_HANDLE;
     VkSampler sampler_ = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;
     std::array<VkDescriptorSet, rawrcam::imaging::kRealtimeFramesInFlight> tonemappedSets_{};

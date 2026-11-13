@@ -137,8 +137,13 @@ void PresentRecorder::record(const RecordInfo& i) {
     static_assert(sizeof(PresentPush) <= 128, "push constants beyond the guaranteed minimum");
     vkCmdPushConstants(i.command, i.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pcWarp), &pcWarp);
     vkCmdDraw(i.command, 3, 1, 0, 0);
+    bool scopePipelineBound = false;
     for (const auto& s : i.scopes) {
         if (!s.enabled || s.descriptor == VK_NULL_HANDLE || s.width <= 0 || s.height <= 0) continue;
+        if (!scopePipelineBound && i.scopePipeline != VK_NULL_HANDLE) {
+            vkCmdBindPipeline(i.command, VK_PIPELINE_BIND_POINT_GRAPHICS, i.scopePipeline);
+            scopePipelineBound = true;
+        }
         const float px = s.x * static_cast<float>(i.swapExtent.width),
                     py = s.y * static_cast<float>(i.swapExtent.height),
                     pw = s.width * static_cast<float>(i.swapExtent.width),
@@ -157,13 +162,16 @@ void PresentRecorder::record(const RecordInfo& i) {
         vkCmdSetViewport(i.command, 0, 1, &vp);
         vkCmdSetScissor(i.command, 0, 1, &sc);
         vkCmdBindDescriptorSets(i.command, VK_PIPELINE_BIND_POINT_GRAPHICS, i.layout, 0, 1, &s.descriptor, 0, nullptr);
+        // The scope fills its card (X14U: a wide box), so source and destination aspects are the same.
+        const float cardAspect = static_cast<float>(ex - sx) / static_cast<float>(ey - sy);
         const PresentPush sp{
-            s.quarterTurns, s.sourceAspect, static_cast<float>(ex - sx) / static_cast<float>(ey - sy), 100u, 0u,
+            s.quarterTurns, cardAspect, cardAspect, 100u, 0u,
             s.cornerRadius,
             0u, 0u, 0.0f, 0.0f, 1.0f, 1.0f, 0u, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, {}, 0u, 1.0f, 0.0f};
         vkCmdPushConstants(i.command, i.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sp), &sp);
         vkCmdDraw(i.command, 3, 1, 0, 0);
     }
+    if (scopePipelineBound) vkCmdBindPipeline(i.command, VK_PIPELINE_BIND_POINT_GRAPHICS, i.pipeline);
     // Focus loupe: the same live view (and overlay), sampling only the magnified window.
     if (i.loupe.enabled && i.diagnosticMode == 0u && i.exifOrientation == 0u && i.loupe.width > 0 && i.loupe.height > 0) {
         const auto& l = i.loupe;

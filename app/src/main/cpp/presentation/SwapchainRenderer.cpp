@@ -170,6 +170,7 @@ void SwapchainRenderer::record(VkCommandBuffer command, uint32_t frameSlot, uint
     info.framebuffer = framebuffers_[imageIndex];
     info.swapExtent = swapExtent_;
     info.pipeline = pipeline_;
+    info.scopePipeline = scopePipeline_;
     info.layout = pipelineLayout_;
     info.tonemappedSet = videoSource ? videoSets_[frameSlot] : tonemappedSets_[frameSlot];
     info.linearSet = linearSets_[frameSlot];
@@ -365,6 +366,23 @@ void SwapchainRenderer::createPipeline() {
     pipelineInfo.renderPass = renderPass_;
     const VkResult pipelineResult =
         vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_);
+    // Scope cards: the same pipeline with alpha blending, so their background lets the picture through.
+    if (pipelineResult == VK_SUCCESS) {
+        VkPipelineColorBlendAttachmentState scopeBlend = blendAttachment;
+        scopeBlend.blendEnable = VK_TRUE;
+        scopeBlend.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        scopeBlend.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        scopeBlend.colorBlendOp = VK_BLEND_OP_ADD;
+        scopeBlend.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        scopeBlend.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        scopeBlend.alphaBlendOp = VK_BLEND_OP_ADD;
+        VkPipelineColorBlendStateCreateInfo scopeBlendState = blend;
+        scopeBlendState.pAttachments = &scopeBlend;
+        VkGraphicsPipelineCreateInfo scopeInfo = pipelineInfo;
+        scopeInfo.pColorBlendState = &scopeBlendState;
+        if (vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &scopeInfo, nullptr, &scopePipeline_) != VK_SUCCESS)
+            scopePipeline_ = VK_NULL_HANDLE;
+    }
     vkDestroyShaderModule(device_, vertex, nullptr);
     vkDestroyShaderModule(device_, fragment, nullptr);
     vkCheck(pipelineResult, "presentation pipeline");
@@ -480,6 +498,8 @@ void SwapchainRenderer::destroySwapchain() {
     sampler_ = VK_NULL_HANDLE;
     if (pipeline_ != VK_NULL_HANDLE) vkDestroyPipeline(device_, pipeline_, nullptr);
     pipeline_ = VK_NULL_HANDLE;
+    if (scopePipeline_ != VK_NULL_HANDLE) vkDestroyPipeline(device_, scopePipeline_, nullptr);
+    scopePipeline_ = VK_NULL_HANDLE;
     if (pipelineLayout_ != VK_NULL_HANDLE) vkDestroyPipelineLayout(device_, pipelineLayout_, nullptr);
     pipelineLayout_ = VK_NULL_HANDLE;
     if (descriptorSetLayout_ != VK_NULL_HANDLE) vkDestroyDescriptorSetLayout(device_, descriptorSetLayout_, nullptr);

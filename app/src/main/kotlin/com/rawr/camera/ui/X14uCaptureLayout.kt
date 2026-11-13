@@ -599,12 +599,17 @@ internal fun X14uCaptureLayout(
         val bottom = top + frame.height
         val fullHeight = maxHeight
         val shutterCenter = minOf(bottom + 175.dp * s, fullHeight - 50.dp)
-        // Video: the recording's shape across the whole width from the top of the screen (behind the top bar),
-        // narrowed if it would run past the bottom; the controls sit over it.
+        // Video, like stock: the recording's shape at the photo frame's width, between the camera cut-out and the
+        // shutter (just below the mode names), narrowed if it would not fit. A short one (4:3, 1:1) sits where the
+        // photo frame does; a tall one (16:9 and up) starts right under the cut-out with the top bar over it.
         val audioMeterOn = isVideo && LocalCaptureExtras.current.tools.audioMeter
-        val videoRect = run {
-            val height = minOf(maxWidth * videoAspect, fullHeight)
-            DpSize(height / videoAspect, height)
+        val (videoRect, videoTop) = run {
+            val upper = cutoutTop + 2.dp
+            val lower = shutterCenter - 50.dp
+            var w = frameWidth
+            var h = w * videoAspect
+            if (h > lower - upper) { h = lower - upper; w = h / videoAspect }
+            DpSize(w, h) to (if (top + h <= lower) top else upper)
         }
         Box(Modifier.fillMaxSize()) {
             CaptureViewfinder(
@@ -615,13 +620,13 @@ internal fun X14uCaptureLayout(
                 onSelectRenderProfile = onSelectRenderProfile,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .offset(y = if (isVideo) 0.dp else top)
+                    .offset(y = if (isVideo) videoTop else top)
                     .size(if (isVideo) videoRect else frame),
                 slotFrame = frame,
-                slotOffsetY = if (isVideo) top else 0.dp,
+                slotOffsetY = if (isVideo) top - videoTop else 0.dp,
                 // Video: below the top bar; photo: just inside the frame. The sound meter sits on the histogram's
                 // top edge as the phone is held (Settings → Video can turn it off).
-                scopeTopInset = if (isVideo) top + 6.dp else 8.dp,
+                scopeTopInset = if (isVideo) top + 4.dp - videoTop else 8.dp,
                 scopeHeader = if (!audioMeterOn) null else ({
                     AudioMeter(videoControls.audio, recording = videoControls.recording, compact = true)
                 }),
@@ -656,7 +661,7 @@ internal fun X14uCaptureLayout(
                 }
             )
             // Video: the corner marks sit on the picture's own corners.
-            if (isVideo) FrameBrackets(Modifier.align(Alignment.TopCenter).size(videoRect))
+            if (isVideo) FrameBrackets(Modifier.align(Alignment.TopCenter).offset(y = videoTop).size(videoRect))
 
             Box(Modifier.align(Alignment.TopCenter).offset(y = top).size(frame)) {
                 if (!isVideo) FrameBrackets(Modifier.fillMaxSize())
@@ -1113,6 +1118,33 @@ private fun X14uLensRow(
         }
         addAll(pending)
     }
+    // Grip zoom lever: the next focal length up or down the pill (lenses and digital ones), as a tap would.
+    val itemMm: (Any) -> Int? = { item ->
+        (item as? com.rawr.camera.model.LensCapability)?.let { lensMm(it.id) } ?: (item as? com.rawr.camera.settings.model.ResolvedStop)?.mm
+    }
+    val step by androidx.compose.runtime.rememberUpdatedState { direction: Int ->
+        val currentMm = activeStop?.mm?.toFloat()
+            ?: totalZoom?.let { it * com.rawr.camera.settings.model.LensButtons.MAIN_MM }
+            ?: lensMm(state.selectedLensId)?.toFloat()
+        if (enabled && currentMm != null) {
+            val candidates = items.mapNotNull { item -> itemMm(item)?.let { item to it } }
+            val next = if (direction > 0) candidates.filter { it.second > currentMm + .5f }.minByOrNull { it.second }
+                else candidates.filter { it.second < currentMm - .5f }.maxByOrNull { it.second }
+            when (val item = next?.first) {
+                is com.rawr.camera.model.LensCapability -> {
+                    haptics.selection()
+                    onLensTap(item.id)
+                    if (state.selectedLensId != item.id) dispatch(SelectLens(item.id))
+                }
+                is com.rawr.camera.settings.model.ResolvedStop -> {
+                    haptics.selection()
+                    onStop(item)
+                }
+                else -> Unit
+            }
+        }
+    }
+    LaunchedEffect(Unit) { com.rawr.camera.integration.GripEvents.lensSteps.collect { step(it) } }
     val groups = quick.overrideGroups
     Box(modifier.height(40.dp)) {
         Box(Modifier.align(Alignment.CenterStart)) {

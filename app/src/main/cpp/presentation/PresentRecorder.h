@@ -30,6 +30,8 @@ struct RecordInfo {
     VkFramebuffer framebuffer = VK_NULL_HANDLE;
     VkExtent2D swapExtent{};
     VkPipeline pipeline = VK_NULL_HANDLE;
+    // Same as [pipeline] with alpha blending: scope cards draw a see-through background over the picture.
+    VkPipeline scopePipeline = VK_NULL_HANDLE;
     VkPipelineLayout layout = VK_NULL_HANDLE;
     VkDescriptorSet tonemappedSet = VK_NULL_HANDLE;
     VkDescriptorSet linearSet = VK_NULL_HANDLE;

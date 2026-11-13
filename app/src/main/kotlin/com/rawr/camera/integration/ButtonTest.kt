@@ -8,6 +8,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+/** Xiaomi 14 Ultra Photography Kit: the zoom lever steps the lens pill (+1 longer, -1 wider). */
+object GripEvents {
+    val lensSteps = kotlinx.coroutines.flow.MutableSharedFlow<Int>(extraBufferCapacity = 4)
+}
+
 /**
  * X14U button test (Tools → Button test): shows every key press and every dial / wheel event that reaches the app,
  * with its code, scan code and device, so the Photography Kit's controls can be mapped. While on, nothing else acts on
