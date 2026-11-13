@@ -96,17 +96,24 @@ private val WbPresets = listOf(
 
 private enum class HistogramChoice(val label: String, val short: String, val scope: ScopeType?, val mode: WaveformMode?) {
     Off("Off", "Off", null, null),
+    // Luma only: the RGB versions cost too much while recording (frame drops, Nov 2026).
     Histogram("Histogram", "Luma", ScopeType.Waveform, WaveformMode.Histogram),
-    HistogramRgb("RGB histogram", "RGB", ScopeType.Waveform, WaveformMode.HistogramRgb),
-    Waveform("Waveform", "Wave", ScopeType.Waveform, WaveformMode.Luma),
-    WaveformRgb("RGB waveform", "RGB wave", ScopeType.Waveform, WaveformMode.RgbOverlay)
+    Waveform("Waveform", "Wave", ScopeType.Waveform, WaveformMode.Luma)
 }
 
 private fun CaptureUiState.histogramChoice(): HistogramChoice = when {
     activeScopes.isEmpty() -> HistogramChoice.Off
     // The vectorscope is gone from X14U (the compact box is wide, not square).
     activeScopes.first() == ScopeType.Vectorscope -> HistogramChoice.Off
-    else -> HistogramChoice.entries.firstOrNull { it.mode == waveformMode } ?: HistogramChoice.Waveform
+    waveformMode == WaveformMode.Histogram || waveformMode == WaveformMode.HistogramRgb -> HistogramChoice.Histogram
+    else -> HistogramChoice.Waveform
+}
+
+/** X14U shows luma scopes only: a saved RGB histogram or waveform turns into its luma version. */
+internal fun lumaScopeMode(mode: WaveformMode): WaveformMode = when (mode) {
+    WaveformMode.HistogramRgb -> WaveformMode.Histogram
+    WaveformMode.RgbOverlay -> WaveformMode.Luma
+    else -> mode
 }
 
 private class X14uTile(

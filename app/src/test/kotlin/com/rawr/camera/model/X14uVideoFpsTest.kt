@@ -6,7 +6,7 @@ import com.rawr.camera.architecture.CycleVideoResolution
 import com.rawr.camera.architecture.SetVideoCrop
 import com.rawr.camera.fixtures.CaptureFixtures
 import com.rawr.camera.video.VideoCrop
-import com.rawr.camera.video.VideoCropKind
+import com.rawr.camera.video.VideoCropSize
 import com.rawr.camera.video.VideoFrameSize
 import com.rawr.camera.video.VideoResolutionMode
 import kotlin.test.Test
@@ -28,7 +28,7 @@ class X14uVideoFpsTest {
         val next = CaptureReducer.reduce(sixty, CycleVideoResolution)
         assertEquals(VideoCrop.fromLegacy(VideoResolutionMode.UHD4K), next.videoCrop)
         assertEquals(30, next.videoFps)
-        val openGate = CaptureReducer.reduce(sixty, SetVideoCrop(VideoCrop(VideoCropKind.Aspect, aspect = 0, downscale = 0)))
+        val openGate = CaptureReducer.reduce(sixty, SetVideoCrop(VideoCrop(VideoCropSize.OpenGate)))
         assertEquals(30, openGate.videoFps)
     }
 
@@ -40,14 +40,18 @@ class X14uVideoFpsTest {
             VideoCrop.fromLegacy(VideoResolutionMode.UHD4K).sizes(4096, 3072))
         assertEquals(VideoFrameSize(4096, 3072) to VideoFrameSize(4096, 3072),
             VideoCrop.fromLegacy(VideoResolutionMode.OPEN_GATE).sizes(4096, 3072))
-        // 16:9 from the full width: 2x lands exactly on the Bayer reduction.
-        assertEquals(VideoFrameSize(4096, 2304) to VideoFrameSize(2048, 1152),
-            VideoCrop(VideoCropKind.Aspect, aspect = 1, downscale = 3).sizes(4096, 3072))
-        assertEquals(VideoFrameSize(4080, 2294) to VideoFrameSize(2720, 1530),
-            VideoCrop(VideoCropKind.Aspect, aspect = 1, downscale = 2).sizes(4096, 3072))
-        // Saved ids round-trip; the former resolution ids still read.
-        val crop = VideoCrop(VideoCropKind.Aspect, aspect = 4, pixel = 2, downscale = 1)
+        // Shapes cut the 16:9 height.
+        assertEquals(VideoFrameSize(3840, 1606) to VideoFrameSize(3840, 1606),
+            VideoCrop(VideoCropSize.UHD, shape = 3).sizes(4096, 3072))
+        assertEquals(VideoFrameSize(3840, 1920) to VideoFrameSize(1920, 960),
+            VideoCrop(VideoCropSize.HD, shape = 2).sizes(4096, 3072))
+        // Saved ids round-trip; the first crop panel's ids and the former resolution ids still read.
+        val crop = VideoCrop(VideoCropSize.UHD, shape = 1)
         assertEquals(crop, VideoCrop.fromId(crop.persistedId()))
+        assertEquals(VideoCrop(VideoCropSize.HD, 3), VideoCrop.fromId("crop:a:4:0:3"))
+        assertEquals(VideoCrop(VideoCropSize.UHD, 0), VideoCrop.fromId("crop:a:1:0:0"))
+        assertEquals(VideoCrop(VideoCropSize.OpenGate), VideoCrop.fromId("crop:a:0:0:1"))
+        assertEquals(VideoCrop(VideoCropSize.HD), VideoCrop.fromId("crop:p:0:2:0"))
         assertEquals(VideoCrop.Default, VideoCrop.fromId("1080p"))
         assertEquals(VideoCrop.fromLegacy(VideoResolutionMode.UHD4K), VideoCrop.fromId("4k"))
     }

@@ -30,12 +30,11 @@ import com.rawr.camera.ui.icons.Icons
 import com.rawr.camera.ui.icons.outlined.Close
 import com.rawr.camera.ui.icons.outlined.Crop
 import com.rawr.camera.video.VideoCrop
-import com.rawr.camera.video.VideoCropKind
-import java.util.Locale
+import com.rawr.camera.video.VideoCropSize
 
 /**
- * X14U video crop panel (top bar crop chip): Aspect (a shape from the full sensor width) or Pixel crop (a centred
- * window at one sensor pixel per pixel), a downscale, and the recording size it gives.
+ * X14U video crop panel (top bar crop chip): a standard size (4K, 1080p, Open gate), a shape for 4K and 1080p, and
+ * the recording size it gives.
  */
 @Composable
 internal fun X14uVideoCropPanel(
@@ -54,7 +53,7 @@ internal fun X14uVideoCropPanel(
             .pointerInput(Unit) { detectTapGestures { } }
             .padding(14.dp)
             .testTag("x14u_video_crop_panel"),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.Crop, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
@@ -69,41 +68,36 @@ internal fun X14uVideoCropPanel(
                     modifier = Modifier.size(20.dp))
             }
         }
+        Text("Size", color = Color.White.copy(alpha = .6f), fontFamily = X14uFont, fontSize = dpText(12f))
         CropSegments(
-            labels = listOf("Aspect", "Pixel crop"),
-            selected = if (crop.kind == VideoCropKind.Aspect) 0 else 1,
+            labels = VideoCropSize.entries.map { it.label },
+            selected = crop.size.ordinal,
             accent = accent
-        ) { onChange(crop.copy(kind = if (it == 0) VideoCropKind.Aspect else VideoCropKind.Pixel)) }
-        if (crop.kind == VideoCropKind.Aspect) {
-            CropTiles(
-                count = VideoCrop.ASPECTS.size,
-                columns = if (wide) VideoCrop.ASPECTS.size else 3,
-                selected = crop.aspect,
-                accent = accent,
-                title = { VideoCrop.ASPECTS[it].label },
-                subtitle = { null }
-            ) { onChange(crop.copy(aspect = it)) }
+        ) { onChange(crop.copy(size = VideoCropSize.entries[it])) }
+        if (crop.isOpenGate) {
+            Text(
+                "The whole sensor (${VideoCrop.lastRawWidth} × ${VideoCrop.lastRawHeight}), for reframing later. " +
+                    "The heaviest size, 30 fps only.",
+                color = Color.White.copy(alpha = .6f), fontFamily = X14uFont, fontSize = dpText(12f),
+                modifier = Modifier.fillMaxWidth().background(Color(0xFF1C1A17), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+            )
         } else {
-            val rawWidth = VideoCrop.lastRawWidth.toFloat()
+            Text("Shape", color = Color.White.copy(alpha = .6f), fontFamily = X14uFont, fontSize = dpText(12f))
             CropTiles(
-                count = VideoCrop.PIXELS.size,
-                columns = if (wide) VideoCrop.PIXELS.size else 2,
-                selected = crop.pixel,
+                count = VideoCrop.SHAPES.size,
+                columns = if (wide) VideoCrop.SHAPES.size else 2,
+                selected = crop.shape,
                 accent = accent,
-                title = { VideoCrop.PIXELS[it].let { w -> "${w.width} × ${w.height}" } },
-                subtitle = { "≈" + String.format(Locale.US, "%.1f", rawWidth / VideoCrop.PIXELS[it].width) + "× zoom" }
-            ) { onChange(crop.copy(pixel = it)) }
+                title = { VideoCrop.SHAPES[it].label },
+                subtitle = { VideoCrop.SHAPES[it].name }
+            ) { onChange(crop.copy(shape = it)) }
         }
-        Text("Downscale", color = Color.White.copy(alpha = .6f), fontFamily = X14uFont, fontSize = dpText(12f))
-        CropSegments(
-            labels = VideoCrop.DOWNSCALES.map { if (it == 1.25f) "1.25×" else String.format(Locale.US, "%.1f×", it) },
-            selected = crop.downscale,
-            accent = accent
-        ) { onChange(crop.copy(downscale = it)) }
         Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = .1f)))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                if (crop.factor == 2f) "Recording size · binned" else "Recording size",
+                "Recording size · " + (if (crop.factor == 2f) "binned · " else "") +
+                    (if (crop.allowsSixty()) "30 / 60 fps" else "30 fps"),
                 color = Color.White.copy(alpha = .6f), fontFamily = X14uFont, fontSize = dpText(12f),
                 modifier = Modifier.weight(1f)
             )

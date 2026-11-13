@@ -279,6 +279,13 @@ internal fun X14uCaptureLayout(
     // With the status bar hidden, keep the controls clear of the camera cut-out.
     val cutoutTop = if (isVideo) WindowInsets.displayCutout
         .asPaddingValues().calculateTopPadding() else 0.dp
+    // Luma scopes only on X14U: a saved RGB histogram / waveform becomes its luma version.
+    LaunchedEffect(state.activeScopes, state.waveformMode) {
+        val luma = lumaScopeMode(state.waveformMode)
+        if (luma != state.waveformMode && state.activeScopes.isNotEmpty()) {
+            dispatch(com.rawr.camera.architecture.SetSingleScope(state.activeScopes.first(), luma))
+        }
+    }
     val orientation = state.orientation
     var selected by remember { mutableStateOf<String?>(null) }
     var panel by remember { mutableStateOf<X14uPanel?>(null) }
@@ -307,8 +314,11 @@ internal fun X14uCaptureLayout(
     LaunchedEffect(zoomCrop) { extrasForZoom.onDigitalZoom(zoomCrop) }
     val zoomLabel = if (zoomOn && zoomCrop > 1.005f) zoomText(zoom) else null
     // Pinch / ruler: switches up a lens at its zoom, back down a little below it (no flicker at the boundary).
+    // When pinch / the ruler last moved the zoom: a lens they land on is left as it is (no snap off a hidden lens).
+    val zoomGestureAt = remember { longArrayOf(0L) }
     val setZoom: (Float) -> Unit = setZoom@{ target ->
         if (zoomChain.isEmpty()) return@setZoom
+        zoomGestureAt[0] = android.os.SystemClock.uptimeMillis()
         val z = target.coerceIn(zoomChain.first().second, com.rawr.camera.settings.model.ZoomChain.MAX_ZOOM)
         val current = chainLens
         val lens = when {
@@ -405,6 +415,67 @@ internal fun X14uCaptureLayout(
     // Pano runs Photo's simpler row; its set locks the controls that must match frame to frame.
     val pano = !isVideo && LocalCaptureExtras.current.pano
     val simplePhoto = !isVideo && (!LocalCaptureExtras.current.proUi || pano)
+    // Lens pill memory: the focal length last in use per mode (digital ones too) comes back when the screen starts,
+    // and a hidden lens is never landed on at its own focal length (start, mode change, a lens picked elsewhere): the
+    // nearest focal length on the pill takes its place. Pinch and the ruler are left alone.
+    val lensMemory = remember {
+        hostView.context.getSharedPreferences("x14u_lens_memory", android.content.Context.MODE_PRIVATE)
+    }
+    val lensRestored = remember { mutableSetOf<String>() }
+    val lensSet = LocalCaptureExtras.current.tools.lensButtons.forMode(isVideo)
+    val memoryKey = if (isVideo) "video" else "photo"
+    val pillStops = if (pano || chainLens == null) emptyList() else lensSet.digital.filter { it.on }
+        .mapNotNull { com.rawr.camera.settings.model.resolveDigitalStop(it.mm, zoomChain) }
+    val atOwnFocal = if (isVideo) state.videoCrop.digitalZoom <= 1.001f else !zoomOn || zoomCrop <= 1.005f
+    val pillStopNow = pillStops.firstOrNull { stop ->
+        if (isVideo) stop.lens == state.selectedLensId && kotlin.math.abs(state.videoCrop.digitalZoom - stop.crop) <= stop.crop * .01f
+        else zoomOn && kotlin.math.abs(zoom - stop.zoom) <= stop.zoom * .01f
+    }
+    val goToStop: (com.rawr.camera.settings.model.ResolvedStop) -> Unit = { stop ->
+        if (isVideo) {
+            dispatch(SetVideoCrop(state.videoCrop.copy(digitalZoom = stop.crop)))
+            if (stop.lens != state.selectedLensId) dispatch(SelectLens(stop.lens))
+        } else {
+            setZoom(stop.zoom)
+        }
+    }
+    val goToLens: (String) -> Unit = { id ->
+        zoomChain.firstOrNull { it.first == id }?.let { zoom = it.second }
+        if (id != state.selectedLensId) dispatch(SelectLens(id))
+    }
+    LaunchedEffect(state.selectedLensId, memoryKey, lensSet, zoomChain, atOwnFocal, recordingLock, pano) {
+        val lens = chainLens ?: return@LaunchedEffect
+        if (recordingLock || pano || !atOwnFocal) return@LaunchedEffect
+        val lensMm = com.rawr.camera.settings.model.LensButtons.mmOf(lens.second)
+        val remembered = lensMemory.getInt(memoryKey, 0)
+        val visibleLenses = zoomChain.filter { it.first !in lensSet.hidden }
+            .map { it.first to com.rawr.camera.settings.model.LensButtons.mmOf(it.second) }
+        // Start of the screen: back to the digital focal length last used on this lens.
+        if (lensRestored.add(memoryKey)) {
+            pillStops.firstOrNull { it.mm == remembered && it.lens == lens.first }?.let { goToStop(it); return@LaunchedEffect }
+        }
+        if (lens.first !in lensSet.hidden) return@LaunchedEffect
+        // Pinch / ruler onto a hidden lens: it stays (its live zoom shows on it).
+        if (android.os.SystemClock.uptimeMillis() - zoomGestureAt[0] < 1500L) return@LaunchedEffect
+        val candidates: List<Pair<Any, Int>> = pillStops.map { it to it.mm } + visibleLenses.map { it.first to it.second }
+        val target = candidates.firstOrNull { it.second == remembered }
+            ?: candidates.minWithOrNull(compareBy<Pair<Any, Int>>({ kotlin.math.abs(it.second - lensMm) },
+                // Equally near: a digital focal length on this lens first (no lens switch).
+                { if ((it.first as? com.rawr.camera.settings.model.ResolvedStop)?.lens == lens.first) 0 else 1 },
+                { -it.second }))
+        when (val item = target?.first) {
+            is com.rawr.camera.settings.model.ResolvedStop -> goToStop(item)
+            is String -> goToLens(item)
+            else -> Unit
+        }
+    }
+    // What is on the pill now, remembered for next time (not mid-pinch, not before this mode's restore).
+    LaunchedEffect(state.selectedLensId, pillStopNow, atOwnFocal, memoryKey) {
+        val lens = chainLens ?: return@LaunchedEffect
+        if (memoryKey !in lensRestored || pano) return@LaunchedEffect
+        val mm = pillStopNow?.mm ?: if (atOwnFocal) com.rawr.camera.settings.model.LensButtons.mmOf(lens.second) else return@LaunchedEffect
+        lensMemory.edit().putInt(memoryKey, mm).apply()
+    }
     val panoSet = remember { PanoSet() }
     val panoMotion = rememberPanoMotion(pano)
     val panoLocked = pano && panoSet.inSet
