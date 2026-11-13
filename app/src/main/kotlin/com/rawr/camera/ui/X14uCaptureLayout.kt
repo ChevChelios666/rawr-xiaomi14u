@@ -606,6 +606,7 @@ internal fun X14uCaptureLayout(
             val height = minOf(maxWidth * videoAspect, fullHeight)
             DpSize(height / videoAspect, height)
         }
+        val videoSide = (maxWidth - videoRect.width) / 2
         Box(Modifier.fillMaxSize()) {
             CaptureViewfinder(
                 state = state,
@@ -658,7 +659,7 @@ internal fun X14uCaptureLayout(
                 AudioMeter(
                     videoControls.audio, recording = videoControls.recording, compact = true,
                     modifier = Modifier.align(Alignment.TopEnd)
-                        .offset(x = -((maxWidth - videoRect.width) / 2 + 10.dp), y = top + 6.dp)
+                        .offset(x = -(videoSide + 10.dp), y = top + 6.dp)
                 )
             }
             Box(Modifier.align(Alignment.TopCenter).offset(y = top).size(frame)) {
