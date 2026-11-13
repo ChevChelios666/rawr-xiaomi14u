@@ -17,21 +17,45 @@ data class LensButtonSet(
     val digital: List<DigitalStop> = emptyList()
 )
 
+/** Which lens set the pill uses: Photo (and Photo+), Video, Pano. */
+enum class LensMode(val label: String) {
+    Photo("Photo"), Video("Video"), Pano("Pano");
+
+    companion object {
+        fun of(video: Boolean, pano: Boolean): LensMode = when {
+            video -> Video
+            pano -> Pano
+            else -> Photo
+        }
+    }
+}
+
 data class LensButtons(
     /** Labels as focal lengths ("23" over "mm") instead of zoom factors ("1x"). */
     val mmLabels: Boolean = false,
     val photo: LensButtonSet = LensButtonSet(),
     /** Null: the same as photo (until video is edited). */
-    val video: LensButtonSet? = null
+    val video: LensButtonSet? = null,
+    /** Pano: optical lenses only (no digital focal lengths there). Null: every lens shows. */
+    val pano: LensButtonSet? = null
 ) {
-    fun forMode(video: Boolean): LensButtonSet = if (video) this.video ?: photo else photo
+    fun forMode(mode: LensMode): LensButtonSet = when (mode) {
+        LensMode.Photo -> photo
+        LensMode.Video -> video ?: photo
+        LensMode.Pano -> pano ?: LensButtonSet()
+    }
 
-    fun withSet(video: Boolean, set: LensButtonSet): LensButtons = if (video) copy(video = set) else copy(photo = set)
+    fun withSet(mode: LensMode, set: LensButtonSet): LensButtons = when (mode) {
+        LensMode.Photo -> copy(photo = set)
+        LensMode.Video -> copy(video = set)
+        LensMode.Pano -> copy(pano = set.copy(digital = emptyList()))
+    }
 
     fun encode(): String = JSONObject()
         .put("mm", mmLabels)
         .put("photo", encodeSet(photo))
         .apply { video?.let { put("video", encodeSet(it)) } }
+        .apply { pano?.let { put("pano", encodeSet(it)) } }
         .toString()
 
     companion object {
@@ -47,7 +71,8 @@ data class LensButtons(
                 LensButtons(
                     mmLabels = o.optBoolean("mm", false),
                     photo = decodeSet(o.optJSONObject("photo")),
-                    video = o.optJSONObject("video")?.let(::decodeSet)
+                    video = o.optJSONObject("video")?.let(::decodeSet),
+                    pano = o.optJSONObject("pano")?.let(::decodeSet)
                 )
             }.getOrDefault(LensButtons())
         }

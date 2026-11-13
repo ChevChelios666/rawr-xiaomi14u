@@ -674,8 +674,14 @@ void FrameSubmitCoordinator::submitSplitVideoAndMonitor(const SubmitParams& para
         // Scopes: a new measurement about 8 times a second (60 ms still dropped the odd frame at 4K30 / 1080p60,
         // Nov 13); frames in between show the last one (its slot's images).
         const auto now = std::chrono::steady_clock::now();
-        const bool measureScopes = lastVideoScopeSlot_ < 0 || now - lastVideoScopeUpdate_ >= std::chrono::milliseconds(125);
-        const uint32_t scopeSlot = measureScopes ? slotIndex : uint32_t(lastVideoScopeSlot_);
+        // The first second of a recording (encoder and pipeline still settling; 4K30 dropped 2 frames there with
+        // the histogram on, Nov 13) shows the preview's last measurement instead of measuring.
+        if (lastVideoScopeSlot_ < 0 && videoScopeHoldUntil_ == std::chrono::steady_clock::time_point{})
+            videoScopeHoldUntil_ = now + std::chrono::seconds(1);
+        const bool settling = now < videoScopeHoldUntil_;
+        const bool measureScopes = !settling &&
+            (lastVideoScopeSlot_ < 0 || now - lastVideoScopeUpdate_ >= std::chrono::milliseconds(125));
+        const uint32_t scopeSlot = measureScopes || lastVideoScopeSlot_ < 0 ? slotIndex : uint32_t(lastVideoScopeSlot_);
         if (measureScopes) {
             resources_.recorder()->recordVideoScopes(slot->command, slotIndex, videoOutput_->monitorView(slotIndex),
                                                      videoOutput_->monitorImage(slotIndex), extent.width, extent.height,

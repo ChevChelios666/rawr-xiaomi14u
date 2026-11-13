@@ -116,6 +116,7 @@ class FrameSubmitCoordinator final {
         videoSubmitted_ = 0;
         videoDrops_ = 0;
         lastVideoScopeSlot_ = -1;
+        videoScopeHoldUntil_ = {};
         previewSkippedDuringVideo_ = 0;
         videoDropReasons_ = {};
         lastVideoSubmitFailure_.clear();
@@ -291,6 +292,8 @@ class FrameSubmitCoordinator final {
     // Recording: scopes measure the video about 16 times a second, not every frame (they cost GPU time per frame).
     std::chrono::steady_clock::time_point lastVideoScopeUpdate_{};
     int lastVideoScopeSlot_ = -1;
+    // Recording start: no scope measurement until then (set on the first video monitor frame).
+    std::chrono::steady_clock::time_point videoScopeHoldUntil_{};
     uint64_t videoDrops_ = 0;
     // Live RAW content sampling (logcat, at most once per second of sensor time).
     uint64_t lastRawContentStatsNs_ = 0;

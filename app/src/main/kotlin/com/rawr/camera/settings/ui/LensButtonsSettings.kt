@@ -43,8 +43,9 @@ import java.util.Locale
 internal fun LensButtonsGroup(state: SettingsUiState, dispatch: SettingsDispatch) {
     val hardware = LocalLensHardware.current
     val buttons = state.values.lensButtons
-    var video by remember { mutableStateOf(false) }
-    val set = buttons.forMode(video)
+    var mode by remember { mutableStateOf(com.rawr.camera.settings.model.LensMode.Photo) }
+    val pano = mode == com.rawr.camera.settings.model.LensMode.Pano
+    val set = buttons.forMode(mode)
     val lenses = state.values.effectiveLensProfiles(hardware.deviceDefaults).filter { it.enabled }
     val chain = ZoomChain.of(lenses)
     val save: (LensButtons) -> Unit = { dispatch.invoke(SetLensButtons(it)) }
@@ -52,15 +53,16 @@ internal fun LensButtonsGroup(state: SettingsUiState, dispatch: SettingsDispatch
 
     SettingsGroup(
         title = "Lens buttons",
-        description = "The lens pill on the capture screen. Photo (and Pano) and Video each keep their own set. " +
-            "A digital focal length is a crop of the next wider lens, saved at the crop's own resolution."
+        description = "The lens pill on the capture screen. Photo, Video and Pano each keep their own set (Pano: " +
+            "lenses only). A digital focal length is a crop of the next wider lens, saved at the crop's own resolution."
     ) {
         Column(Modifier.padding(horizontal = SettingsRowHorizontalPadding, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Labels", style = MaterialTheme.typography.bodyMedium)
             SegmentedOptionRow(listOf("1x", "23 mm"), if (buttons.mmLabels) 1 else 0, { save(buttons.copy(mmLabels = it == 1)) })
             Text("Set for", style = MaterialTheme.typography.bodyMedium)
-            SegmentedOptionRow(listOf("Photo", "Video"), if (video) 1 else 0, { video = it == 1 })
+            SegmentedOptionRow(com.rawr.camera.settings.model.LensMode.entries.map { it.label }, mode.ordinal,
+                { mode = com.rawr.camera.settings.model.LensMode.entries[it] })
         }
         SettingDivider()
         chain.forEachIndexed { index, (name, factor) ->
@@ -69,15 +71,15 @@ internal fun LensButtonsGroup(state: SettingsUiState, dispatch: SettingsDispatch
             SettingsSwitchRow(
                 title = "$name · ${LensButtons.mmOf(factor)} mm",
                 checked = shown,
-                supportingText = if (shown) "On the pill" else "Hidden in ${if (video) "Video" else "Photo"}",
+                supportingText = if (shown) "On the pill" else "Hidden in ${mode.label}",
                 // At least one lens stays on the pill.
                 enabled = !shown || chain.count { it.first !in set.hidden } > 1,
                 onCheckedChange = { on ->
-                    save(buttons.withSet(video, set.copy(hidden = if (on) set.hidden - name else set.hidden + name)))
+                    save(buttons.withSet(mode, set.copy(hidden = if (on) set.hidden - name else set.hidden + name)))
                 }
             )
         }
-        set.digital.forEach { stop ->
+        if (!pano) set.digital.forEach { stop ->
             SettingDivider()
             val resolved = resolveDigitalStop(stop.mm, chain)
             SettingsRow(
@@ -88,10 +90,10 @@ internal fun LensButtonsGroup(state: SettingsUiState, dispatch: SettingsDispatch
                 trailing = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = {
-                            save(buttons.withSet(video, set.copy(digital = set.digital.filter { it.mm != stop.mm })))
+                            save(buttons.withSet(mode, set.copy(digital = set.digital.filter { it.mm != stop.mm })))
                         }) { Icon(Icons.Rounded.DeleteOutline, contentDescription = "Remove ${stop.mm} mm") }
                         Switch(checked = stop.on, onCheckedChange = { on ->
-                            save(buttons.withSet(video, set.copy(digital = set.digital.map {
+                            save(buttons.withSet(mode, set.copy(digital = set.digital.map {
                                 if (it.mm == stop.mm) it.copy(on = on) else it
                             })))
                         })
@@ -99,6 +101,18 @@ internal fun LensButtonsGroup(state: SettingsUiState, dispatch: SettingsDispatch
                 }
             )
         }
+        if (!pano) DigitalStopAdder(buttons, mode, set, chain, save)
+    }
+}
+
+@Composable
+private fun DigitalStopAdder(
+    buttons: LensButtons,
+    mode: com.rawr.camera.settings.model.LensMode,
+    set: com.rawr.camera.settings.model.LensButtonSet,
+    chain: List<Pair<String, Float>>,
+    save: (LensButtons) -> Unit
+) {
         SettingDivider()
         var text by remember { mutableStateOf("") }
         var error by remember { mutableStateOf<String?>(null) }
@@ -129,10 +143,9 @@ internal fun LensButtonsGroup(state: SettingsUiState, dispatch: SettingsDispatch
                     else -> null
                 }
                 if (error == null && mm != null) {
-                    save(buttons.withSet(video, set.copy(digital = (set.digital + DigitalStop(mm)).sortedBy { it.mm })))
+                    save(buttons.withSet(mode, set.copy(digital = (set.digital + DigitalStop(mm)).sortedBy { it.mm })))
                     text = ""
                 }
             }) { Text("Add") }
         }
-    }
 }

@@ -385,7 +385,7 @@ internal fun X14uCaptureLayout(
     LaunchedEffect(state.selectedLensId, isVideo) {
         val crop = state.videoCrop
         if (!isVideo || crop.digitalZoom <= 1.001f) return@LaunchedEffect
-        val kept = videoStopButtons.forMode(true).digital.filter { it.on }
+        val kept = videoStopButtons.forMode(com.rawr.camera.settings.model.LensMode.Video).digital.filter { it.on }
             .mapNotNull { com.rawr.camera.settings.model.resolveDigitalStop(it.mm, zoomChain) }
             .any { it.lens == state.selectedLensId && kotlin.math.abs(it.crop - crop.digitalZoom) <= it.crop * .01f }
         if (!kept) dispatch(SetVideoCrop(crop.copy(digitalZoom = 1f)))
@@ -427,7 +427,7 @@ internal fun X14uCaptureLayout(
         hostView.context.getSharedPreferences("x14u_lens_memory", android.content.Context.MODE_PRIVATE)
     }
     val lensRestored = remember { mutableSetOf<String>() }
-    val lensSet = LocalCaptureExtras.current.tools.lensButtons.forMode(isVideo)
+    val lensSet = LocalCaptureExtras.current.tools.lensButtons.forMode(com.rawr.camera.settings.model.LensMode.of(isVideo, pano))
     val memoryKey = if (isVideo) "video" else "photo"
     val pillStops = if (pano || chainLens == null) emptyList() else lensSet.digital.filter { it.on }
         .mapNotNull { com.rawr.camera.settings.model.resolveDigitalStop(it.mm, zoomChain) }
@@ -913,7 +913,7 @@ internal fun X14uCaptureLayout(
                         zoomChain.firstOrNull { it.first == id }?.let { zoom = it.second }
                         if (isVideo && state.videoCrop.digitalZoom != 1f) dispatch(SetVideoCrop(state.videoCrop.copy(digitalZoom = 1f)))
                     },
-                    buttons = LocalCaptureExtras.current.tools.lensButtons.forMode(isVideo),
+                    buttons = lensSet,
                     mmLabels = LocalCaptureExtras.current.tools.lensButtons.mmLabels,
                     zoomChain = zoomChain,
                     // Digital focal lengths: photo (and Photo+) through the zoom, video through the crop; not in Pano.
@@ -1229,9 +1229,13 @@ private fun X14uLensRow(
         (item as? com.rawr.camera.model.LensCapability)?.let { lensMm(it.id) } ?: (item as? com.rawr.camera.settings.model.ResolvedStop)?.mm
     }
     val step by androidx.compose.runtime.rememberUpdatedState { direction: Int ->
+        // The lens's own pill number scaled by any zoom on it (3.2x x 23 = 73.6 would miss the "75" button and
+        // step onto it again, so the lever stopped at 75 mm).
+        val ownMm = lensMm(state.selectedLensId)?.toFloat()
+        val ownFactor = zoomChain.firstOrNull { it.first == state.selectedLensId }?.second
         val currentMm = activeStop?.mm?.toFloat()
-            ?: totalZoom?.let { it * com.rawr.camera.settings.model.LensButtons.MAIN_MM }
-            ?: lensMm(state.selectedLensId)?.toFloat()
+            ?: if (totalZoom != null && ownMm != null && ownFactor != null) ownMm * totalZoom / ownFactor
+            else ownMm ?: totalZoom?.let { it * com.rawr.camera.settings.model.LensButtons.MAIN_MM }
         if (enabled && currentMm != null) {
             val candidates = items.mapNotNull { item -> itemMm(item)?.let { item to it } }
             val next = if (direction > 0) candidates.filter { it.second > currentMm + .5f }.minByOrNull { it.second }
