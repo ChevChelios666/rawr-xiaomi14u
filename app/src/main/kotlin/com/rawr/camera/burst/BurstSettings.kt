@@ -14,7 +14,7 @@ object BurstSettings {
     val SPEEDS = listOf(10, 20, 30)
     const val DEFAULT_FPS = 20
     /** Most frames per hold (the shutter's ring fills toward it). */
-    const val MAX_SHOTS = 200
+    const val MAX_SHOTS = 100
 
     private var prefs: SharedPreferences? = null
     private val fpsFlow = MutableStateFlow(DEFAULT_FPS)

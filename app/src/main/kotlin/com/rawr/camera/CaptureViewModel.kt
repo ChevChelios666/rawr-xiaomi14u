@@ -440,8 +440,16 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 latestSettings.let { s ->
                     val zoomMerge = s.zoomMergeAlgorithm
                     when {
-                        // Burst: every frame its own photo (no merge).
-                        burstFlow.value -> s.copy(experimentalMultiframeEnabled = false)
+                        // Burst: every frame its own photo (no merge), on a lighter develop. A burst frame took 2.0 s
+                        // on the photo path (diagnostics 14 Nov: AMaZE 0.82 s, render 0.67 s of which capture
+                        // sharpening 0.21 s, UltraHDR JPEG at 100 0.53 s); RCD, no sharpening, plain JPEG at 95.
+                        burstFlow.value -> s.copy(
+                            experimentalMultiframeEnabled = false,
+                            demosaicAlgorithm = com.rawr.camera.settings.model.DemosaicAlgorithm.Rcd,
+                            photoCaptureSharpeningEnabled = false,
+                            ultraHdrEnabled = false,
+                            imageTone = s.imageTone.copy(jpegQuality = 95f)
+                        )
                         digitalZoomCrop > 1.01f && s.experimentalMultiframeEnabled && zoomMerge != null -> s.copy(
                             multiframeTuning = s.multiframeTuning.copy(mergeAlgorithm = zoomMerge)
                         )
