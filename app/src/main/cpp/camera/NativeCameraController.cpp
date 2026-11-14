@@ -1417,8 +1417,10 @@ struct NativeCameraController::Impl final : CameraEventSink {
         {
             const auto& context = actions.frame->cameraContext;
             const uint64_t pixels = context ? uint64_t(context->geometry.rawBufferWidth) * context->geometry.rawBufferHeight : 0;
-            if (shotHandover().noteFrame(context ? context->cameraContextGeneration : 0, pixels))
+            if (shotHandover().noteFrame(context ? context->cameraContextGeneration : 0, pixels)) {
                 actions.frame->hidePreview = true;
+                actions.frame->hiddenFeedsRing = true;
+            }
         }
         // The pinned exposure / lens position goes out with the carry and is dropped with it (the 12 MP session's
         // repeating request would otherwise stay on the pin after the shot).
