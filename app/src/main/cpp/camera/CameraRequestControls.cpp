@@ -165,6 +165,40 @@ CameraControlApplyResult applyCameraControlState(CameraRequest* request, const C
         (void)request->setI64(ACAMERA_SENSOR_FRAME_DURATION, 0, nullptr);
     }
 
+    // X14U 50 MP shot: the shot's session runs on the 12 MP view's measured exposure (AE OFF) instead of starting
+    // its own AE cold; M keeps the user's own pair.
+    const auto pin = shotHandover().carriedExposure();
+    const bool pinExposure = pin && state.exposureMode != ExposureControlMode::Manual &&
+                             state.capabilities.manualExposureSupported;
+    if (pinExposure) {
+        const uint8_t aeOff = ACAMERA_CONTROL_AE_MODE_OFF;
+        (void)request->setU8(ACAMERA_CONTROL_AE_MODE, 1, &aeOff);
+        if (state.capabilities.aePriorityTagAvailable) {
+            const uint8_t off = camera2_priority::kOff;
+            (void)request->setU8(camera2_priority::kAePriorityModeTag, 1, &off);
+        }
+        // The full-size readouts of the 0.5x and 3.2x are half a stop less sensitive: more ISO (past the top of the
+        // range, the rest as a longer shutter), so the 50 MP RAW matches the 12 MP view's brightness.
+        const float gain = ShotHandover::fullSizeGain(state.capabilities.cameraId);
+        const int32_t isoMax = std::max(state.capabilities.sensitivityMin, state.capabilities.sensitivityMax);
+        const double wantedIso = double(pin->sensitivity) * gain;
+        const double extraShutter = wantedIso > isoMax && isoMax > 0 ? wantedIso / isoMax : 1.0;
+        const int64_t pinnedExposure =
+            std::clamp(int64_t(std::llround(double(pin->exposureTimeNs) * extraShutter)),
+                       state.capabilities.exposureTimeMinNs,
+                       std::max(state.capabilities.exposureTimeMinNs, state.capabilities.exposureTimeMaxNs));
+        const int32_t pinnedSensitivity = std::clamp(int32_t(std::lround(std::min(wantedIso, double(isoMax)))),
+                                                     state.capabilities.sensitivityMin, isoMax);
+        (void)request->setI64(ACAMERA_SENSOR_EXPOSURE_TIME, 1, &pinnedExposure);
+        (void)request->setI32(ACAMERA_SENSOR_SENSITIVITY, 1, &pinnedSensitivity);
+        if (state.capabilities.maxFrameDurationNs > 0) {
+            constexpr int64_t kThirtyFpsFrameNs = 33333333LL;
+            const int64_t frameDuration =
+                std::min(state.capabilities.maxFrameDurationNs, std::max(kThirtyFpsFrameNs, pinnedExposure));
+            (void)request->setI64(ACAMERA_SENSOR_FRAME_DURATION, 1, &frameDuration);
+        }
+    }
+
     // AE antibanding. The repeating request is reused so normalize every
     // time; unsupported values fall back to AUTO (or the first advertised).
     // No effect in Manual (AE OFF) per Camera2 docs, but harmless to write.
@@ -180,7 +214,7 @@ CameraControlApplyResult applyCameraControlState(CameraRequest* request, const C
         (void)request->setU8(ACAMERA_CONTROL_AE_ANTIBANDING_MODE, 1, &banding);
     }
 
-    if (!manual) {
+    if (!manual && !pinExposure) {
         const uint8_t aeLock = ACAMERA_CONTROL_AE_LOCK_OFF;
         (void)request->setU8(ACAMERA_CONTROL_AE_LOCK, 1, &aeLock);
 
@@ -309,6 +343,18 @@ CameraControlApplyResult applyCameraControlState(CameraRequest* request, const C
             ? ACAMERA_CONTROL_AF_TRIGGER_CANCEL
             : ACAMERA_CONTROL_AF_TRIGGER_IDLE;
     (void)request->setU8(ACAMERA_CONTROL_AF_TRIGGER, 1, &trigger);
+    // X14U 50 MP shot: the lens goes to where the 12 MP view had focused (AF: AF OFF + its measured distance; MF: the
+    // user's distance), in the shot camera's own full-size focus scale.
+    const bool manualFocus = state.focusMode == FocusControlMode::Manual;
+    if (pin && (manualFocus || pin->focusDiopters) && state.capabilities.manualFocusSupported) {
+        const uint8_t afOff = ACAMERA_CONTROL_AF_MODE_OFF;
+        const uint8_t idle = ACAMERA_CONTROL_AF_TRIGGER_IDLE;
+        const float diopters = (manualFocus ? requestedFocusDiopters(state) : *pin->focusDiopters) *
+                               ShotHandover::fullSizeFocusScale(state.capabilities.cameraId);
+        result.focusStatus = request->setU8(ACAMERA_CONTROL_AF_MODE, 1, &afOff);
+        (void)request->setFloat(ACAMERA_LENS_FOCUS_DISTANCE, 1, &diopters);
+        (void)request->setU8(ACAMERA_CONTROL_AF_TRIGGER, 1, &idle);
+    }
     return result;
 }
 

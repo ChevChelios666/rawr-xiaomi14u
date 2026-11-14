@@ -2,9 +2,11 @@
 
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <mutex>
 #include <optional>
+#include <string>
 
 namespace rawrcam::camera {
 
@@ -17,6 +19,13 @@ struct AppliedWhiteBalance {
     std::array<float, 9> transform{1, 0, 0, 0, 1, 0, 0, 0, 1};
 };
 
+// What the 12 MP view's frames were exposed and focused with (capture results).
+struct AppliedExposure {
+    int64_t exposureTimeNs = 0;
+    int32_t sensitivity = 0;
+    std::optional<float> focusDiopters;
+};
+
 class ShotHandover {
 public:
     // Every frame: the white balance the camera applied (any mode).
@@ -24,11 +33,37 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         last_ = AppliedWhiteBalance{gains, transform};
     }
-    // On: requests use the last applied white balance until off.
+    // Every viewfinder frame: the exposure and lens position the camera reported.
+    void noteExposure(int64_t exposureTimeNs, int32_t sensitivity, std::optional<float> focusDiopters) {
+        if (exposureTimeNs <= 0 || sensitivity <= 0) return;
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (carrying_.load(std::memory_order_relaxed)) return;  // the shot's own frames never replace the 12 MP view's
+        lastExposure_ = AppliedExposure{exposureTimeNs, sensitivity,
+                                        focusDiopters && std::isfinite(*focusDiopters) && *focusDiopters >= 0
+                                            ? focusDiopters : std::nullopt};
+    }
+    // On: requests use the last applied white balance, exposure and lens position until off. The shot's session
+    // otherwise starts auto exposure cold (darker, a different shutter: diagnostics 14 Nov, 3.2x) and its full-size
+    // mode may not focus where the 12 MP view did.
     void setCarry(bool on) {
         std::lock_guard<std::mutex> lock(mutex_);
         carried_ = on ? last_ : std::nullopt;
+        carriedExposure_ = on ? lastExposure_ : std::nullopt;
         carrying_.store(on, std::memory_order_relaxed);
+    }
+    // Gain the shot's camera needs at the carried exposure: the 0.5x (camera 3) and 3.2x (camera 4) full-size
+    // readouts give 0.70x the binned mode's raw signal at the same shutter and ISO (diagnostics 14 Nov:
+    // 47.5/68.2, 64.1/91.4, 66.3/93.3); the 1x (camera 2) matches (62.5/61.2).
+    static float fullSizeGain(const std::string& cameraId) {
+        return cameraId == "3" || cameraId == "4" ? 1.0f / 0.70f : 1.0f;
+    }
+    // Focus distance the shot's camera needs for the 12 MP view's: the 3.2x (camera 4) full-size mode focuses nearer
+    // at the same diopters; its sharp plane at 0.627 dpt matched the 12 MP view's at 0.905 (ruler test, 14 Nov). A
+    // scale keeps infinity at infinity. Others unmeasured (1x keeps the lens where the 12 MP view left it).
+    static float fullSizeFocusScale(const std::string& cameraId) { return cameraId == "4" ? 0.627f / 0.905f : 1.0f; }
+    std::optional<AppliedExposure> carriedExposure() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return carriedExposure_;
     }
     // A 50 MP shot's camera switches are under way: the new session keeps the exposure and focus intent even on a
     // different camera (the ultra-wide's 50 MP runs on camera 3, its viewfinder on camera 0).
@@ -64,6 +99,8 @@ private:
     mutable std::mutex mutex_;
     std::optional<AppliedWhiteBalance> last_;
     std::optional<AppliedWhiteBalance> carried_;
+    std::optional<AppliedExposure> lastExposure_;
+    std::optional<AppliedExposure> carriedExposure_;
     std::atomic<bool> hold_{false};
     std::atomic<bool> carrying_{false};
     std::atomic<uint64_t> lastGeneration_{0};

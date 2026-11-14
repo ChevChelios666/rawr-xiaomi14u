@@ -234,7 +234,12 @@ extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreview
 // X14U 50 MP shot: carry the 12 MP view's white balance into the shot's session; hold the viewfinder meanwhile.
 extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setCarryWhiteBalance(
     JNIEnv*, jobject, jboolean on) {
+    // Also the 12 MP view's exposure and lens position (ShotHandover::setCarry).
     rawrcam::camera::shotHandover().setCarry(on == JNI_TRUE);
+    const auto pin = rawrcam::camera::shotHandover().carriedExposure();
+    __android_log_print(ANDROID_LOG_INFO, "RawrCamCameraNDK", "SHOT50_CARRY on=%d exposureNs=%lld iso=%d focus=%.3f",
+                        on == JNI_TRUE ? 1 : 0, pin ? (long long)pin->exposureTimeNs : 0LL, pin ? pin->sensitivity : 0,
+                        pin && pin->focusDiopters ? *pin->focusDiopters : -1.0f);
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setViewfinderHold(

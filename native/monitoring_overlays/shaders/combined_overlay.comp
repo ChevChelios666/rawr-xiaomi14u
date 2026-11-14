@@ -20,15 +20,17 @@ layout(std140, set = 0, binding = 4) uniform CombinedParams {
 }
 pc;
 
-shared float lumaTile[144];
-shared float alphaTile[100];
+// Focus: 14x14 luma (8x8 output + 3px halo) and 12x12 alphas for a radius-2 dilation, so peaking stays
+// visible when the viewfinder image is shown at about half size (X14U: 2048-wide preview on the screen).
+shared float lumaTile[196];
+shared float alphaTile[144];
 
 float lumaAt(ivec2 p) {
     p = clamp(p, ivec2(0), ivec2(int(pc.meta0.y) - 1, int(pc.meta0.z) - 1));
     vec3 rgb = clamp(imageLoad(displayImageFocus, p).rgb, vec3(0.0), vec3(1.0));
     return dot(rgb, vec3(0.2126, 0.7152, 0.0722));
 }
-float lload(int x, int y) { return lumaTile[y * 12 + x]; }
+float lload(int x, int y) { return lumaTile[y * 14 + x]; }
 vec4 premul(vec4 c) {
     float a = clamp(c.a, 0.0, 1.0);
     return vec4(clamp(c.rgb, vec3(0.0), vec3(1.0)) * a, a);
@@ -108,17 +110,17 @@ vec4 rawHighlightAt(ivec2 p) {
 
 void main() {
     uint lid = gl_LocalInvocationIndex;
-    ivec2 origin = ivec2(gl_WorkGroupID.xy) * 8 - ivec2(2);
+    ivec2 origin = ivec2(gl_WorkGroupID.xy) * 8 - ivec2(3);
     // Fused pipeline needs display for false/shadow and focus luma.
-    for (uint i = lid; i < 144u; i += 64u) {
-        ivec2 q = ivec2(int(i % 12u), int(i / 12u));
+    for (uint i = lid; i < 196u; i += 64u) {
+        ivec2 q = ivec2(int(i % 14u), int(i / 14u));
         lumaTile[i] = lumaAt(origin + q);
     }
     barrier();
-    // 10x10 focus alphas for 3x3 dilation.
-    for (uint i = lid; i < 100u; i += 64u) {
-        int ax = int(i % 10u);
-        int ay = int(i / 10u);
+    // 12x12 focus alphas (alpha (ax, ay) = luma (ax + 1, ay + 1)) for the radius-2 dilation.
+    for (uint i = lid; i < 144u; i += 64u) {
+        int ax = int(i % 12u);
+        int ay = int(i / 12u);
         float a = 0.0;
         if (pc.meta1.x != 0u) a = focusAlphaFromScore(focusScoreAt(ax + 1, ay + 1));
         alphaTile[i] = a;
@@ -127,8 +129,8 @@ void main() {
 
     ivec2 p = ivec2(gl_GlobalInvocationID.xy);
     if (p.x >= int(pc.meta0.y) || p.y >= int(pc.meta0.z)) return;
-    int x = int(gl_LocalInvocationID.x) + 1;
-    int y = int(gl_LocalInvocationID.y) + 1;
+    int x = int(gl_LocalInvocationID.x) + 2;
+    int y = int(gl_LocalInvocationID.y) + 2;
 
     vec4 outv = vec4(0.0);
 
@@ -138,11 +140,14 @@ void main() {
     }
 
     if (pc.meta1.x != 0u) {
-        float core = alphaTile[y * 10 + x];
+        float core = alphaTile[y * 12 + x];
         float m = 0.0;
-        for (int dy = -1; dy <= 1; dy++)
-            for (int dx = -1; dx <= 1; dx++) m = max(m, alphaTile[(y + dy) * 10 + (x + dx)]);
-        float a = max(core, 0.4 * m);
+        // A disc of radius 2 (5x5 without its corners), near full strength: about 5px lines on the preview,
+        // 2-3px on screen (the 1px core with a 0.4 halo vanished when scaled down).
+        for (int dy = -2; dy <= 2; dy++)
+            for (int dx = -2; dx <= 2; dx++)
+                if (abs(dx) + abs(dy) < 4) m = max(m, alphaTile[(y + dy) * 12 + (x + dx)]);
+        float a = max(core, 0.9 * m);
         vec4 f = vec4(clamp(pc.focusColor.rgb, vec3(0.0), vec3(1.0)) * a, a);
         outv = (pc.meta1.y != 0u) ? over(f, outv) : f;
         outv = q8(outv);
