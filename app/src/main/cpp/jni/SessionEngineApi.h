@@ -92,6 +92,11 @@ bool stillCaptureHoldsCamera(EngineHandle handle);
 void prewarmStillBuffers(EngineHandle handle, int count);
 // X14U Burst: background development waits while the shutter is held.
 void setStillDevelopPaused(bool paused);
+void armPrecapture(EngineHandle handle, int maxFrames, int intervalMs);
+int precaptureHeld(EngineHandle handle);
+int freezePrecapture(EngineHandle handle);
+int beginPrecaptureDrain(EngineHandle handle);
+void endPrecapture(EngineHandle handle);
 std::string pollJpegWriteCompletion(EngineHandle handle);
 uint64_t recoverStill(EngineHandle handle, const std::string& name, bool multiframe, int dng, int merged, int jpeg);
 std::string runHighlightReplay(EngineHandle handle, const std::string& inputPath);

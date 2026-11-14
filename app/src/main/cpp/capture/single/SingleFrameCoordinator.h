@@ -103,6 +103,15 @@ class SingleFrameCoordinator final {
     void setFilmAssetManager(AAssetManager* assetManager);
     void shutdown() noexcept;
 
+    // X14U Burst pre-capture (see PrecaptureRing): keep the latest frames while armed (maxFrames 0 = off); the
+    // shutter freezes them; after release each still request takes one (beginPrecaptureDrain says how many).
+    void armPrecapture(uint32_t maxFrames, uint32_t intervalMs);
+    [[nodiscard]] bool precaptureArmed() const;
+    [[nodiscard]] uint32_t precaptureHeld() const;
+    uint32_t freezePrecapture();
+    uint32_t beginPrecaptureDrain();
+    void endPrecapture();
+
    private:
     class Impl;
     std::unique_ptr<Impl> impl_;

@@ -142,7 +142,7 @@ internal fun X14uBurstToggles(
     enabled: Boolean,
     pillModifier: Modifier
 ) {
-    val dng by com.rawr.camera.burst.BurstSettings.dng.collectAsState()
+    val format by com.rawr.camera.burst.BurstSettings.format.collectAsState()
     val focus = state.focus.mode
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
         // Always lit (each is a choice): the icon says which.
@@ -170,14 +170,22 @@ internal fun X14uBurstToggles(
             minWidth = SidePillWidth,
             modifier = pillModifier
         )
-        // Always lit (both are a choice, not on / off): one sheet = JPEG, two = JPEG + DNG.
+        // Always lit (each is a choice): one sheet = JPEG, two = JPEG + DNG, sensor pattern = RAW only.
         CompactSidePill(
-            icon = if (dng) X14uIcons.SheetTwo else X14uIcons.SheetOne,
-            label = if (dng) "JPEG+DNG" else "JPEG",
+            icon = when (format) {
+                com.rawr.camera.burst.BurstFormat.Jpeg -> X14uIcons.SheetOne
+                com.rawr.camera.burst.BurstFormat.JpegDng -> X14uIcons.SheetTwo
+                com.rawr.camera.burst.BurstFormat.Raw -> X14uIcons.SheetRaw
+            },
+            label = format.label,
             active = true,
             testTag = "capture_x14u_burst_format",
-            contentDescription = if (dng) "Burst saves JPEG and DNG. Tap for JPEG only." else "Burst saves JPEG. Tap to add DNG.",
-            onClick = { if (enabled) com.rawr.camera.burst.BurstSettings.setDng(!dng) },
+            contentDescription = when (format) {
+                com.rawr.camera.burst.BurstFormat.Jpeg -> "Burst saves JPEG (RAW kept privately for 7 days). Tap for JPEG and DNG."
+                com.rawr.camera.burst.BurstFormat.JpegDng -> "Burst saves JPEG and DNG. Tap for RAW only."
+                com.rawr.camera.burst.BurstFormat.Raw -> "Burst saves RAW only, developed later. Tap for JPEG."
+            },
+            onClick = { if (enabled) com.rawr.camera.burst.BurstSettings.cycleFormat() },
             minWidth = SidePillWidth,
             modifier = pillModifier
         )

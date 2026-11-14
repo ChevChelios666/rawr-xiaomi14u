@@ -21,6 +21,8 @@ class SingleFrameCaptureJob final {
     }
     bool deferSubmittedFrame(const metadata::FrameMetadataSnapshot&, const color::FrameColorTransform&,
                              const tonemap::TonemapParams&, float, bool, const spektrafilm_native::FilmLook&);
+    // Burst pre-capture: this request takes a frame copied before the shutter.
+    void adoptPrecaptured(SingleFrameSnapshot snapshot) { acquisition_.adoptPrecaptured(std::move(snapshot), requestId_); }
     bool beginDeferredSnapshot(AImage*, AHardwareBuffer*, uint64_t, int);
     SingleMatchedFrameResult processMatchedFrame(AImage*, AHardwareBuffer*, int, const metadata::FrameMetadataSnapshot&,
                                                  const color::FrameColorTransform&, const tonemap::TonemapParams&,

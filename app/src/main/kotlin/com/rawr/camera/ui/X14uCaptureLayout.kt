@@ -434,6 +434,26 @@ internal fun X14uCaptureLayout(
     // Burst: hold the shutter to shoot (stills as Photo, one frame each).
     val burst = !isVideo && !pano && LocalCaptureExtras.current.burst
     val burstFps by com.rawr.camera.burst.BurstSettings.fps.collectAsState()
+    val burstPre by com.rawr.camera.burst.BurstSettings.pre.collectAsState()
+    // Pre-capture ring: armed in Burst while the screen is on and no run is going (a run freezes it; it re-arms
+    // after); off on leaving Burst or the screen.
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    val screenStarted by lifecycle.currentStateFlow.collectAsState()
+    val ringOn = burst && burstPre > 0 && !state.burst.running &&
+        screenStarted.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+    val extrasForRing = LocalCaptureExtras.current
+    LaunchedEffect(ringOn, burstPre, burstFps, state.selectedLensId) {
+        if (ringOn) extrasForRing.onArmPrecapture(burstPre, burstFps)
+        else if (!state.burst.running) extrasForRing.onArmPrecapture(0, burstFps)
+    }
+    var burstPreFill by remember { mutableStateOf(0f) }
+    LaunchedEffect(ringOn, burstPre, burstFps) {
+        burstPreFill = 0f
+        while (ringOn) {
+            burstPreFill = extrasForRing.precaptureHeld() / (burstPre * burstFps).coerceAtLeast(1).toFloat()
+            kotlinx.coroutines.delay(250L)
+        }
+    }
     val simplePhoto = !isVideo && (!LocalCaptureExtras.current.proUi || pano)
     // Lens pill memory: the focal length last in use per mode (digital ones too) comes back when the screen starts,
     // and a hidden lens is never landed on at its own focal length (start, mode change, a lens picked elsewhere): the
@@ -960,7 +980,10 @@ internal fun X14uCaptureLayout(
                     cropOpen = open
                 },
                 burstFps = if (burst) burstFps else null,
-                onBurstFps = com.rawr.camera.burst.BurstSettings::cycleFps
+                onBurstFps = com.rawr.camera.burst.BurstSettings::cycleFps,
+                burstPre = if (burst) burstPre else null,
+                burstPreFill = burstPreFill,
+                onBurstPre = com.rawr.camera.burst.BurstSettings::cyclePre
             )
             val buttonTestOn by com.rawr.camera.integration.ButtonTest.enabled.collectAsState()
             if (buttonTestOn) {

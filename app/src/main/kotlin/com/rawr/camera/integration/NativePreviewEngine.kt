@@ -289,6 +289,11 @@ class NativePreviewEngine {
     external fun stillCaptureHoldsCamera(handle: Long): Boolean
     external fun prewarmStillBuffers(handle: Long, count: Int)
     external fun setStillDevelopPaused(paused: Boolean)
+    external fun armPrecapture(handle: Long, maxFrames: Int, intervalMs: Int)
+    external fun precaptureHeld(handle: Long): Int
+    external fun freezePrecapture(handle: Long): Int
+    external fun beginPrecaptureDrain(handle: Long): Int
+    external fun endPrecapture(handle: Long)
 
     external fun pollJpegWriteCompletion(handle: Long): String
 

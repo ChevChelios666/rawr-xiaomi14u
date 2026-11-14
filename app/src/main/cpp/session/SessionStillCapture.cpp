@@ -156,6 +156,14 @@ void SessionEngine::prewarmStillBuffers(int count) {
     }).detach();
 }
 
+void SessionEngine::armPrecapture(int maxFrames, int intervalMs) {
+    capture_.single().armPrecapture(uint32_t(std::max(0, maxFrames)), uint32_t(std::max(1, intervalMs)));
+}
+int SessionEngine::precaptureHeld() { return int(capture_.single().precaptureHeld()); }
+int SessionEngine::freezePrecapture() { return int(capture_.single().freezePrecapture()); }
+int SessionEngine::beginPrecaptureDrain() { return int(capture_.single().beginPrecaptureDrain()); }
+void SessionEngine::endPrecapture() { capture_.single().endPrecapture(); }
+
 bool SessionEngine::stillCaptureHoldsCamera() {
     std::lock_guard<std::mutex> lock(mu_);
     return capture_.holdsCameraFrames();

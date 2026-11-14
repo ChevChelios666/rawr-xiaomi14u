@@ -345,7 +345,10 @@ std::optional<rawrcam::pipeline::FrameDiagnosticsPort::SceneKeyFeedback> Session
 }
 
 void SessionFrameCallbacks::advanceStill() { engine_->capture_.single().advance(); }
-bool SessionFrameCallbacks::isStillCaptureRequested() { return engine_->capture_.single().captureRequested(); }
+bool SessionFrameCallbacks::isStillCaptureRequested() {
+    // Burst pre-capture takes frames through the same claim / copy path as a still.
+    return engine_->capture_.single().captureRequested() || engine_->capture_.single().precaptureArmed();
+}
 bool SessionFrameCallbacks::isFullSizeStillCopy(const rawrcam::metadata::FrameMetadataSnapshot& metadata) {
     return engine_->isFullSizeStillCopy(metadata);
 }

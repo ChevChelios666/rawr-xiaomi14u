@@ -115,9 +115,45 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     fun setBurst(on: Boolean) {
         if (burstFlow.value == on) return
         burstFlow.value = on
-        if (!on) controller.dispatch(com.rawr.camera.architecture.EndBurstMode)
-        // Without this the first ~6 frames waited 25-110 ms each for a RAW buffer (diagnostics 14 Nov).
-        else previewCoordinator.prewarmStillBuffers(6)
+        if (!on) {
+            previewCoordinator.armPrecapture(0, 50)
+            controller.dispatch(com.rawr.camera.architecture.EndBurstMode)
+        } else {
+            // Without this the first ~6 frames waited 25-110 ms each for a RAW buffer (diagnostics 14 Nov).
+            previewCoordinator.prewarmStillBuffers(6)
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { cleanBurstRaw() }
+        }
+    }
+
+    /** Burst pre-capture: the ring holds [seconds] at [fps] (0 = off); the capture screen re-arms it after each run. */
+    fun armPrecapture(seconds: Int, fps: Int) {
+        val frames = if (burstFlow.value) seconds * fps else 0
+        previewCoordinator.armPrecapture(frames, 1000 / fps.coerceIn(1, 60))
+    }
+
+    fun precaptureHeld(): Int = previewCoordinator.precaptureHeld()
+
+    /** A burst run's manifest (files/bursts/<folder>.json): times, press frame, speed, pre-capture count. */
+    private fun writeBurstManifest(run: com.rawr.camera.integration.BurstRun) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val dir = java.io.File(getApplication<Application>().filesDir, "bursts").apply { mkdirs() }
+                val json = org.json.JSONObject()
+                    .put("folder", run.folder).put("tag", run.tag).put("fps", run.fps)
+                    .put("startedAt", run.startedAtMillis).put("liveMs", run.liveMs)
+                    .put("preFrames", run.preFrames).put("pressNumber", run.pressNumber)
+                    .put("liveFrames", run.liveFrames).put("format", run.format)
+                    .put("rawKept", run.rawKept).put("rawKeepDays", com.rawr.camera.burst.BurstSettings.RAW_KEEP_DAYS)
+                java.io.File(dir, run.folder + ".json").writeText(json.toString(2))
+            }
+        }
+    }
+
+    /** Private burst RAW older than the keep time goes (files/burst_raw/<folder>/). */
+    private fun cleanBurstRaw() {
+        val root = java.io.File(getApplication<Application>().filesDir, "burst_raw")
+        val limit = System.currentTimeMillis() - com.rawr.camera.burst.BurstSettings.RAW_KEEP_DAYS * 86_400_000L
+        root.listFiles()?.filter { it.isDirectory && it.lastModified() < limit }?.forEach { it.deleteRecursively() }
     }
 
     /** X14U Pano merge on the phone: progress and result for the viewfinder (clears a few seconds after the end). */
@@ -484,6 +520,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 }
             },
             onLensSelected = { lensId -> settingsEditor.update { it.copy(lastLensId = lensId) } },
+            onBurstFinished = ::writeBurstManifest,
             onCapturePreferencesChanged = { before, after ->
                 // HDR+ is remembered per lens. Mode and LOG switches change what tone settings mean, so they edit
                 // the global settings directly.

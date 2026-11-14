@@ -128,6 +128,12 @@ internal class CaptureJournal(private val directory: File, private val syncDirec
     }
 
     fun remove(entry: Entry) {
+        // X14U Burst (JPEG-only): the frame's RAW (this job's payload) stays privately for full-quality develop
+        // (burst_raw/<burst folder>/, deleted after 7 days); moved, not copied (same volume).
+        CaptureFileNames.retainedRawFolder(entry.name)?.let { folder ->
+            val target = File(requireNotNull(directory.parentFile), "burst_raw/$folder").apply { mkdirs() }
+            runCatching { File(directory, entry.name + ".job").renameTo(File(target, entry.name + ".job")) }
+        }
         // Remove payload first: an interrupted cleanup leaves a completed journal,
         // which recovery can safely finish without rendering or duplicating outputs.
         File(directory, entry.name + ".job").delete()

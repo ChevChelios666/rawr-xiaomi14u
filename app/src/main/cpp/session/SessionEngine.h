@@ -122,6 +122,12 @@ class SessionEngine {
     // Some accepted still still needs the camera session (see CaptureCoordinator::holdsCameraFrames).
     bool stillCaptureHoldsCamera();
     void prewarmStillBuffers(int count);
+    // X14U Burst pre-capture (SingleFrameCoordinator / PrecaptureRing).
+    void armPrecapture(int maxFrames, int intervalMs);
+    int precaptureHeld();
+    int freezePrecapture();
+    int beginPrecaptureDrain();
+    void endPrecapture();
     std::string pollJpegWriteCompletion();
     void setPersistZslRingEnabled(bool enabled);
     void setExperimentalMultiframeEnabled(bool enabled);

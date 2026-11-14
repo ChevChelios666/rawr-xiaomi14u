@@ -699,6 +699,17 @@ class RawPreviewCoordinator(application: Application) : AutoCloseable {
     /** An accepted still still needs the camera session (frames due or not yet copied out). */
     fun stillCaptureHoldsCamera(): Boolean = native.stillCaptureHoldsCamera(nativeHandle)
 
+    /** X14U Burst pre-capture (native PrecaptureRing); maxFrames 0 = off. */
+    fun armPrecapture(maxFrames: Int, intervalMs: Int) {
+        if (nativeHandle != 0L) native.armPrecapture(nativeHandle, maxFrames, intervalMs)
+    }
+    fun precaptureHeld(): Int = if (nativeHandle != 0L) native.precaptureHeld(nativeHandle) else 0
+    fun freezePrecapture(): Int = if (nativeHandle != 0L) native.freezePrecapture(nativeHandle) else 0
+    fun beginPrecaptureDrain(): Int = if (nativeHandle != 0L) native.beginPrecaptureDrain(nativeHandle) else 0
+    fun endPrecapture() {
+        if (nativeHandle != 0L) native.endPrecapture(nativeHandle)
+    }
+
     /** X14U Burst: background development waits while the shutter is held. */
     fun setStillDevelopPaused(paused: Boolean) = native.setStillDevelopPaused(paused)
 

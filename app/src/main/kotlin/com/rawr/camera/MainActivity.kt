@@ -283,6 +283,8 @@ class MainActivity : ComponentActivity() {
                     onSetPano = captureViewModel::setPano,
                     burst = burst,
                     onSetBurst = captureViewModel::setBurst,
+                    onArmPrecapture = captureViewModel::armPrecapture,
+                    precaptureHeld = captureViewModel::precaptureHeld,
                     onPanoUndo = captureViewModel::deletePanoFrame,
                     onPanoMerge = captureViewModel::mergePano,
                     panoStatus = panoStatus,

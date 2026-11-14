@@ -219,6 +219,36 @@ internal object X14uIcons {
         }
     }
 
+    /** Burst pre-capture: an arrow turning back around clock hands. */
+    val History: ImageVector by lazy {
+        icon("X14u.History") {
+            stroke {
+                moveTo(4.5f, 12f)
+                arcTo(7.5f, 7.5f, 0f, true, true, 6.7f, 17.3f)
+                moveTo(4.5f, 12f); lineTo(2.6f, 10f)
+                moveTo(4.5f, 12f); lineTo(6.6f, 10.2f)
+                moveTo(12f, 8f); lineTo(12f, 12f); lineTo(14.8f, 13.8f)
+            }
+        }
+    }
+
+    /** Burst format RAW: a sheet with a small 2x2 sensor pattern. */
+    val SheetRaw: ImageVector by lazy {
+        icon("X14u.SheetRaw") {
+            stroke {
+                moveTo(8f, 3f); lineTo(16f, 3f)
+                arcTo(1.5f, 1.5f, 0f, false, true, 17.5f, 4.5f); lineTo(17.5f, 19.5f)
+                arcTo(1.5f, 1.5f, 0f, false, true, 16f, 21f); lineTo(8f, 21f)
+                arcTo(1.5f, 1.5f, 0f, false, true, 6.5f, 19.5f); lineTo(6.5f, 4.5f)
+                arcTo(1.5f, 1.5f, 0f, false, true, 8f, 3f); close()
+            }
+            stroke(1.4f) {
+                moveTo(9f, 9f); lineTo(15f, 9f); lineTo(15f, 15f); lineTo(9f, 15f); close()
+                moveTo(12f, 9f); lineTo(12f, 15f); moveTo(9f, 12f); lineTo(15f, 12f)
+            }
+        }
+    }
+
     /** Burst format JPEG: one photo sheet (a small landscape on it). */
     val SheetOne: ImageVector by lazy {
         icon("X14u.SheetOne") {

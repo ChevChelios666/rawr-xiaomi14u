@@ -16,42 +16,71 @@ internal object CaptureFileNames {
         pendingSuffix.set(if (suffix.isEmpty()) null else suffix to System.nanoTime())
     }
 
-    fun takeStillSuffix(): String {
-        // X14U Burst: each frame the burst queued takes the next number ("_BURST2313_007"), in capture order.
+    fun takeStillSuffix(): String = takeStill().first
+
+    /**
+     * The next still's name tag and, for a burst frame, its folder (null: the save location itself).
+     * X14U Burst: each queued frame takes its reserved number ("_BURST004945_041"), the press frame "_COVER" too.
+     */
+    fun takeStill(): Pair<String, String?> {
         burstTag?.let { tag ->
-            if (burstPending.getAndUpdate { if (it > 0) it - 1 else 0 } > 0) {
-                return tag + "_%03d".format(java.util.Locale.US, burstIndex.incrementAndGet())
+            val number = burstNumbers.pollFirst()
+            if (number != null) {
+                val cover = if (number == burstCover) "_COVER" else ""
+                return (tag + "_%03d".format(Locale.US, number) + cover) to burstFolder
             }
         }
-        val (suffix, at) = pendingSuffix.getAndSet(null) ?: return ""
-        return if (System.nanoTime() - at < 20_000_000_000L) suffix else ""
+        val (suffix, at) = pendingSuffix.getAndSet(null) ?: return "" to null
+        return (if (System.nanoTime() - at < 20_000_000_000L) suffix else "") to null
     }
 
     @Volatile private var burstTag: String? = null
-    private val burstIndex = java.util.concurrent.atomic.AtomicInteger(0)
-    private val burstPending = java.util.concurrent.atomic.AtomicInteger(0)
+    @Volatile var burstFolder: String? = null
+        private set
+    @Volatile private var burstCover = 0
+    private val burstNumbers = java.util.concurrent.LinkedBlockingDeque<Int>()
+    private val nextLive = java.util.concurrent.atomic.AtomicInteger(1)
+    /** Burst tags whose RAW job files are kept privately (JPEG-only bursts) for full-quality develop later. */
+    private val retainedTags = java.util.concurrent.ConcurrentHashMap<String, String>()
 
-    /** A burst starts: its frames are named [tag]_001, _002, … */
-    fun startBurst(tag: String) {
-        burstIndex.set(0)
-        burstPending.set(0)
+    /**
+     * A burst starts ([tag] "_BURST004945", folder "BURST_20261114_004945"): live frames are numbered from
+     * [firstLive] (frames from before the press take 1…firstLive-1 later), and the first live frame is the cover.
+     */
+    fun startBurst(tag: String, folder: String?, firstLive: Int = 1, retainRaw: Boolean = false) {
+        burstNumbers.clear()
+        nextLive.set(firstLive)
+        burstCover = firstLive
+        burstFolder = folder
         burstTag = tag
+        if (retainRaw) retainedTags[tag] = folder ?: ("BURST" + tag.removePrefix("_BURST"))
     }
 
-    /** One more burst frame is on its way to the capture worker (takes the next number). */
+    /** One more live burst frame is on its way to the capture worker (takes the next live number). */
     fun burstFrameQueued() {
-        burstPending.incrementAndGet()
+        burstNumbers.addLast(nextLive.getAndIncrement())
+    }
+
+    /** A pre-capture frame (taken before the press) is on its way: it takes [number]. */
+    fun burstPreFrameQueued(number: Int) {
+        burstNumbers.addLast(number)
     }
 
     /** A queued burst frame never reached the naming step (refused before it). */
     fun burstFrameDropped() {
-        burstPending.getAndUpdate { if (it > 0) it - 1 else 0 }
+        burstNumbers.pollLast()
+    }
+
+    /** True when this job's RAW stays (privately) after its photo is saved; the burst folder it goes to. */
+    fun retainedRawFolder(jobName: String): String? {
+        return retainedTags.entries.firstOrNull { jobName.contains(it.key + "_") }?.value
     }
 
     /** Leaving Burst: later photos get plain names. */
     fun endBurst() {
         burstTag = null
-        burstPending.set(0)
+        burstFolder = null
+        burstNumbers.clear()
     }
 
     fun baseName(wallClockMillis: Long): String =

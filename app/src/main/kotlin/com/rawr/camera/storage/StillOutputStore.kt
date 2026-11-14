@@ -97,8 +97,12 @@ class StillOutputStore(
         filmFallback: Boolean = false,
         recipe: String = ""
     ): PreparedCapture? {
-        val base = captureBaseName(wallClockMillis)
-        val destination = CaptureSaveLocation.fromId(saveLocationId)
+        val (base, burstFolder) = captureBaseName(wallClockMillis)
+        // X14U Burst: one folder per burst inside the save location (picked SAF folders keep the flat layout).
+        val destination = CaptureSaveLocation.fromId(saveLocationId).let { location ->
+            if (burstFolder == null || location.relativePath.isEmpty()) location
+            else location.copy(relativePath = location.relativePath.trimEnd('/') + "/Bursts/" + burstFolder + "/")
+        }
         require(dngEnabled || jpegEnabled)
         val multiframe = multiframeFrames >= 2
         val conditional = !dngEnabled && jpegEnabled && filmFallback
@@ -398,9 +402,10 @@ class StillOutputStore(
         private val claimed = ConcurrentHashMap.newKeySet<String>()
     }
 
-    private fun captureBaseName(wallClockMillis: Long): String {
+    private fun captureBaseName(wallClockMillis: Long): Pair<String, String?> {
         val uniqueMillis = lastNameTimestamp.updateAndGet { previous -> maxOf(wallClockMillis, previous + 1) }
-        return CaptureFileNames.baseName(uniqueMillis) + CaptureFileNames.takeStillSuffix()
+        val (suffix, folder) = CaptureFileNames.takeStill()
+        return (CaptureFileNames.baseName(uniqueMillis) + suffix) to folder
     }
 
     private fun prepareFile(displayName: String, mimeType: String, destination: CaptureSaveLocation): PreparedFile? {

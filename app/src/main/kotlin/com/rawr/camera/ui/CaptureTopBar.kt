@@ -69,7 +69,11 @@ internal fun CaptureTopBar(
     transparent: Boolean = false,
     /** X14U Burst: the speed chip (fps) in the format button's place; null outside Burst. */
     burstFps: Int? = null,
-    onBurstFps: () -> Unit = {}
+    onBurstFps: () -> Unit = {},
+    /** X14U Burst: pre-capture seconds (0 = off) in the timer's place, and how full its buffer is (0…1). */
+    burstPre: Int? = null,
+    burstPreFill: Float = 0f,
+    onBurstPre: () -> Unit = {}
 ) {
     val haptics = LocalCaptureHaptics.current
     Row(
@@ -165,11 +169,33 @@ internal fun CaptureTopBar(
                 )
             }
             TopBarSlot {
-                SelfTimerTopBarChoice(
-                    state = state,
-                    dispatch = dispatch,
-                    orientation = state.orientation
-                )
+                // Pre-capture: Off / 1 / 2 / 3 s; a line under it fills as the buffer does (no viewfinder overlay).
+                Box(contentAlignment = Alignment.BottomCenter) {
+                    VideoTopBarChoice(
+                        icon = X14uIcons.History,
+                        label = if ((burstPre ?: 0) > 0) "PRE ${burstPre}s" else "PRE OFF",
+                        testTag = "capture_x14u_burst_pre",
+                        description = if ((burstPre ?: 0) > 0) "Pre-capture $burstPre seconds before the press. Tap to change."
+                        else "Pre-capture off. Tap to keep frames from before the press.",
+                        enabled = true,
+                        orientation = state.orientation,
+                        rotateLabel = false,
+                        rotateIcon = false,
+                        rotateWhole = true,
+                        onClick = {
+                            haptics.selection()
+                            onBurstPre()
+                        }
+                    )
+                    if ((burstPre ?: 0) > 0) Box(
+                        Modifier.padding(bottom = 1.dp).size(28.dp, 2.dp)
+                            .background(Color.White.copy(alpha = .25f), androidx.compose.foundation.shape.RoundedCornerShape(1.dp)),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        Box(Modifier.fillMaxHeight().fillMaxWidth(burstPreFill.coerceIn(0f, 1f))
+                            .background(CaptureColors.Accent, androidx.compose.foundation.shape.RoundedCornerShape(1.dp)))
+                    }
+                }
             }
         } else {
             TopBarSlot {

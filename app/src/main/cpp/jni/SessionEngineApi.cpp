@@ -227,6 +227,15 @@ uint64_t requestRawStillCapture(EngineHandle h, rawrcam::encoding::dng::DngCaptu
 std::string pollDngWriteCompletion(EngineHandle h) { return h ? engine(h)->pollDngWriteCompletion() : std::string{}; }
 bool stillCaptureHoldsCamera(EngineHandle h) { return h && engine(h)->stillCaptureHoldsCamera(); }
 void setStillDevelopPaused(bool paused) { rawrcam::capture::StillDevelopGate::setPaused(paused); }
+void armPrecapture(EngineHandle h, int maxFrames, int intervalMs) {
+    if (h) engine(h)->armPrecapture(maxFrames, intervalMs);
+}
+int precaptureHeld(EngineHandle h) { return h ? engine(h)->precaptureHeld() : 0; }
+int freezePrecapture(EngineHandle h) { return h ? engine(h)->freezePrecapture() : 0; }
+int beginPrecaptureDrain(EngineHandle h) { return h ? engine(h)->beginPrecaptureDrain() : 0; }
+void endPrecapture(EngineHandle h) {
+    if (h) engine(h)->endPrecapture();
+}
 void prewarmStillBuffers(EngineHandle h, int count) {
     if (h) engine(h)->prewarmStillBuffers(count);
 }

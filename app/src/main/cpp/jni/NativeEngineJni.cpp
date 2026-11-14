@@ -893,6 +893,28 @@ Java_com_rawr_camera_integration_NativePreviewEngine_pollDngWriteCompletion(JNIE
     return env->NewStringUTF(s.c_str());
 }
 extern "C" JNIEXPORT void JNICALL
+Java_com_rawr_camera_integration_NativePreviewEngine_armPrecapture(JNIEnv*, jobject, jlong h, jint maxFrames,
+                                                                   jint intervalMs) {
+    rawrcam::session::armPrecapture(handle(h), maxFrames, intervalMs);
+}
+extern "C" JNIEXPORT jint JNICALL
+Java_com_rawr_camera_integration_NativePreviewEngine_precaptureHeld(JNIEnv*, jobject, jlong h) {
+    return rawrcam::session::precaptureHeld(handle(h));
+}
+extern "C" JNIEXPORT jint JNICALL
+Java_com_rawr_camera_integration_NativePreviewEngine_freezePrecapture(JNIEnv*, jobject, jlong h) {
+    return rawrcam::session::freezePrecapture(handle(h));
+}
+extern "C" JNIEXPORT jint JNICALL
+Java_com_rawr_camera_integration_NativePreviewEngine_beginPrecaptureDrain(JNIEnv*, jobject, jlong h) {
+    return rawrcam::session::beginPrecaptureDrain(handle(h));
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_rawr_camera_integration_NativePreviewEngine_endPrecapture(JNIEnv*, jobject, jlong h) {
+    rawrcam::session::endPrecapture(handle(h));
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_rawr_camera_integration_NativePreviewEngine_setStillDevelopPaused(JNIEnv*, jobject, jboolean paused) {
     rawrcam::session::setStillDevelopPaused(paused == JNI_TRUE);
 }

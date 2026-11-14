@@ -28,7 +28,9 @@ class NativeCaptureScreenController(
     /** A lens switch was accepted (persisted as the next launch's lens). */
     private val onLensSelected: (String) -> Unit = {},
     dispatcher: CoroutineDispatcher = Dispatchers.Default,
-    private val foregroundToken: () -> Any?
+    private val foregroundToken: () -> Any?,
+    /** X14U Burst: a run (with its pre-capture frames) was handed to saving. */
+    private val onBurstFinished: (BurstRun) -> Unit = {}
 ) : CaptureScreenController {
     private val mutableState =
         MutableStateFlow(
@@ -491,13 +493,20 @@ class NativeCaptureScreenController(
         if (burstJob?.isActive == true) return
         val token = foregroundToken() ?: return
         burstRefused.set(false)
-        val tag = "_BURST" + java.text.SimpleDateFormat("HHmmss", java.util.Locale.US).format(java.util.Date())
-        com.rawr.camera.storage.CaptureFileNames.startBurst(tag)
+        val now = java.util.Date()
+        val tag = "_BURST" + java.text.SimpleDateFormat("HHmmss", java.util.Locale.US).format(now)
+        val folder = "BURST_" + java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(now)
+        // Pre-capture: the frames held from before the press freeze now (live frames take the camera from here on);
+        // they are numbered first and saved after release.
+        val preEstimate = if (action.pre) coordinator.freezePrecapture() else 0
+        com.rawr.camera.storage.CaptureFileNames.startBurst(tag, folder, firstLive = preEstimate + 1,
+            retainRaw = action.format == CaptureOutputFormat.Jpeg)
         update { it.copy(burst = it.burst.copy(running = true, shots = 0, fps = action.fps, limit = action.limit,
-            stoppedFull = false, startedAtMs = android.os.SystemClock.uptimeMillis())) }
+            stoppedFull = false, startedAtMs = android.os.SystemClock.uptimeMillis(), preFrames = 0)) }
         val interval = (1000L / action.fps.coerceIn(1, 60)).coerceAtLeast(1L)
         // Saving waits until the shutter is let go (it competed with capture and caused the dips, Nov 14).
         coordinator.setStillDevelopPaused(true)
+        val startedWall = System.currentTimeMillis()
         burstJob = scope.launch {
             var queued = 0
             var next = android.os.SystemClock.uptimeMillis()
@@ -514,20 +523,41 @@ class NativeCaptureScreenController(
                         queued++
                     }
                     next += interval
-                    val now = android.os.SystemClock.uptimeMillis()
-                    if (next < now) next = now
-                    delay(next - now)
+                    val t = android.os.SystemClock.uptimeMillis()
+                    if (next < t) next = t
+                    delay(next - t)
                 }
             } finally {
                 withContext(NonCancellable) {
                     // The frames already queued still count (they are on their way to the worker).
                     while (burstWaiting.get() > 0) delay(20L)
+                    val liveMs = android.os.SystemClock.uptimeMillis() - state.value.burst.startedAtMs
+                    val live = state.value.burst.shots
+                    // Then the frames from before the press, oldest first (numbers 1…): each request takes one.
+                    var pre = 0
+                    if (action.pre) {
+                        val held = coordinator.beginPrecaptureDrain()
+                        for (i in 1..held) {
+                            com.rawr.camera.storage.CaptureFileNames.burstPreFrameQueued(i)
+                            burstWaiting.incrementAndGet()
+                            if (!captureQueue.enqueue(action.format) { foregroundToken() === token }) {
+                                burstWaiting.decrementAndGet()
+                                com.rawr.camera.storage.CaptureFileNames.burstFrameDropped()
+                                break
+                            }
+                            while (burstWaiting.get() >= 3) delay(5L)
+                        }
+                        while (burstWaiting.get() > 0) delay(20L)
+                        pre = state.value.burst.shots - live
+                        coordinator.endPrecapture()
+                    }
                     coordinator.setStillDevelopPaused(false)
-                    val ms = android.os.SystemClock.uptimeMillis() - state.value.burst.startedAtMs
                     android.util.Log.i("RawrCamCapture", "BURST_RUN fps=${action.fps} queued=$queued " +
-                        "accepted=${state.value.burst.shots} ms=$ms refused=${burstRefused.get()}")
+                        "accepted=$live pre=$pre ms=$liveMs refused=${burstRefused.get()}")
+                    onBurstFinished(BurstRun(folder, tag, action.fps, startedWall, liveMs, pre, preEstimate + 1, live,
+                        action.format.name, action.format == CaptureOutputFormat.Jpeg))
                     update { it.copy(burst = it.burst.copy(running = false, lastCount = it.burst.shots,
-                        stoppedFull = burstRefused.get())) }
+                        stoppedFull = burstRefused.get(), preFrames = pre)) }
                 }
             }
         }
@@ -600,3 +630,18 @@ class NativeCaptureScreenController(
         scope.cancel()
     }
 }
+
+/** X14U Burst: what a run was, for its manifest (the burst viewer reads it). */
+data class BurstRun(
+    val folder: String,
+    val tag: String,
+    val fps: Int,
+    val startedAtMillis: Long,
+    val liveMs: Long,
+    val preFrames: Int,
+    /** File number of the press frame (the cover). */
+    val pressNumber: Int,
+    val liveFrames: Int,
+    val format: String,
+    val rawKept: Boolean
+)

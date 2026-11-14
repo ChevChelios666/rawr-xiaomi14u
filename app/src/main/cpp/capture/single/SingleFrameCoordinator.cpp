@@ -1,5 +1,6 @@
 #include "capture/single/SingleFrameCoordinator.h"
 #include "capture/single/RawBufferPool.h"
+#include "capture/single/PrecaptureRing.h"
 
 #include <android/log.h>
 #include <sys/resource.h>
@@ -167,12 +168,21 @@ class SingleFrameCoordinator::Impl {
         }
         diagnostics::RuntimeTraceRecorder::instance().record(diagnostics::RuntimeTraceStage::StillAccepted, 0,
                                                              entry->id);
-        prepare(entry);
+        // Burst pre-capture: while draining, the request takes a frame from before the shutter (already copied)
+        // instead of waiting for a camera frame.
+        auto adopted = precapture_.takeFrozen();
+        if (adopted) {
+            entry->shot->adoptPrecaptured(std::move(*adopted));
+            entry->prepared.store(true);
+        } else {
+            prepare(entry);
+        }
         {
             std::lock_guard<std::mutex> lock(mutex_);
             queue_.push_back(entry);
             markHeadResidentLocked();
         }
+        if (adopted) handOff(entry);
         changed_.notify_one();
         return entry->id;
     }
@@ -253,6 +263,13 @@ class SingleFrameCoordinator::Impl {
     bool deferSubmittedFrame(const metadata::FrameMetadataSnapshot& metadata, const color::FrameColorTransform& color,
                              const tonemap::TonemapParams& tone, float gain, bool filmEnabled,
                              const spektrafilm_native::FilmLook& filmLook) {
+        if (deferToRequests(metadata, color, tone, gain, filmEnabled, filmLook)) return true;
+        // No still wants it: Burst pre-capture may keep it.
+        return precapture_.offer(metadata, color, tone, gain, filmEnabled, filmLook);
+    }
+    bool deferToRequests(const metadata::FrameMetadataSnapshot& metadata, const color::FrameColorTransform& color,
+                         const tonemap::TonemapParams& tone, float gain, bool filmEnabled,
+                         const spektrafilm_native::FilmLook& filmLook) {
         advance();
         for (const auto& entry : entries()) {
             if (entry->handedOff.load()) continue;
@@ -300,7 +317,7 @@ class SingleFrameCoordinator::Impl {
             if (owned) handOff(entry);
             return owned;
         }
-        return false;
+        return precapture_.begin(imageLease, ahb, timestamp, fence);
     }
     std::string pollDngCompletion() {
         advance();
@@ -496,6 +513,11 @@ class SingleFrameCoordinator::Impl {
     std::deque<std::shared_ptr<Entry>> queue_;
     multiframe::StringMailbox dngBox_, jpegBox_;
     std::thread worker_;
+
+   public:
+    PrecaptureRing precapture_{[this](const std::string& line) {
+        if (diagnostic_) diagnostic_(line);
+    }};
 };
 
 SingleFrameCoordinator::SingleFrameCoordinator(const rawrcam::vulkan::VulkanContext& vulkanContext,
@@ -553,6 +575,14 @@ void SingleFrameCoordinator::failAcquisition(uint64_t id, const std::string& rea
 }
 void SingleFrameCoordinator::resetHqProcessing() noexcept { impl_->resetHqProcessing(); }
 void SingleFrameCoordinator::shutdown() noexcept { impl_->shutdown(); }
+void SingleFrameCoordinator::armPrecapture(uint32_t maxFrames, uint32_t intervalMs) {
+    impl_->precapture_.arm(maxFrames, intervalMs);
+}
+bool SingleFrameCoordinator::precaptureArmed() const { return impl_->precapture_.armed(); }
+uint32_t SingleFrameCoordinator::precaptureHeld() const { return impl_->precapture_.held(); }
+uint32_t SingleFrameCoordinator::freezePrecapture() { return impl_->precapture_.freeze(); }
+uint32_t SingleFrameCoordinator::beginPrecaptureDrain() { return impl_->precapture_.beginDrain(); }
+void SingleFrameCoordinator::endPrecapture() { impl_->precapture_.endFrozen(); }
 
 }  // namespace rawrcam::capture
 

@@ -193,6 +193,35 @@ SingleMatchedFrameResult SingleFrameCaptureAcquisition::processMatchedFrame(
     }
     return result;
 }
+void SingleFrameCaptureAcquisition::adoptPrecaptured(SingleFrameSnapshot snapshot, uint64_t requestId) {
+    slot_.reset();  // no camera frame will come for this request
+    snapshot.frame->requestId = requestId;
+    std::lock_guard<std::mutex> lock(mutex_);
+    workerRunning_ = true;
+    try {
+        worker_ = std::thread([this, deferred = std::move(snapshot)]() mutable {
+            setpriority(PRIO_PROCESS, 0, 5);
+            std::string error;
+            try {
+                remosaicBlockCfaStill(*deferred.frame);
+                journal_.commit(deferred);
+            } catch (const std::exception& e) {
+                error = e.what();
+            } catch (...) {
+                error = "raw_journal_failed";
+            }
+            std::lock_guard<std::mutex> guard(mutex_);
+            if (error.empty())
+                ready_ = std::move(deferred);
+            else
+                failure_ = error;
+            workerRunning_ = false;
+        });
+    } catch (...) {
+        workerRunning_ = false;
+        failure_ = "precapture_thread_failed";
+    }
+}
 bool SingleFrameCaptureAcquisition::expectsTimestamp(uint64_t timestamp) const {
     std::lock_guard<std::mutex> lock(mutex_);
     return pending_ && pending_->frame->timestampNs == timestamp;
