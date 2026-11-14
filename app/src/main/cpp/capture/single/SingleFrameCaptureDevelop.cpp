@@ -59,12 +59,29 @@ bool SingleFrameCaptureDevelop::start(const std::shared_ptr<const rawrcam::imagi
         // DNG writer is never mutated; without a map the demosaic reads
         // the shared bytes directly (no copy).
         std::shared_ptr<const std::vector<uint8_t>> demosaicRaw(capturedHandle, &captured.raw16);
-        if (!captured.metadata.hotPixelMap.empty() && !captured.raw16.empty()) {
+        // No map from the camera (X14U: none on any camera): find the defects in this frame.
+        std::vector<int32_t> detectedHot;
+        const bool detect = captured.metadata.hotPixelMap.empty() && !captured.raw16.empty() &&
+                            captured.width * sizeof(uint16_t) == captured.packedRowStrideBytes;
+        if (detect) {
+            const auto begin = std::chrono::steady_clock::now();
+            float black = 0.0f;
+            for (const float b : captured.metadata.blackLevelPhysicalRggb) black += b * 0.25f;
+            detectedHot = develop::detectHotPixelsInPackedRaw16(captured.raw16, captured.width, captured.height, black,
+                                                                captured.metadata.effectiveWhiteLevel);
+            emit("HOT_PIXEL_DETECT requestId=" + std::to_string(captured.requestId) + " found=" +
+                 std::to_string(detectedHot.size() / 2) + " ms=" +
+                 std::to_string(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin)
+                                    .count()));
+        }
+        const auto& hotMap = detectedHot.empty() ? captured.metadata.hotPixelMap : detectedHot;
+        if (!hotMap.empty() && !captured.raw16.empty()) {
             auto concealed = std::make_shared<std::vector<uint8_t>>(captured.raw16);
-            const std::size_t fixed = develop::concealHotPixelsInPackedRaw16(
-                *concealed, captured.width, captured.height, captured.metadata.hotPixelMap);
+            const std::size_t fixed =
+                develop::concealHotPixelsInPackedRaw16(*concealed, captured.width, captured.height, hotMap);
             emit("HOT_PIXEL_CONCEAL requestId=" + std::to_string(captured.requestId) + " fixed=" +
-                 std::to_string(fixed) + " reported=" + std::to_string(captured.metadata.hotPixelMap.size() / 2));
+                 std::to_string(fixed) + " reported=" + std::to_string(captured.metadata.hotPixelMap.size() / 2) +
+                 " detected=" + std::to_string(detectedHot.size() / 2));
             demosaicRaw = std::move(concealed);
         }
 

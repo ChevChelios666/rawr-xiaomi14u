@@ -12,10 +12,13 @@ namespace rawrcam::metadata {
 inline constexpr uint64_t kSensitivityProbeRequestId = ~uint64_t{0};
 // One-shot frame before full-size stills (CameraDeviceSession::submitFullSizeDecision).
 inline constexpr uint64_t kFullSizeDecisionRequestId = ~uint64_t{0} - 1;
+// X14U HAL 50 MP probe: the aux JPEG still (CameraDeviceSession::captureHal50Still); no RAW comes with it.
+inline constexpr uint64_t kHal50StillRequestId = ~uint64_t{0} - 2;
 
 // Calibration and decision requests are not images from the still-only stream.
 inline bool isCaptureStreamStill(bool photoStream, uint64_t tag) {
-    return photoStream && tag != 0 && tag != kSensitivityProbeRequestId && tag != kFullSizeDecisionRequestId;
+    return photoStream && tag != 0 && tag != kSensitivityProbeRequestId && tag != kFullSizeDecisionRequestId &&
+           tag != kHal50StillRequestId;
 }
 
 enum class EffectiveWhiteLevelSource : std::uint8_t {

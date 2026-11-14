@@ -13,6 +13,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <cstdio>
+#include <ctime>
 #include <fstream>
 #include <iomanip>
 #include <map>
@@ -1242,6 +1243,7 @@ struct NativeCameraController::Impl final : CameraEventSink {
             diag(std::string("CAMERA_STILL_FAILED tag=") + std::to_string(tag) + " kind=" + kind +
                  " frame=" + std::to_string(frameNumber) + " reason=" + std::to_string(reason) +
                  " lens=" + control.capabilities.lensId);
+            if (tag == metadata::kHal50StillRequestId) return;
             if (tag == metadata::kFullSizeDecisionRequestId) {
                 // Not a capture: the still that follows is still submitted.
                 if (fullSizeDecision == FullSizeDecision::Waiting) fullSizeDecision = FullSizeDecision::Failed;
@@ -1322,6 +1324,20 @@ struct NativeCameraController::Impl final : CameraEventSink {
         if (!actions.frame) return;
         // The decision frame only fills the discarded companion: no viewfinder
         // or capture consumer may see its metadata.
+        if (actions.frame->optimizedStillRequestId == metadata::kHal50StillRequestId) {
+            const auto& f = *actions.frame;
+            const auto mode = deviceSession.vendorResultValue(result, "org.codeaurora.qcamera3.sensor_meta_data.current_mode");
+            char line[320];
+            std::snprintf(line, sizeof(line),
+                          "HAL50_RESULT lens=%s exposureNs=%lld iso=%d aperture=%.2f focus=%.3f afMode=%d "
+                          "lensState=%d sensorMode=%lld",
+                          control.capabilities.lensId.c_str(), (long long)f.exposureTimeNs, f.sensitivity,
+                          f.aperture.value_or(-1.0f), f.focusDistanceDiopters.value_or(-1.0f),
+                          int(actions.resultAfMode.value_or(255)), int(actions.resultLensState.value_or(255)),
+                          mode ? (long long)*mode : -1LL);
+            diag(line);
+            return;
+        }
         if (actions.frame->optimizedStillRequestId == metadata::kFullSizeDecisionRequestId) {
             diag("CAMERA_FULL_SIZE_DECISION_RESULT iso=" + std::to_string(actions.frame->sensitivity) +
                  " exposureNs=" + std::to_string(actions.frame->exposureTimeNs));
@@ -2037,6 +2053,24 @@ bool NativeCameraController::captureFullSize(uint64_t requestId, uint32_t count,
     return impl_->captureFullSize(requestId, count, retainFocus, moreExposures);
 }
 bool NativeCameraController::waitFullSizeIdle(int64_t timeoutMs) { return impl_->waitFullSizeIdle(timeoutMs); }
+bool NativeCameraController::captureHal50Still() {
+    std::lock_guard<std::mutex> lock(impl_->mutex);
+    if (!impl_->deviceSession.hal50Still() || !impl_->active) return false;
+    // DCIM/Camera beside the app's photos (shared storage takes an app's own JPEG by path).
+    char stamp[32] = {};
+    const std::time_t now = std::time(nullptr);
+    std::tm local{};
+    localtime_r(&now, &local);
+    std::strftime(stamp, sizeof(stamp), "%Y%m%d_%H%M%S", &local);
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count() % 1000;
+    char name[96] = {};
+    std::snprintf(name, sizeof(name), "RAWR_%s_%03d_HAL50_%s.jpg", stamp, int(ms),
+                  impl_->control.capabilities.lensId.c_str());
+    return impl_->deviceSession.captureHal50Still(impl_->requests, impl_->control,
+                                                  std::string("/storage/emulated/0/DCIM/Camera/") + name,
+                                                  [this](const std::string& line) { impl_->diag(line); });
+}
 void NativeCameraController::releaseFullSizeFocus() {
     std::lock_guard<std::mutex> lock(impl_->mutex);
     // Releasing a software snapshot never changes AF mode or triggers a scan.

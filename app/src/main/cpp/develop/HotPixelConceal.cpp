@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <thread>
 
 namespace rawrcam::develop {
 
@@ -35,6 +36,72 @@ std::size_t concealHotPixelsInPackedRaw16(std::vector<uint8_t>& raw16, uint32_t 
         ++concealed;
     }
     return concealed;
+}
+
+std::vector<int32_t> detectHotPixelsInPackedRaw16(const std::vector<uint8_t>& raw16, uint32_t width, uint32_t height,
+                                                  float blackLevel, float whiteLevel, std::size_t maxPoints) noexcept {
+    std::vector<int32_t> out;
+    if (width < 8 || height < 8 || raw16.size() != std::size_t(width) * height * sizeof(uint16_t) ||
+        !(whiteLevel > blackLevel))
+        return out;
+    try {
+        const auto* px = reinterpret_cast<const uint16_t*>(raw16.data());
+        const float range = whiteLevel - blackLevel;
+        // Floor in signal units: ~1.5% of the range (about 15 codes at 10 bits) keeps noise out.
+        const float floorv = 0.015f * range;
+        const unsigned threads = std::max(1u, std::min(8u, std::thread::hardware_concurrency()));
+        std::vector<std::vector<int32_t>> found(threads);
+        const uint32_t rows = height - 4;
+        std::vector<std::thread> pool;
+        for (unsigned t = 0; t < threads; ++t) {
+            pool.emplace_back([&, t] {
+                auto& list = found[t];
+                const uint32_t y0 = 2 + rows * t / threads, y1 = 2 + rows * (t + 1) / threads;
+                for (uint32_t y = y0; y < y1; ++y) {
+                    const uint16_t* r = px + std::size_t(y) * width;
+                    for (uint32_t x = 2; x + 2 < width; ++x) {
+                        const float v = float(r[x]) - blackLevel;
+                        const std::size_t w = width;
+                        const float n[8] = {float(r[x - 2]), float(r[x + 2]), float(r[x - 2 * w]), float(r[x + 2 * w]),
+                                            float(r[x - 2 * w - 2]), float(r[x - 2 * w + 2]),
+                                            float(r[x + 2 * w - 2]), float(r[x + 2 * w + 2])};
+                        float hi = n[0], lo = n[0];
+                        for (float k : n) {
+                            hi = std::max(hi, k);
+                            lo = std::min(lo, k);
+                        }
+                        hi -= blackLevel;
+                        lo -= blackLevel;
+                        bool defect = false;
+                        if (v > 2.0f * std::max(hi, 0.0f) + floorv) {
+                            // Hot: the adjacent (other colour) pixels must not carry the peak too.
+                            const float a = std::max(std::max(float(r[x - 1]), float(r[x + 1])),
+                                                     std::max(float(r[x - w]), float(r[x + w]))) - blackLevel;
+                            defect = v > 2.0f * std::max(a, 0.0f) + floorv;
+                        } else if (lo > 4.0f * floorv && v < 0.35f * lo) {
+                            const float a = std::min(std::min(float(r[x - 1]), float(r[x + 1])),
+                                                     std::min(float(r[x - w]), float(r[x + w]))) - blackLevel;
+                            defect = v < 0.35f * a;  // dead: its neighbours of every colour are lit
+                        }
+                        if (defect) {
+                            list.push_back(int32_t(x));
+                            list.push_back(int32_t(y));
+                            if (list.size() / 2 > maxPoints) return;
+                        }
+                    }
+                }
+            });
+        }
+        for (auto& th : pool) th.join();
+        std::size_t total = 0;
+        for (const auto& l : found) total += l.size() / 2;
+        if (total > maxPoints) return {};
+        out.reserve(total * 2);
+        for (const auto& l : found) out.insert(out.end(), l.begin(), l.end());
+    } catch (...) {
+        out.clear();
+    }
+    return out;
 }
 
 }  // namespace rawrcam::develop

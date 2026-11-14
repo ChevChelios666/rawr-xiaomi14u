@@ -648,6 +648,7 @@ std::string serializeCameraProfile(const CameraProfile& profile) {
                 a.raw("buffers", auxBuffers.str());
             }
             if (r.auxJpegStreamUseCase) a.number("useCase", r.auxJpegStreamUseCase);
+            if (r.auxJpegStill) a.text("still", r.auxJpegStill == 2 ? "plain" : "camera");
             streams.raw("auxJpeg", a.str());
         }
         lens.raw("streams", streams.str());
@@ -1057,6 +1058,8 @@ std::optional<LensRoute> readLens(const Json& l, std::string* error) {
         if (!readUseCase(a, r.auxJpegStreamUseCase, error, "auxJpeg of lens " + r.lensId)) return std::nullopt;
         if (!readUsage(&object(a, "buffers"), "auxJpeg buffer usage", r.auxJpegBufferUsage, error, r.lensId))
             return std::nullopt;
+        if (const std::string still = a->str("still"); still == "camera") r.auxJpegStill = 1;
+        else if (still == "plain") r.auxJpegStill = 2;
     }
 
     // Session.

@@ -273,7 +273,8 @@ data class CompanionSettings(
     val useCase: Int = 0
 )
 
-data class AuxJpegSettings(val size: LensOutputSize, val bufferUsage: String? = null, val useCase: Int = 0)
+/** [still]: X14U HAL 50 MP probe, each shutter also saves one still from this stream ("camera" or "plain"); null off. */
+data class AuxJpegSettings(val size: LensOutputSize, val bufferUsage: String? = null, val useCase: Int = 0, val still: String? = null)
 
 data class LensSession(
     /** One of [CAMERA_API_CHOICES]. */

@@ -287,6 +287,7 @@ internal object LensProfileCodec {
             }
             objectField(streams, "auxJpeg")?.let { aux ->
                 outputSize(aux)
+                choice(aux, "still", listOf("camera", "plain"))
                 number(aux, "useCase", 0.0..Int.MAX_VALUE.toDouble(), true)
                 buffers(aux, count = false)
             }
@@ -427,6 +428,7 @@ internal object LensProfileCodec {
             streamsJson.put("auxJpeg", JSONObject().put("width", aux.size.width).put("height", aux.size.height).apply {
                 aux.bufferUsage?.let { put("buffers", JSONObject().put("usage", it)) }
                 if (aux.useCase != 0) put("useCase", aux.useCase)
+                aux.still?.let { put("still", it) }
             })
         }
         val s = lens.session
@@ -568,7 +570,10 @@ internal object LensProfileCodec {
                     useCase = useCase(c)
                 ),
                 auxJpeg = streams?.optJSONObject("auxJpeg")?.let { aux ->
-                    decodeSize(aux)?.let { AuxJpegSettings(it, bufferUsage(aux), useCase(aux)) }
+                    decodeSize(aux)?.let {
+                        AuxJpegSettings(it, bufferUsage(aux), useCase(aux),
+                            aux.optString("still").takeIf { s -> s == "camera" || s == "plain" })
+                    }
                 }
             ),
             session = LensSession(

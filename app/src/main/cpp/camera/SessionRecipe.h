@@ -62,6 +62,7 @@ struct SessionRecipe {
     std::optional<CompanionRecipe> companion;
     std::optional<std::pair<uint32_t, uint32_t>> auxJpeg;
     std::optional<uint64_t> auxJpegBufferUsage;
+    uint8_t auxJpegStill = 0;  // LensRoute::auxJpegStill
     StillStrategy still = StillStrategy::Direct;
     std::string gate;
     GateHold gateHold = GateHold::UntilConfigured;
@@ -119,6 +120,7 @@ struct RecipeInputs {
     }
     r.auxJpeg = lens.auxJpegSize;
     r.auxJpegBufferUsage = lens.auxJpegBufferUsage;
+    r.auxJpegStill = lens.auxJpegSize ? lens.auxJpegStill : 0;
     r.still = stillStrategyFor(lens, r.companion.has_value());
     r.gate = lens.vendorGate;
     r.gateHold = lens.gateHold.value_or(defaultGateHold(lens));

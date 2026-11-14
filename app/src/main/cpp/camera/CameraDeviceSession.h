@@ -6,6 +6,9 @@
 #include <chrono>
 #include <functional>
 #include <map>
+#include <mutex>
+#include <string>
+#include <vector>
 #include <optional>
 
 #include "camera/CameraBackend.h"
@@ -55,6 +58,12 @@ class CameraDeviceSession final {
     void setCaptureWindow(ANativeWindow* window) noexcept { captureWindow_ = window; }
     bool stopViewfinderForPhotos() const noexcept { return stopViewfinderForPhotos_; }
     bool hasCaptureStream() const noexcept { return captureConfigured_; }
+    // X14U HAL 50 MP probe (LensRoute::auxJpegStill): the session's aux JPEG stream takes a still per shutter.
+    bool hal50Still() const noexcept { return auxJpegConfigured_ && auxStill_ != 0 && auxJpegWindow_; }
+    // One copy of the repeating request filling only the aux JPEG stream (the camera's own full-size processing;
+    // plain: noise reduction/sharpening off, sRGB curve, identity colour, unit gains); the JPEG goes to `path`.
+    bool captureHal50Still(CameraRequestPipeline&, const CameraControlState&, const std::string& path,
+                           const Diagnostic&);
     // Burst of full-size stills (one per exposure, tagged tagId): copies of the
     // repeating request that also fill the capture stream, with STILL_CAPTURE
     // intent and the lens's still-scope keys.
@@ -145,6 +154,13 @@ class CameraDeviceSession final {
     bool stopViewfinderForPhotos_ = false;
     AImageReader* auxJpegReader_ = nullptr;
     bool auxJpegConfigured_ = false;
+    ANativeWindow* auxJpegWindow_ = nullptr;
+    uint8_t auxStill_ = 0;
+    // HAL 50 MP probe: where the next aux JPEGs go (reader thread), and the session's diagnostics.
+    void saveAuxJpegs(AImageReader* reader);
+    std::mutex auxMutex_;
+    std::vector<std::string> auxPaths_;
+    Diagnostic auxDiag_;
     ACameraMetadata* characteristics_ = nullptr;
     ANativeWindow* rawWindow_ = nullptr;
     CameraSessionCallbackContext* sessionContext_ = nullptr;

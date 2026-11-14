@@ -141,6 +141,12 @@ uint64_t SessionEngine::requestRawStillCapture(rawrcam::encoding::dng::DngCaptur
         }
     }
     finalizeDeferredSurfaceDetach();
+    if (requestId != 0 && !fullSize && !longExposure) {
+        // X14U HAL 50 MP probe: the lens's camera-processed full-size JPEG beside this shot.
+        lock.unlock();
+        (void)camera->captureHal50Still();
+        lock.lock();
+    }
     return requestId;
 }
 
@@ -340,6 +346,9 @@ uint64_t SessionEngine::startPreparedMultiframeCapture(
             std::move(baseDng), std::move(mergedDng), std::move(mergedJpeg), dumpRzslRequested, tuning, baseFrameMode,
             tone, look_.requestedFilmEnabled(), look_.filmLook());
     }
+    // X14U HAL 50 MP probe: the lens's camera-processed full-size JPEG beside this shot.
+    if (requestId != 0)
+        if (auto* camera = cameraControls_.controller()) (void)camera->captureHal50Still();
     return requestId;
 }
 void SessionEngine::cancelPreparedMultiframeCapture() {

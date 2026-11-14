@@ -73,6 +73,8 @@ class NativeCameraController {
     // Capture-stream routes (LensRoute::photoStream): `count` full-size
     // stills at the viewfinder's exposure, tagged requestId.
     bool captureFullSize(uint64_t requestId, uint32_t count, bool retainFocus = false, bool moreExposures = false);
+    // X14U HAL 50 MP probe: the lens's aux JPEG still beside the shot (no-op without one).
+    bool captureHal50Still();
     bool waitFullSizeIdle(int64_t timeoutMs);
     void releaseFullSizeFocus();
     bool hasFullSizeCapture() const;

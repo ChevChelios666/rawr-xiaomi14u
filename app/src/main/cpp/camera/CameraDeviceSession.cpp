@@ -4,6 +4,8 @@
 #include <camera/NdkCameraMetadataTags.h>
 
 #include <algorithm>
+#include <cerrno>
+#include <cstdio>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -24,6 +26,7 @@
 #include "diagnostics/logging/RuntimeTraceRecorder.h"
 #include "geometry/CfaPattern.h"
 #include "metadata/CameraMetadataReader.h"
+#include "metadata/FrameMetadataSnapshot.h"
 #include "camera/CameraMetadataTags.h"
 
 namespace rawrcam::camera {
@@ -104,6 +107,7 @@ void CameraDeviceSession::releaseRequestOutputs(bool orphan) noexcept {
         companionFromProfile_ = false;
         auxJpegReader_ = nullptr;
         auxJpegConfigured_ = false;
+        auxJpegWindow_ = nullptr;
         return;
     }
     request_.reset();
@@ -118,6 +122,7 @@ void CameraDeviceSession::releaseRequestOutputs(bool orphan) noexcept {
     companionReader_ = nullptr;
     companionFromProfile_ = false;
     auxJpegConfigured_ = false;
+    auxJpegWindow_ = nullptr;
     if (auxJpegReader_) AImageReader_delete(auxJpegReader_);
     auxJpegReader_ = nullptr;
 }
@@ -479,14 +484,12 @@ bool CameraDeviceSession::addAuxJpegStream(const std::pair<uint32_t, uint32_t>& 
                                           &auxJpegReader_)
               : AImageReader_new(int32_t(size.first), int32_t(size.second), AIMAGE_FORMAT_JPEG, 2, &auxJpegReader_);
     if (ms != AMEDIA_OK || !auxJpegReader_) return fail("reader", ms);
-    // No request targets it; drop anything the HAL still writes.
+    // No repeating request targets it; HAL 50 MP stills (captureHal50Still) are saved, anything else dropped.
+    auxDiag_ = diag;
     AImageReader_ImageListener listener{};
-    listener.onImageAvailable = [](void*, AImageReader* reader) {
-        AImage* image = nullptr;
-        while (AImageReader_acquireNextImage(reader, &image) == AMEDIA_OK && image) {
-            AImage_delete(image);
-            image = nullptr;
-        }
+    listener.context = this;
+    listener.onImageAvailable = [](void* context, AImageReader* reader) {
+        static_cast<CameraDeviceSession*>(context)->saveAuxJpegs(reader);
     };
     if (const auto ls = AImageReader_setImageListener(auxJpegReader_, &listener); ls != AMEDIA_OK)
         return fail("listener", ls);
@@ -494,6 +497,7 @@ bool CameraDeviceSession::addAuxJpegStream(const std::pair<uint32_t, uint32_t>& 
     if (const auto ws = AImageReader_getWindow(auxJpegReader_, &window); ws != AMEDIA_OK || !window)
         return fail("window", ws);
     outputs.push_back({window, std::string(), streamUseCase});
+    auxJpegWindow_ = window;
     auxJpegConfigured_ = true;
     diag("CAMERA_AUX_JPEG_STREAM size=" + std::to_string(size.first) + "x" + std::to_string(size.second) +
          " status=0 targeted=0");
@@ -604,8 +608,10 @@ bool CameraDeviceSession::createSession(ANativeWindow* window, const std::option
         companionFacts_.reset();
     }
 
+    auxStill_ = recipe.auxJpeg ? recipe.auxJpegStill : 0;
     if (recipe.auxJpeg) {
-        if (!physicalCameraId.empty()) return fail("aux_jpeg", "reason=physical_camera_unsupported");
+        // The HAL 50 MP probe adds its JPEG as a logical output beside a physical RAW (the 1x aperture route).
+        if (!physicalCameraId.empty() && !auxStill_) return fail("aux_jpeg", "reason=physical_camera_unsupported");
         if (!addAuxJpegStream(*recipe.auxJpeg, recipe.auxJpegBufferUsage, recipe.auxJpegStreamUseCase, outputs, diag))
             return fail("aux_jpeg", "reason=output");
     }
@@ -1035,5 +1041,98 @@ bool CameraDeviceSession::captureFullSize(CameraRequestPipeline& pipeline, const
         keysLogged = true;
         return result.failures.empty();
     });
+}
+
+void CameraDeviceSession::saveAuxJpegs(AImageReader* reader) {
+    AImage* image = nullptr;
+    while (AImageReader_acquireNextImage(reader, &image) == AMEDIA_OK && image) {
+        std::string path;
+        {
+            std::lock_guard<std::mutex> lock(auxMutex_);
+            if (!auxPaths_.empty()) {
+                path = auxPaths_.front();
+                auxPaths_.erase(auxPaths_.begin());
+            }
+        }
+        if (!path.empty()) {
+            const auto begin = std::chrono::steady_clock::now();
+            uint8_t* data = nullptr;
+            int length = 0;
+            int32_t width = 0, height = 0;
+            (void)AImage_getWidth(image, &width);
+            (void)AImage_getHeight(image, &height);
+            std::string line;
+            if (AImage_getPlaneData(image, 0, &data, &length) == AMEDIA_OK && data && length > 4) {
+                // Trim to the JPEG's end marker (the blob buffer can be larger than the image).
+                std::size_t size = std::size_t(length);
+                for (std::size_t i = size; i >= 2 && i + 65536 >= size; --i)
+                    if (data[i - 2] == 0xFF && data[i - 1] == 0xD9) {
+                        size = i;
+                        break;
+                    }
+                FILE* file = std::fopen(path.c_str(), "wb");
+                const bool written = file && std::fwrite(data, 1, size, file) == size;
+                const int error = file ? 0 : errno;
+                if (file) std::fclose(file);
+                const double ms =
+                    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
+                line = written ? "HAL50_SAVED path=" + path + " bytes=" + std::to_string(size) + " image=" +
+                                     std::to_string(width) + "x" + std::to_string(height) + " writeMs=" + std::to_string(ms)
+                               : "HAL50_SAVE_FAILED path=" + path + " errno=" + std::to_string(error);
+            } else {
+                line = "HAL50_SAVE_FAILED path=" + path + " reason=plane";
+            }
+            if (auxDiag_) auxDiag_(line);
+        }
+        AImage_delete(image);
+        image = nullptr;
+    }
+}
+
+bool CameraDeviceSession::captureHal50Still(CameraRequestPipeline& pipeline, const CameraControlState& control,
+                                            const std::string& path, const Diagnostic& diag) {
+    if (!hal50Still() || !session_ || !request_) return false;
+    {
+        std::lock_guard<std::mutex> lock(auxMutex_);
+        auxPaths_.push_back(path);
+    }
+    const bool plain = auxStill_ == 2;
+    const bool sent = pipeline.captureTagged(session_.get(), request_.get(), control, metadata::kHal50StillRequestId,
+                                             [&](CameraRequest* request) {
+        // Only the JPEG: a RAW in the same request would ask the 12 MP mode for it.
+        if (rawWindow_) (void)request->removeTarget(rawWindow_);
+        if (companionWindow_) (void)request->removeTarget(companionWindow_);
+        if (request->addTarget(auxJpegWindow_) != ACAMERA_OK) return false;
+        const uint8_t intent = ACAMERA_CONTROL_CAPTURE_INTENT_STILL_CAPTURE;
+        (void)request->setU8(ACAMERA_CONTROL_CAPTURE_INTENT, 1, &intent);
+        const uint8_t quality = 98;
+        (void)request->setU8(ACAMERA_JPEG_QUALITY, 1, &quality);
+        if (plain) {
+            const uint8_t nrOff = ACAMERA_NOISE_REDUCTION_MODE_OFF;
+            const uint8_t edgeOff = ACAMERA_EDGE_MODE_OFF;
+            const uint8_t preset = ACAMERA_TONEMAP_MODE_PRESET_CURVE;
+            const uint8_t srgb = ACAMERA_TONEMAP_PRESET_CURVE_SRGB;
+            const uint8_t awbOff = ACAMERA_CONTROL_AWB_MODE_OFF;
+            const uint8_t matrix = ACAMERA_COLOR_CORRECTION_MODE_TRANSFORM_MATRIX;
+            const float gains[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+            const RequestRational identity[9] = {{1, 1}, {0, 1}, {0, 1}, {0, 1}, {1, 1},
+                                                 {0, 1}, {0, 1}, {0, 1}, {1, 1}};
+            (void)request->setU8(ACAMERA_NOISE_REDUCTION_MODE, 1, &nrOff);
+            (void)request->setU8(ACAMERA_EDGE_MODE, 1, &edgeOff);
+            (void)request->setU8(ACAMERA_TONEMAP_MODE, 1, &preset);
+            (void)request->setU8(ACAMERA_TONEMAP_PRESET_CURVE, 1, &srgb);
+            (void)request->setU8(ACAMERA_CONTROL_AWB_MODE, 1, &awbOff);
+            (void)request->setU8(ACAMERA_COLOR_CORRECTION_MODE, 1, &matrix);
+            (void)request->setFloat(ACAMERA_COLOR_CORRECTION_GAINS, 4, gains);
+            (void)request->setRational(ACAMERA_COLOR_CORRECTION_TRANSFORM, 9, identity);
+        }
+        return true;
+    });
+    if (!sent) {
+        std::lock_guard<std::mutex> lock(auxMutex_);
+        if (!auxPaths_.empty()) auxPaths_.pop_back();
+    }
+    diag(std::string("HAL50_STILL_SUBMIT sent=") + (sent ? "1" : "0") + " plain=" + (plain ? "1" : "0") + " path=" + path);
+    return sent;
 }
 }  // namespace rawrcam::camera

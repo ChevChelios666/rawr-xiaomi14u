@@ -188,6 +188,10 @@ struct LensRoute {
     // Extra JPEG output configured with the session but never targeted.
     std::optional<std::pair<uint32_t, uint32_t>> auxJpegSize;
     std::optional<uint64_t> auxJpegBufferUsage;  // absent: the reader default
+    // X14U HAL 50 MP probe: each shutter also sends one still request to the aux JPEG stream (the camera's own
+    // full-size processing) and saves the JPEG. 0 off, 1 the camera's processing, 2 plain (noise reduction and
+    // sharpening off, sRGB curve, no colour correction, unit white balance: input for Rawr's own develop).
+    uint8_t auxJpegStill = 0;
     // The viewfinder RAW reader: images it holds (0: the app's 6; 6..16 allowed), whether a profile-fixed
     // usage is checked with AHardwareBuffer_isSupported before the reader is created (CPU-only when it
     // fails), and whether a fixed reader that stays silent takes part in the usage ladder.
