@@ -98,10 +98,12 @@ class StillOutputStore(
         recipe: String = ""
     ): PreparedCapture? {
         val (base, burstFolder) = captureBaseName(wallClockMillis)
-        // X14U Burst: one folder per burst inside the save location (picked SAF folders keep the flat layout).
+        // X14U Burst: one folder per burst in "Rawr Bursts" next to the save location's folder (DCIM/Rawr Bursts/
+        // BURST_…/): galleries fold subfolders of DCIM/Camera into the Camera roll, a top-level folder is its own album.
+        // Picked SAF folders keep the flat layout.
         val destination = CaptureSaveLocation.fromId(saveLocationId).let { location ->
             if (burstFolder == null || location.relativePath.isEmpty()) location
-            else location.copy(relativePath = location.relativePath.trimEnd('/') + "/Bursts/" + burstFolder + "/")
+            else location.copy(relativePath = location.relativePath.substringBefore('/') + "/Rawr Bursts/" + burstFolder + "/")
         }
         require(dngEnabled || jpegEnabled)
         val multiframe = multiframeFrames >= 2
