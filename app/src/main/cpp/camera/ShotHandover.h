@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <mutex>
 #include <optional>
@@ -17,6 +18,13 @@ struct AppliedWhiteBalance {
     std::array<float, 9> transform{1, 0, 0, 0, 1, 0, 0, 0, 1};
 };
 
+// What the 12 MP view's frames were exposed and focused with (capture results).
+struct AppliedExposure {
+    int64_t exposureTimeNs = 0;
+    int32_t sensitivity = 0;
+    std::optional<float> focusDiopters;
+};
+
 class ShotHandover {
 public:
     // Every frame: the white balance the camera applied (any mode).
@@ -24,11 +32,27 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         last_ = AppliedWhiteBalance{gains, transform};
     }
-    // On: requests use the last applied white balance until off.
+    // Every viewfinder frame: the exposure and lens position the camera reported.
+    void noteExposure(int64_t exposureTimeNs, int32_t sensitivity, std::optional<float> focusDiopters) {
+        if (exposureTimeNs <= 0 || sensitivity <= 0) return;
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (carrying_.load(std::memory_order_relaxed)) return;  // the shot's own frames never replace the 12 MP view's
+        lastExposure_ = AppliedExposure{exposureTimeNs, sensitivity,
+                                        focusDiopters && std::isfinite(*focusDiopters) && *focusDiopters >= 0
+                                            ? focusDiopters : std::nullopt};
+    }
+    // On: requests use the last applied white balance, exposure and lens position until off. The shot's session
+    // otherwise starts auto exposure cold (darker, a different shutter: diagnostics 14 Nov, 3.2x) and its full-size
+    // mode may not focus where the 12 MP view did.
     void setCarry(bool on) {
         std::lock_guard<std::mutex> lock(mutex_);
         carried_ = on ? last_ : std::nullopt;
+        carriedExposure_ = on ? lastExposure_ : std::nullopt;
         carrying_.store(on, std::memory_order_relaxed);
+    }
+    std::optional<AppliedExposure> carriedExposure() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return carriedExposure_;
     }
     // A 50 MP shot's camera switches are under way: the new session keeps the exposure and focus intent even on a
     // different camera (the ultra-wide's 50 MP runs on camera 3, its viewfinder on camera 0).
@@ -64,6 +88,8 @@ private:
     mutable std::mutex mutex_;
     std::optional<AppliedWhiteBalance> last_;
     std::optional<AppliedWhiteBalance> carried_;
+    std::optional<AppliedExposure> lastExposure_;
+    std::optional<AppliedExposure> carriedExposure_;
     std::atomic<bool> hold_{false};
     std::atomic<bool> carrying_{false};
     std::atomic<uint64_t> lastGeneration_{0};

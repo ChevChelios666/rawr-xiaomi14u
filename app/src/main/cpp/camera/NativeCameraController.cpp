@@ -141,6 +141,8 @@ struct NativeCameraController::Impl final : CameraEventSink {
     // The viewfinder request is replaced (decision request, then nothing) while
     // full-size stills are in flight (CameraDeviceSession::repeatFullSizeDecision).
     bool fullSizeDecisionRepeating = false;
+    // X14U 50 MP shot: the carry state the repeating request was last built with (ShotHandover pin).
+    bool carrySubmitted = false;
     StillExposureGuard stillExposureGuard;
     std::function<void()> pendingFocus;
     std::function<void()> pendingFocusMode;
@@ -1417,6 +1419,13 @@ struct NativeCameraController::Impl final : CameraEventSink {
             const uint64_t pixels = context ? uint64_t(context->geometry.rawBufferWidth) * context->geometry.rawBufferHeight : 0;
             if (shotHandover().noteFrame(context ? context->cameraContextGeneration : 0, pixels))
                 actions.frame->hidePreview = true;
+        }
+        // The pinned exposure / lens position goes out with the carry and is dropped with it (the 12 MP session's
+        // repeating request would otherwise stay on the pin after the shot).
+        if (const bool carrying = shotHandover().carrying(); carrying != carrySubmitted) {
+            carrySubmitted = carrying;
+            diag(std::string("SHOT50_REPEATING_REFRESH carry=") + (carrying ? "1" : "0") +
+                 " sent=" + (submitRepeatingLocked() ? "1" : "0"));
         }
         const uint64_t longTag = longExposureTag.load(std::memory_order_relaxed);
         // Freeze the viewfinder on the press until a single long frame is in,

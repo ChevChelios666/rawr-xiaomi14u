@@ -6,7 +6,10 @@
 #include <cstdlib>
 #include <utility>
 
+#include <android/log.h>
+
 #include "camera/CameraWhiteBalanceControls.h"
+#include "camera/ShotHandover.h"
 
 namespace rawrcam::camera {
 
@@ -43,6 +46,24 @@ std::optional<CameraPriorityAudit> CameraResultState::observe(CameraControlState
             }
         }
         if (ts != 0) lastMonitorTimestampNs_ = ts;
+        // X14U 50 MP shot: the 12 MP view's exposure and lens position, carried into the shot's session; while a
+        // shot runs, what each of its frames actually got (diagnostics: 3.2x focus and exposure, 14 Nov).
+        shotHandover().noteExposure(frame.exposureTimeNs, frame.sensitivity, result.focusDistance);
+        if (shotHandover().carrying()) {
+            const auto pin = shotHandover().carriedExposure();
+            const auto& context = frame.cameraContext;
+            __android_log_print(
+                ANDROID_LOG_INFO, "RawrCamCameraNDK",
+                "SHOT50_FRAME camera=%s raw=%ux%u ts=%llu exposureNs=%lld iso=%d focus=%.3f afMode=%d afState=%d "
+                "lensState=%d frameNs=%lld pinExposureNs=%lld pinIso=%d pinFocus=%.3f",
+                context ? context->cameraId.c_str() : "?", context ? context->geometry.rawBufferWidth : 0u,
+                context ? context->geometry.rawBufferHeight : 0u, (unsigned long long)ts,
+                (long long)frame.exposureTimeNs, frame.sensitivity, result.focusDistance.value_or(-1.0f),
+                result.afMode ? int(*result.afMode) : -1, result.afState ? int(*result.afState) : -1,
+                result.lensState ? int(*result.lensState) : -1, (long long)result.frameDurationNs.value_or(0),
+                pin ? (long long)pin->exposureTimeNs : 0LL, pin ? pin->sensitivity : 0,
+                pin && pin->focusDiopters ? *pin->focusDiopters : -1.0f);
+        }
         observeWhiteBalanceResult(state, frame);
         if (result.evSteps) state.appliedEvSteps = result.evSteps;
         if (provenance && provenance->focusEpoch == state.focusEpoch && ts > state.focusTimestampNs) {
