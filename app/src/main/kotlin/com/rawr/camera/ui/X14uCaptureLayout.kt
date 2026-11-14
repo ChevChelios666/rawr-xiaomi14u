@@ -1913,7 +1913,9 @@ private fun wbRuler(
     )
 }
 
-private const val FOCUS_STEPS = 30
+// MF ruler: 150 steps on a squared diopter scale (diopters = minimum x ((150 - i) / 150)^2), so far distances get most
+// of the ruler: at 1 m a step is about 0.04 dpt (was 0.33 with 30 linear steps: 1 m was 3 steps from infinity).
+private const val FOCUS_STEPS = 150
 
 private fun focusLabel(diopters: Float): String {
     if (diopters <= .01f) return "∞"
@@ -1977,21 +1979,25 @@ private fun focusRuler(state: CaptureUiState, dispatch: CaptureDispatch, onMfTou
         else -> state.focus.appliedFocusDiopters?.takeIf { it.isFinite() }
             ?.let { mfNormalizedFromDiopters(it, minimum) } ?: state.focus.mfNormalized
     }
-    val diopters: (Int) -> Float = { i -> (1f - i / FOCUS_STEPS.toFloat()) * minimum }
-    // Label the steps nearest 10 cm, 30 cm, 1 m and 3 m (when the lens reaches them).
+    fun far(i: Int) = (FOCUS_STEPS - i) / FOCUS_STEPS.toFloat()
+    val diopters: (Int) -> Float = { i -> far(i) * far(i) * minimum }
+    // The ruler index of a normalized MF value (normalized = 1 - diopters / minimum).
+    fun indexOf(normalized: Float) =
+        (FOCUS_STEPS * (1f - kotlin.math.sqrt((1f - normalized).coerceIn(0f, 1f)))).roundToInt().coerceIn(0, FOCUS_STEPS)
+    // Label the steps nearest 10 cm … 5 m (when the lens reaches them).
     val labelled = if (minimum > 0f && capability.distanceReadoutTrustworthy) {
-        listOf(.1f, .3f, 1f, 3f).filter { 1f / it <= minimum }.map { m ->
+        listOf(.1f, .2f, .3f, .5f, 1f, 2f, 5f).filter { 1f / it <= minimum }.map { m ->
             (0..FOCUS_STEPS).minBy { abs(diopters(it) - 1f / m) }
         }.toSet()
     } else emptySet()
     val toAf: () -> Unit = { if (mode != FocusMode.Af) dispatch(SetFocusMode(FocusMode.Af)) }
     return X14uEditor.Ruler(
         count = FOCUS_STEPS + 1,
-        index = (seed * FOCUS_STEPS).roundToInt().coerceIn(0, FOCUS_STEPS),
+        index = indexOf(seed),
         valueText = if (mode == FocusMode.Mf) state.focusDistanceLabel() else "AF",
         label = { i -> if (i in labelled) focusLabel(diopters(i)) else null },
         major = { i -> i in labelled || i == FOCUS_STEPS },
-        spacing = 10.dp,
+        spacing = 6.dp,
         enabled = ladder != null,
         auto = mode == FocusMode.Af,
         onAuto = toAf,
@@ -2003,7 +2009,7 @@ private fun focusRuler(state: CaptureUiState, dispatch: CaptureDispatch, onMfTou
         },
         onIndex = { new, _ ->
             onMfTouch()
-            dispatch(SetManualFocus(new / FOCUS_STEPS.toFloat()))
+            dispatch(SetManualFocus(1f - far(new) * far(new)))
         }
     )
 }
