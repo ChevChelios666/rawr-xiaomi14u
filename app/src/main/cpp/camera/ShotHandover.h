@@ -57,6 +57,10 @@ public:
     static float fullSizeGain(const std::string& cameraId) {
         return cameraId == "3" || cameraId == "4" ? 1.0f / 0.70f : 1.0f;
     }
+    // Focus distance the shot's camera needs for the 12 MP view's: the 3.2x (camera 4) full-size mode focuses nearer
+    // at the same diopters; its sharp plane at 0.627 dpt matched the 12 MP view's at 0.905 (ruler test, 14 Nov). A
+    // scale keeps infinity at infinity. Others unmeasured (1x keeps the lens where the 12 MP view left it).
+    static float fullSizeFocusScale(const std::string& cameraId) { return cameraId == "4" ? 0.627f / 0.905f : 1.0f; }
     std::optional<AppliedExposure> carriedExposure() const {
         std::lock_guard<std::mutex> lock(mutex_);
         return carriedExposure_;

@@ -343,13 +343,14 @@ CameraControlApplyResult applyCameraControlState(CameraRequest* request, const C
             ? ACAMERA_CONTROL_AF_TRIGGER_CANCEL
             : ACAMERA_CONTROL_AF_TRIGGER_IDLE;
     (void)request->setU8(ACAMERA_CONTROL_AF_TRIGGER, 1, &trigger);
-    // X14U 50 MP shot with AF: the lens goes to where the 12 MP view had focused (AF OFF + that distance), instead
-    // of the full-size mode's own AF. MF already sends the user's distance above.
-    if (pin && pin->focusDiopters && state.focusMode != FocusControlMode::Manual &&
-        state.capabilities.manualFocusSupported) {
+    // X14U 50 MP shot: the lens goes to where the 12 MP view had focused (AF: AF OFF + its measured distance; MF: the
+    // user's distance), in the shot camera's own full-size focus scale.
+    const bool manualFocus = state.focusMode == FocusControlMode::Manual;
+    if (pin && (manualFocus || pin->focusDiopters) && state.capabilities.manualFocusSupported) {
         const uint8_t afOff = ACAMERA_CONTROL_AF_MODE_OFF;
         const uint8_t idle = ACAMERA_CONTROL_AF_TRIGGER_IDLE;
-        const float diopters = *pin->focusDiopters;
+        const float diopters = (manualFocus ? requestedFocusDiopters(state) : *pin->focusDiopters) *
+                               ShotHandover::fullSizeFocusScale(state.capabilities.cameraId);
         result.focusStatus = request->setU8(ACAMERA_CONTROL_AF_MODE, 1, &afOff);
         (void)request->setFloat(ACAMERA_LENS_FOCUS_DISTANCE, 1, &diopters);
         (void)request->setU8(ACAMERA_CONTROL_AF_TRIGGER, 1, &idle);
