@@ -2808,7 +2808,8 @@ private fun X14uShutterRow(
                         state, dispatch, onOpenFilmSimSettings, onOpenMultiframeSettings,
                         modifier = Modifier.fillMaxWidth(),
                         arrangement = Arrangement.SpaceEvenly,
-                        pillModifier = turn
+                        pillModifier = turn,
+                        multiframeAvailable = !LocalCaptureExtras.current.fullSizeShot
                     )
                     if (pano?.locked == true) Box(Modifier.matchParentSize().pointerInput(Unit) {
                         awaitPointerEventScope {

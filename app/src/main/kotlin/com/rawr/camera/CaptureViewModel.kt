@@ -505,6 +505,8 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                             ultraHdrEnabled = false,
                             imageTone = s.imageTone.copy(jpegQuality = 95f)
                         )
+                        // 50 MP shot: always a single frame (a full-size merge doesn't fit the arena budget).
+                        fullSizeBusyFlow.value -> s.copy(experimentalMultiframeEnabled = false)
                         digitalZoomCrop > 1.01f && s.experimentalMultiframeEnabled && zoomMerge != null -> s.copy(
                             multiframeTuning = s.multiframeTuning.copy(mergeAlgorithm = zoomMerge)
                         )

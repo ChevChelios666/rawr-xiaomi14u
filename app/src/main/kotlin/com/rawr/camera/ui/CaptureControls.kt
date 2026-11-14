@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
@@ -221,6 +222,11 @@ internal fun PhotoLookToggles(
     /** X14U: spread across its side of the shutter row, mirroring the left side. */
     modifier: Modifier = Modifier,
     arrangement: Arrangement.Horizontal = Arrangement.spacedBy(0.dp),
+    /**
+     * X14U: false while 50 mp is on: the 50 MP shot is always one frame (a full-size merge needs ~5.2 GB of arena,
+     * over the 1.5 GB budget), so the multiframe pill is greyed and inert.
+     */
+    multiframeAvailable: Boolean = true,
     /** Extra buttons after FILM (last, so callers can pass it as a trailing lambda). */
     trailing: @Composable () -> Unit = {}
 ) {
@@ -237,17 +243,17 @@ internal fun PhotoLookToggles(
                 com.rawr.camera.settings.model.MultiframeMergeAlgorithm.HdrPlusQuality -> "HDR+ Q"
                 com.rawr.camera.settings.model.MultiframeMergeAlgorithm.HdrPlusBracketed -> "HDR+ B"
             },
-            active = state.experimentalMultiframeEnabled,
+            active = state.experimentalMultiframeEnabled && multiframeAvailable,
             testTag = CaptureTestTags.COMPACT_MULTIFRAME,
-            contentDescription = if (state.experimentalMultiframeEnabled) {
-                "Multiframe on. Tap to turn off. Long press for settings."
-            } else {
-                "Multiframe off. Tap to turn on. Long press for settings."
+            contentDescription = when {
+                !multiframeAvailable -> "Multiframe isn't available at 50 MP: the shot is a single frame."
+                state.experimentalMultiframeEnabled -> "Multiframe on. Tap to turn off. Long press for settings."
+                else -> "Multiframe off. Tap to turn on. Long press for settings."
             },
-            onClick = { dispatch(ToggleMultiframe) },
+            onClick = { if (multiframeAvailable) dispatch(ToggleMultiframe) },
             onLongClick = onOpenMultiframeSettings,
             onLongClickLabel = "Multiframe settings",
-            modifier = pillModifier,
+            modifier = if (multiframeAvailable) pillModifier else pillModifier.alpha(.35f),
             minWidth = SidePillWidth
         )
         CompactSidePill(
