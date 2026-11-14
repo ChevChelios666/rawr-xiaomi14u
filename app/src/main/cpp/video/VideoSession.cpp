@@ -145,7 +145,9 @@ bool VideoSession::start(std::unique_ptr<VideoOutput> built, uint32_t width, uin
                             "VIDEO_POST_CONFIG highlight=%u fccSteps=%u defringe=%.3f denoise=%.3f "
                             "bitDepth=%u surface=%s reused=%d",
                             activeConfig_.highlightMethod, activeConfig_.fccSteps, activeConfig_.defringeStrength,
-                            activeConfig_.waveletDenoiseStrength, bitDepth, outputFormatName(), reused ? 1 : 0);
+                            activeConfig_.waveletDenoiseStrength,
+                            output_.format() == VK_FORMAT_R8G8B8A8_UNORM ? 8u : 10u, outputFormatName(),
+                            reused ? 1 : 0);
         // swapchain: built outside the lock; locked: the time spent here with the camera waiting.
         const double lockedMs = sinceStartMs();
         startTimingJson_ = "{\"swapchain\":" + std::to_string(swapchainMs) +
