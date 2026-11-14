@@ -20,6 +20,10 @@ class VideoOutput final {
     VideoOutput& operator=(const VideoOutput&) = delete;
     bool start(JNIEnv* env, jobject surface, uint32_t width, uint32_t height, uint32_t bitDepth);
     void stop() noexcept;
+    // Exchanges swapchains with another output of the same context (one built outside the session lock).
+    void swap(VideoOutput& other) noexcept;
+    // Recording starts now (frames captured earlier are not encoded).
+    void markStarted() noexcept;
     bool ready() const noexcept { return swapchain_ != VK_NULL_HANDLE; }
     VkExtent2D extent() const noexcept { return extent_; }
     VkFormat format() const noexcept { return outputFormat_; }

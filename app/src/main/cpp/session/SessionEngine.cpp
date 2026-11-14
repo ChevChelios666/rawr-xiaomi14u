@@ -218,8 +218,29 @@ bool SessionEngine::setVideoSurface(JNIEnv* env, jobject surfaceObj, uint32_t wi
                                     uint32_t bitDepth) {
     // Reuse a prewarm that is still building instead of building a second copy.
     if (surfaceObj) waitForVideoPrewarmIdle();
-    std::lock_guard<std::mutex> lock(mu_);
     const auto restoreFilm = [this] { look_.suppressForVideo(false); };
+    // The encoder swapchain is built without mu_: its gralloc format probes take ~300 ms, and holding mu_ that
+    // long backed up the camera (INGRESS_QUEUE_PRESSURE, 2 frames dropped at record start).
+    std::unique_ptr<rawrcam::video::VideoOutput> built;
+    if (surfaceObj) {
+        {
+            std::lock_guard<std::mutex> lock(mu_);
+            if (!vulkanContext_.device()) return false;
+            if (videoSession_.ready()) {
+                videoSession_.stop();
+                swapchainRenderer_.setVideoFrameSources({});
+            }
+        }
+        try {
+            built = videoSession_.buildOutput(env, surfaceObj, width, height, bitDepth);
+        } catch (const std::exception& error) {
+            LOGE("VIDEO_SURFACE_FAIL %s", error.what());
+            appendDiagnostic(std::string("VIDEO_SURFACE_FAIL ") + error.what());
+            return false;
+        }
+        if (!built) return false;
+    }
+    std::lock_guard<std::mutex> lock(mu_);
     try {
         if (!surfaceObj) {
             videoSession_.stop();
@@ -235,7 +256,7 @@ bool SessionEngine::setVideoSurface(JNIEnv* env, jobject surfaceObj, uint32_t wi
         videoIngressDrops_.store(0, std::memory_order_relaxed);
         realtime_.timing().resetVideoTiming();
         const auto renderLut = look_.videoRenderLut();
-        if (!videoSession_.start(env, surfaceObj, width, height, realtime_.rawWidth(), realtime_.rawHeight(), bitDepth,
+        if (!videoSession_.start(std::move(built), width, height, realtime_.rawWidth(), realtime_.rawHeight(),
                                  renderLut ? &*renderLut : nullptr)) {
             restoreFilm();
             return false;

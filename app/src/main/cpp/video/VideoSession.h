@@ -74,6 +74,13 @@ class VideoSession final {
     // when the Surface offers them as storage images, otherwise RGBA16F.
     bool start(JNIEnv* env, jobject surface, uint32_t width, uint32_t height, uint32_t rawWidth, uint32_t rawHeight,
                uint32_t bitDepth, const tonemap::lut::LutChain* renderLut);
+    // The encoder swapchain on its own (no session state touched), so it can be built outside the session lock:
+    // the driver's gralloc format probes take ~300 ms and stalled the camera (frames dropped at record start).
+    std::unique_ptr<VideoOutput> buildOutput(JNIEnv* env, jobject surface, uint32_t width, uint32_t height,
+                                             uint32_t bitDepth);
+    // Installs a swapchain from buildOutput() (under the session lock) and readies the processing.
+    bool start(std::unique_ptr<VideoOutput> built, uint32_t width, uint32_t height, uint32_t rawWidth,
+               uint32_t rawHeight, const tonemap::lut::LutChain* renderLut);
     void updateRenderLut(const tonemap::lut::LutChain* renderLut);
     void setProcessingConfig(const VideoProcessingConfig& config) noexcept;
     const VideoProcessingConfig& activeProcessingConfig() const noexcept { return activeConfig_; }

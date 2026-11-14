@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <string>
 #include <ctime>
+#include <utility>
 
 #include "vulkan/VulkanContext.h"
 
@@ -126,14 +127,32 @@ bool VideoOutput::start(JNIEnv* env, jobject javaSurface, uint32_t width, uint32
                   "video rendered semaphore");
         }
         swapchainMs_ = sinceStartMs();
-        timespec now{};
-        clock_gettime(CLOCK_MONOTONIC, &now);
-        startedAtNs_ = int64_t(now.tv_sec) * 1'000'000'000 + now.tv_nsec;
+        markStarted();
         return true;
     } catch (...) {
         stop();
         throw;
     }
+}
+void VideoOutput::markStarted() noexcept {
+    timespec now{};
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    startedAtNs_ = int64_t(now.tv_sec) * 1'000'000'000 + now.tv_nsec;
+}
+void VideoOutput::swap(VideoOutput& other) noexcept {
+    std::swap(window_, other.window_);
+    std::swap(surface_, other.surface_);
+    std::swap(swapchain_, other.swapchain_);
+    std::swap(extent_, other.extent_);
+    std::swap(outputFormat_, other.outputFormat_);
+    std::swap(offeredFormats_, other.offeredFormats_);
+    std::swap(swapchainMs_, other.swapchainMs_);
+    std::swap(startedAtNs_, other.startedAtNs_);
+    std::swap(images_, other.images_);
+    std::swap(views_, other.views_);
+    std::swap(initialized_, other.initialized_);
+    std::swap(available_, other.available_);
+    std::swap(rendered_, other.rendered_);
 }
 VkFormat VideoOutput::preferredFormat(uint32_t bitDepth) const {
     const VkFormat format = bitDepth == 8                            ? VK_FORMAT_R8G8B8A8_UNORM

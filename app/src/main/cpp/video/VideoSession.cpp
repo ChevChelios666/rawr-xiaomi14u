@@ -99,15 +99,31 @@ void VideoSession::setProcessingConfig(const VideoProcessingConfig& config) noex
 bool VideoSession::start(JNIEnv* env, jobject javaSurface, uint32_t width, uint32_t height, uint32_t rawWidth,
                          uint32_t rawHeight, uint32_t bitDepth, const tonemap::lut::LutChain* renderLut) {
     stop();
+    auto built = buildOutput(env, javaSurface, width, height, bitDepth);
+    if (!built) return false;
+    return start(std::move(built), width, height, rawWidth, rawHeight, renderLut);
+}
+std::unique_ptr<VideoOutput> VideoSession::buildOutput(JNIEnv* env, jobject javaSurface, uint32_t width,
+                                                       uint32_t height, uint32_t bitDepth) {
+    auto built = std::make_unique<VideoOutput>(context_);
+    if (!built->start(env, javaSurface, width, height, bitDepth)) return nullptr;
+    return built;
+}
+bool VideoSession::start(std::unique_ptr<VideoOutput> built, uint32_t width, uint32_t height, uint32_t rawWidth,
+                         uint32_t rawHeight, const tonemap::lut::LutChain* renderLut) {
+    stop();
     recordingTone_.reset();
-    if (rawWidth < width || rawHeight < height) return false;
+    if (!built || !built->ready() || rawWidth < width || rawHeight < height) return false;
     const auto startedAt = std::chrono::steady_clock::now();
     const auto sinceStartMs = [&] {
         return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - startedAt).count();
     };
     try {
-        if (!output_.start(env, javaSurface, width, height, bitDepth)) return false;
-        const double swapchainMs = sinceStartMs();
+        // The swapchain was built outside the lock; the old (stopped) one leaves with `built`.
+        output_.swap(*built);
+        built.reset();
+        output_.markStarted();
+        const double swapchainMs = output_.swapchainMs();
         activeConfig_ = desiredConfig_;
         const auto [sourceWidth, sourceHeight] = videoCropSource();
         ProcessingKey key{width,
@@ -130,11 +146,13 @@ bool VideoSession::start(JNIEnv* env, jobject javaSurface, uint32_t width, uint3
                             "bitDepth=%u surface=%s reused=%d",
                             activeConfig_.highlightMethod, activeConfig_.fccSteps, activeConfig_.defringeStrength,
                             activeConfig_.waveletDenoiseStrength, bitDepth, outputFormatName(), reused ? 1 : 0);
-        const double doneMs = sinceStartMs();
+        // swapchain: built outside the lock; locked: the time spent here with the camera waiting.
+        const double lockedMs = sinceStartMs();
         startTimingJson_ = "{\"swapchain\":" + std::to_string(swapchainMs) +
-                           ",\"processing\":" + std::to_string(doneMs - swapchainMs) +
+                           ",\"processing\":" + std::to_string(lockedMs) +
                            ",\"reused\":" + (reused ? "true" : "false") + ",\"key\":\"" + key.describe() + "\"" +
-                           ",\"total\":" + std::to_string(doneMs) + "}";
+                           ",\"locked\":" + std::to_string(lockedMs) +
+                           ",\"total\":" + std::to_string(swapchainMs + lockedMs) + "}";
         return true;
     } catch (...) {
         stop();
