@@ -349,8 +349,8 @@ CameraControlApplyResult applyCameraControlState(CameraRequest* request, const C
     if (pin && (manualFocus || pin->focusDiopters) && state.capabilities.manualFocusSupported) {
         const uint8_t afOff = ACAMERA_CONTROL_AF_MODE_OFF;
         const uint8_t idle = ACAMERA_CONTROL_AF_TRIGGER_IDLE;
-        const float diopters = (manualFocus ? requestedFocusDiopters(state) : *pin->focusDiopters) *
-                               ShotHandover::fullSizeFocusScale(state.capabilities.cameraId);
+        const float diopters = ShotHandover::fullSizeFocus(state.capabilities.cameraId,
+            manualFocus ? requestedFocusDiopters(state) : *pin->focusDiopters);
         result.focusStatus = request->setU8(ACAMERA_CONTROL_AF_MODE, 1, &afOff);
         (void)request->setFloat(ACAMERA_LENS_FOCUS_DISTANCE, 1, &diopters);
         (void)request->setU8(ACAMERA_CONTROL_AF_TRIGGER, 1, &idle);

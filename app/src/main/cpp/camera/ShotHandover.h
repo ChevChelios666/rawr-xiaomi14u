@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -57,10 +58,21 @@ public:
     static float fullSizeGain(const std::string& cameraId) {
         return cameraId == "3" || cameraId == "4" ? 1.0f / 0.70f : 1.0f;
     }
-    // Focus distance the shot's camera needs for the 12 MP view's: the 3.2x (camera 4) full-size mode focuses nearer
-    // at the same diopters; its sharp plane at 0.627 dpt matched the 12 MP view's at 0.905 (ruler test, 14 Nov). A
-    // scale keeps infinity at infinity. Others unmeasured (1x keeps the lens where the 12 MP view left it).
-    static float fullSizeFocusScale(const std::string& cameraId) { return cameraId == "4" ? 0.627f / 0.905f : 1.0f; }
+    // Focus distance (diopters) the shot's camera needs for a subject the 12 MP view has in focus at `diopters`. The
+    // 3.2x (camera 4) full-size mode doesn't follow the binned mode's distance scale: measured 50 MP photos (not the
+    // viewfinder) were sharp at these settings (real diopters -> sent diopters), linear between them and beyond
+    // the ends along the nearest segment; nothing goes past infinity (0). Others: the view's distance as is.
+    static float fullSizeFocus(const std::string& cameraId, float diopters) {
+        if (cameraId != "4" || !(diopters > 0.0f)) return diopters;
+        // 14 Nov: ~1.1 m ruler test (0.905 -> 0.627), 0.40 m tape (2.50 -> 2.57).
+        static constexpr std::array<std::array<float, 2>, 2> kCam4 = {{{0.905f, 0.627f}, {2.50f, 2.57f}}};
+        std::size_t i = 1;
+        while (i + 1 < kCam4.size() && diopters > kCam4[i][0]) ++i;
+        const auto& a = kCam4[i - 1];
+        const auto& b = kCam4[i];
+        const float t = (diopters - a[0]) / (b[0] - a[0]);
+        return std::max(0.0f, a[1] + t * (b[1] - a[1]));
+    }
     std::optional<AppliedExposure> carriedExposure() const {
         std::lock_guard<std::mutex> lock(mutex_);
         return carriedExposure_;
