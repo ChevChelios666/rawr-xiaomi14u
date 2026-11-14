@@ -19,6 +19,15 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -113,11 +122,19 @@ private object FrameCache {
 }
 
 @Composable
-private fun FrameImage(file: java.io.File?, side: Int, modifier: Modifier, contentScale: ContentScale = ContentScale.Crop) {
+private fun FrameImage(
+    file: java.io.File?, side: Int, modifier: Modifier, contentScale: ContentScale = ContentScale.Crop,
+    detailSide: Int? = null, imageModifier: Modifier = Modifier
+) {
     var bitmap by remember(file?.path) { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(file?.path, file?.length(), side) { bitmap = file?.let { FrameCache.get(it, side) } }
+    // Zoomed in: a sharper decode replaces the view-size one once it's in (the view-size one shows meanwhile).
+    var detail by remember(file?.path) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(file?.path, file?.length(), detailSide) {
+        detail = if (detailSide != null && file != null) FrameCache.get(file, detailSide) else null
+    }
     Box(modifier.background(Color(0xFF1C1A17)), contentAlignment = Alignment.Center) {
-        bitmap?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = contentScale) }
+        (detail ?: bitmap)?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize().then(imageModifier), contentScale = contentScale) }
             ?: Text("…", color = Muted)
     }
 }
@@ -265,17 +282,71 @@ private fun BurstViewer(folder: String, onBack: () -> Unit) {
             Spacer(Modifier.weight(1f))
             Spacer(Modifier.width(56.dp))
         }
-        // The frame (tap: select it while selecting).
+        // The frame (tap: select it while selecting). Pinch to zoom, drag to pan, double tap: 3x there / back to fit.
+        // The zoom stays while scrubbing, so frames compare at the same spot.
+        var zoom by remember(folder) { mutableStateOf(1f) }
+        var pan by remember(folder) { mutableStateOf(Offset.Zero) }
+        var viewSize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+        fun clampPan(p: Offset, z: Float): Offset {
+            val maxX = viewSize.width * (z - 1f) / 2f
+            val maxY = viewSize.height * (z - 1f) / 2f
+            return Offset(p.x.coerceIn(-maxX, maxX), p.y.coerceIn(-maxY, maxY))
+        }
         Box(
             Modifier.fillMaxWidth().weight(1f).padding(vertical = 6.dp)
+                .clipToBounds()
+                .onSizeChanged { viewSize = it }
                 .pointerInput(selecting, frame.number) {
-                    detectTapGestures {
-                        if (selecting) selected = if (frame.number in selected) selected - frame.number else selected + frame.number
+                    detectTapGestures(
+                        onDoubleTap = { at ->
+                            if (zoom > 1.01f) { zoom = 1f; pan = Offset.Zero }
+                            else {
+                                val z = 3f
+                                val center = Offset(size.width / 2f, size.height / 2f)
+                                zoom = z
+                                pan = clampPan((center - at) * (z - 1f), z)
+                            }
+                        },
+                        onTap = {
+                            if (selecting) selected = if (frame.number in selected) selected - frame.number else selected + frame.number
+                        }
+                    )
+                }
+                .pointerInput(folder) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        do {
+                            val event = awaitPointerEvent()
+                            val pointers = event.changes.count { it.pressed }
+                            // One finger pans only when zoomed in; two pinch (around the fingers) and pan.
+                            if (pointers >= 2 || (pointers == 1 && zoom > 1.01f)) {
+                                val centroid = event.calculateCentroid(useCurrent = true)
+                                val newZoom = (zoom * event.calculateZoom()).coerceIn(1f, 8f)
+                                val center = Offset(size.width / 2f, size.height / 2f)
+                                val k = newZoom / zoom
+                                // Keep the image point under the fingers where it is.
+                                val p = (pan - (centroid - center)) * k + (centroid - center) + event.calculatePan()
+                                zoom = newZoom
+                                pan = if (newZoom <= 1.01f) Offset.Zero else clampPan(p, newZoom)
+                                event.changes.forEach { if (it.positionChanged()) it.consume() }
+                            }
+                        } while (event.changes.any { it.pressed })
                     }
                 },
             contentAlignment = Alignment.Center
         ) {
-            FrameImage(frame.view, 1400, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+            FrameImage(
+                frame.view, 1400, Modifier.fillMaxSize(), contentScale = ContentScale.Fit,
+                detailSide = if (zoom > 1.5f) 4096 else null,
+                imageModifier = Modifier.graphicsLayer {
+                    scaleX = zoom; scaleY = zoom; translationX = pan.x; translationY = pan.y
+                }
+            )
+            if (zoom > 1.01f) {
+                Box(Modifier.align(Alignment.BottomEnd).padding(8.dp)) {
+                    Badge(String.format(Locale.US, "%.1f×", zoom), Color.White)
+                }
+            }
             Row(Modifier.align(Alignment.TopStart).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (frame.number == burst.pressNumber) Badge("● PRESS")
                 if (frame.number == burst.cover) Badge("COVER")
