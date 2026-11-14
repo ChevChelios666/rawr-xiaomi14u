@@ -489,3 +489,7 @@ if(ANDROID)
   target_link_libraries(rawrcam_pano PRIVATE ${OpenCV_LIBS} log z)
   target_compile_options(rawrcam_pano PRIVATE -O2)
 endif()
+# Full-size burst remosaic is inline in SessionEngine.cpp. Keep device Debug
+# timing representative of optimized CPU loops without changing the algorithm.
+set_source_files_properties(session/SessionEngine.cpp
+  PROPERTIES COMPILE_OPTIONS "$<$<CONFIG:Debug>:-O2>")

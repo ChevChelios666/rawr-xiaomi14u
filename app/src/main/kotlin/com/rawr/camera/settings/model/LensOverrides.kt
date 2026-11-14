@@ -169,11 +169,11 @@ object LensOverrides {
             read = { it.experimentalMultiframeEnabled.toString() },
             write = { s, v -> s.copy(experimentalMultiframeEnabled = v == "true") }),
         LensOverrideSpec("multiframe.merge", GROUP_MULTIFRAME, "Merge Algorithm",
-            choice<MultiframeMergeAlgorithm>({ it.label }, MultiframeMergeAlgorithm.entries.filter { it.available }),
+            choice<MultiframeMergeAlgorithm>({ it.label }, MultiframeMergeAlgorithm.entries),
             read = { it.multiframeTuning.mergeAlgorithm.name },
             write = { s, v ->
                 s.copy(multiframeTuning = s.multiframeTuning.copy(
-                    mergeAlgorithm = enumOf(v, s.multiframeTuning.mergeAlgorithm).takeIf { it.available }
+                    mergeAlgorithm = enumOf(v, s.multiframeTuning.mergeAlgorithm)
                         ?: s.multiframeTuning.mergeAlgorithm))
             }),
         LensOverrideSpec("multiframe.frames", GROUP_MULTIFRAME, "Maximum Frames",

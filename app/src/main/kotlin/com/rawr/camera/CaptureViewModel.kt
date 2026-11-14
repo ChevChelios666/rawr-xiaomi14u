@@ -490,7 +490,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         StillCaptureCoordinator(
             application = application,
             preview = previewCoordinator,
-            // Zoomed past a lens with multiframe on: the "Merge when zoomed" choice (default Super-resolution).
+            // Zoomed past a lens with multiframe on: the "Merge when zoomed" choice (default: the usual merge).
             settings = {
                 latestSettings.let { s ->
                     val zoomMerge = s.zoomMergeAlgorithm

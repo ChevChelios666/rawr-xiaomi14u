@@ -76,7 +76,7 @@ internal fun SettingsValues.toViewfinderQuickState(
     val compressionDefault =
         if (isVideo) VIDEO_HIGHLIGHT_COMPRESSION_DEFAULT else PHOTO_HIGHLIGHT_COMPRESSION_DEFAULT
     return ViewfinderQuickState(
-        dcps = (lensProfiles ?: deviceDefaults).map {
+        dcps = if (!showDcpQuickSelect) emptyList() else (lensProfiles ?: deviceDefaults).map {
             DcpQuickState(it.name, it.image.availableDcps, (if (isVideo) it.image.videoDcp else it.image.dcp)?.file)
         },
         overrideLenses = (lensProfiles ?: deviceDefaults).let { lenses ->

@@ -90,6 +90,8 @@ data class SetFocusLoupe(val value: com.rawr.camera.settings.model.FocusLoupeSet
 
 data class SetViewfinderDivisor(val divisor: Int) : SettingsApplicationAction
 
+data class SetShowDcpQuickSelect(val enabled: Boolean) : SettingsApplicationAction
+
 data class SetColorRenderProfile(val value: ColorRenderProfile) : SettingsApplicationAction
 
 data class SelectUserLutProfile(val profileId: String) : SettingsApplicationAction
@@ -333,10 +335,11 @@ data class SetMultiframeBaseFrameMode(val value: MultiframeBaseFrameMode) : Sett
 
 data class SetMultiframeChromaDenoise(val enabled: Boolean) : SettingsApplicationAction
 
+data class SetMultiframeRextureNativeRgb(val enabled: Boolean) : SettingsApplicationAction
+
 data class SetMultiframeNumericValue(val parameter: MultiframeNumericParameter, val value: Float) :
     SettingsApplicationAction
 
-data class SetMultiframeOutputResolution(val value: MultiframeOutputResolution) : SettingsApplicationAction
 
 data class SetMultiframeMergeAlgorithm(val value: MultiframeMergeAlgorithm) : SettingsApplicationAction
 

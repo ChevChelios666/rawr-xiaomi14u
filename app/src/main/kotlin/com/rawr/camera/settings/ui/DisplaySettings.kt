@@ -19,6 +19,13 @@ internal fun DisplayControlsSettings(state: SettingsUiState, dispatch: SettingsD
     SettingsPageContainer(testTag = SettingsTestTags.sectionRoot("DisplayControls")) {
         SettingsGroup {
             // X14U: the grid lives in the capture screen's tools panel.
+            SettingsSwitchRow(
+                title = "DCP Quick Select",
+                checked = state.values.showDcpQuickSelect,
+                supportingText = "Show the DCP profile shortcut beside the lens selector on the capture screen.",
+                testTag = SettingsTestTags.row("DisplayControls", "dcp_quick_select")
+            ) { dispatch.invoke(SetShowDcpQuickSelect(it)) }
+            SettingDivider()
             ViewfinderResolutionRow(state.values.viewfinderDivisor) { dispatch.invoke(SetViewfinderDivisor(it)) }
             SettingDivider()
             SettingsRow(

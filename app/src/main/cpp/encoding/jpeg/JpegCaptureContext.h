@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -71,10 +72,13 @@ struct JpegCaptureContext {
     std::string lensModel;
     std::string lensSerial;
     // Source capture time on re-renders; DateTime remains export time.
+    bool preserveSourceTime = false;
     std::string dateTimeOriginal;  // "YYYY:MM:DD HH:MM:SS"
     std::string dateTimeDigitized;
     std::string offsetTimeOriginal;
     std::string subsecTimeOriginal;
+    std::string offsetTimeDigitized;
+    std::string subsecTimeDigitized;
 
     // Frozen public metadata. Keep implementation-specific algorithm names out of this report.
     std::string imageDescription;
@@ -124,6 +128,8 @@ struct JpegCaptureContext {
     double mfProjectMs = 0.0;
     double mfRgbPrepMs = 0.0;
     bool mfDirectRgb = false;
+    // Multiframe: when the capture was accepted (burst save and queue wait happen between this and the stages above).
+    std::chrono::steady_clock::time_point acceptedAt{};
 };
 
 }  // namespace rawrcam::encoding::jpeg
