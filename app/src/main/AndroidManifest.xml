@@ -56,6 +56,10 @@
                 <data android:scheme="file" android:mimeType="image/x-dng" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".burst.BurstViewerActivity"
+            android:exported="false"
+            android:label="Bursts" />
         <service android:name=".renderer.library.DngConvertService" android:exported="false" android:foregroundServiceType="dataSync|mediaProcessing" />
         <service android:name=".renderer.RendererService" android:exported="false" android:foregroundServiceType="dataSync|mediaProcessing" />
         <service

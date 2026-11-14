@@ -98,20 +98,17 @@ class StillOutputStore(
         recipe: String = ""
     ): PreparedCapture? {
         val (base, burstFolder) = captureBaseName(wallClockMillis)
-        // X14U Burst: one folder per burst in "Rawr Bursts" next to the save location's folder (DCIM/Rawr Bursts/
-        // BURST_…/): galleries fold subfolders of DCIM/Camera into the Camera roll, a top-level folder is its own album.
-        // Picked SAF folders keep the flat layout.
-        val destination = CaptureSaveLocation.fromId(saveLocationId).let { location ->
-            if (burstFolder == null || location.relativePath.isEmpty()) location
-            else location.copy(relativePath = location.relativePath.substringBefore('/') + "/Rawr Bursts/" + burstFolder + "/")
-        }
+        val destination = CaptureSaveLocation.fromId(saveLocationId)
+        // X14U Burst: frames stay in Rawr's own storage (files/burst_frames/<folder>/), out of other galleries; the
+        // burst viewer exports the chosen ones to DCIM/Rawr Bursts/.
+        val privateDir = burstFolder?.let { java.io.File(context.filesDir, "burst_frames/$it").apply { mkdirs() } }
         require(dngEnabled || jpegEnabled)
         val multiframe = multiframeFrames >= 2
         val conditional = !dngEnabled && jpegEnabled && filmFallback
         val suffix = if (multiframe) "_MF$multiframeFrames" else ""
         val opened = mutableListOf<PreparedFile>()
         fun target(name: String, mime: String): PreparedFile =
-            checkNotNull(prepareFile(name, mime, destination)).also { opened.add(it) }
+            checkNotNull(prepareFile(name, mime, destination, privateDir)).also { opened.add(it) }
         val output = try {
             PreparedCapture(
                 dng = if ((!multiframe && (dngEnabled || conditional)) || (multiframe && dngEnabled && saveBaseDng))
@@ -410,7 +407,18 @@ class StillOutputStore(
         return (name.wholeName ?: (CaptureFileNames.baseName(uniqueMillis) + name.suffix)) to name.folder
     }
 
-    private fun prepareFile(displayName: String, mimeType: String, destination: CaptureSaveLocation): PreparedFile? {
+    private fun prepareFile(
+        displayName: String,
+        mimeType: String,
+        destination: CaptureSaveLocation,
+        privateDir: java.io.File? = null
+    ): PreparedFile? {
+        if (privateDir != null) {
+            val file = java.io.File(privateDir, displayName)
+            val pfd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_CREATE or
+                ParcelFileDescriptor.MODE_TRUNCATE or ParcelFileDescriptor.MODE_READ_WRITE)
+            return PreparedFile(Uri.fromFile(file), pfd.detachFd(), displayName)
+        }
         val resolver = context.contentResolver
         val treeUri = destination.treeUri?.toUri()
         val mediaUri =
@@ -459,6 +467,10 @@ class StillOutputStore(
     }
 
     private fun deleteUri(uri: Uri) {
+        if (uri.scheme == "file") {
+            uri.path?.let { java.io.File(it).delete() }
+            return
+        }
         if (uri.authority == MediaStore.AUTHORITY) {
             context.contentResolver.delete(uri, null, null)
         } else {

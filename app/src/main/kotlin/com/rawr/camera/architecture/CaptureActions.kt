@@ -179,7 +179,9 @@ data class StartBurst(
     val format: com.rawr.camera.model.CaptureOutputFormat,
     val limit: Int,
     /** Pre-capture on: the frames held from before the press are saved too. */
-    val pre: Boolean = false
+    val pre: Boolean = false,
+    /** BurstFormat name (manifest). */
+    val burstFormat: String = "Jpeg"
 ) : ApplicationCaptureAction
 
 /** X14U Burst: the shutter is let go. */

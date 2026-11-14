@@ -69,12 +69,14 @@ object BurstSettings {
 object BurstControl {
     fun start(): com.rawr.camera.architecture.StartBurst = com.rawr.camera.architecture.StartBurst(
         fps = BurstSettings.fps.value,
+        // Every frame keeps a (private) DNG so the viewer can develop it in full quality; a JPEG burst's DNGs go
+        // after RAW_KEEP_DAYS, JPEG+DNG keeps them.
         format = when (BurstSettings.format.value) {
-            BurstFormat.Jpeg -> com.rawr.camera.model.CaptureOutputFormat.Jpeg
-            BurstFormat.JpegDng -> com.rawr.camera.model.CaptureOutputFormat.DngAndJpeg
+            BurstFormat.Jpeg, BurstFormat.JpegDng -> com.rawr.camera.model.CaptureOutputFormat.DngAndJpeg
             BurstFormat.Raw -> com.rawr.camera.model.CaptureOutputFormat.Dng
         },
         limit = BurstSettings.MAX_SHOTS,
-        pre = BurstSettings.pre.value > 0
+        pre = BurstSettings.pre.value > 0,
+        burstFormat = BurstSettings.format.value.name
     )
 }

@@ -163,6 +163,16 @@ internal fun RendererLibrary(
                         }
                     })
             }
+            // X14U bursts live in Rawr's own storage: their tab opens the burst library.
+            val burstCount = remember { com.rawr.camera.burst.BurstStore.list(context).size }
+            Tab(selected = false, onClick = { context.startActivity(com.rawr.camera.burst.BurstViewerActivity.intent(context)) },
+                text = {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Bursts", maxLines = 1)
+                        Text("$burstCount", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                })
         }
         // Fixed slot: rescans run after every published conversion, and an
         // indicator that came and went would nudge the cards below it.

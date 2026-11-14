@@ -121,7 +121,10 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         } else {
             // Without this the first ~6 frames waited 25-110 ms each for a RAW buffer (diagnostics 14 Nov).
             previewCoordinator.prewarmStillBuffers(6)
-            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { cleanBurstRaw() }
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                com.rawr.camera.burst.BurstStore.cleanup(getApplication())
+                refreshLatestBurst()
+            }
         }
     }
 
@@ -143,10 +146,24 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                     .put("startedAt", run.startedAtMillis).put("liveMs", run.liveMs)
                     .put("preFrames", run.preFrames).put("pressNumber", run.pressNumber)
                     .put("liveFrames", run.liveFrames).put("format", run.format)
-                    .put("rawKept", run.rawKept).put("rawKeepDays", com.rawr.camera.burst.BurstSettings.RAW_KEEP_DAYS)
+                    .put("rawKept", run.rawKept).put("cover", run.pressNumber)
+                    .put("rawKeepDays", if (run.format == "Jpeg") com.rawr.camera.burst.BurstSettings.RAW_KEEP_DAYS else 0)
                 java.io.File(dir, run.folder + ".json").writeText(json.toString(2))
             }
+            refreshLatestBurst()
         }
+    }
+
+    /** Burst mode: the gallery thumbnail shows the last burst's cover and opens the burst viewer. */
+    private val latestBurstFlow = kotlinx.coroutines.flow.MutableStateFlow<Uri?>(null)
+    val latestBurst: StateFlow<Uri?> = latestBurstFlow
+    @Volatile var latestBurstFolder: String? = null
+        private set
+
+    private fun refreshLatestBurst() {
+        val latest = com.rawr.camera.burst.BurstStore.latest(getApplication())
+        latestBurstFolder = latest?.folder
+        latestBurstFlow.value = latest?.coverFrame?.view?.let(Uri::fromFile)
     }
 
     /** Private burst RAW older than the keep time goes (files/burst_raw/<folder>/). */
@@ -722,6 +739,16 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun onJpegPublished(uri: Uri) {
+        // Burst frames (Rawr's own storage) don't replace the gallery's latest photo; the first one shows as the
+        // burst thumbnail while the rest save.
+        if (uri.scheme == "file") {
+            if (latestBurstFlow.value == null || latestBurstFolder == null ||
+                !uri.path.orEmpty().contains("/$latestBurstFolder/")) {
+                latestBurstFlow.value = uri
+                latestBurstFolder = java.io.File(uri.path.orEmpty()).parentFile?.name
+            }
+            return
+        }
         galleryMediaStore.rememberPublishedJpeg(uri)
         galleryRefreshGeneration.incrementAndGet()
         mutableLatestGalleryImage.value = uri

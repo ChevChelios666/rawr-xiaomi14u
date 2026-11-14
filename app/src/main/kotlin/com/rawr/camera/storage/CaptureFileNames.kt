@@ -22,18 +22,15 @@ internal object CaptureFileNames {
     data class StillName(val suffix: String = "", val folder: String? = null, val wholeName: String? = null)
 
     /**
-     * X14U Burst: each queued frame takes its reserved number, named the way Pixel phones name burst frames so
-     * Google Photos stacks them: "00040IMG_00040_BURST20261114032628123_COVER" (index from 0, one shared burst id,
-     * the press frame is the cover).
+     * X14U Burst: each queued frame takes its reserved number, "<folder>_041" (Rawr's private burst storage; the
+     * manifest records which number is the press frame / cover).
      */
     fun takeStill(): StillName {
-        burstTag?.let { tag ->
+        burstTag?.let {
             val number = burstNumbers.pollFirst()
             if (number != null) {
-                val index = number - 1
-                val cover = if (number == burstCover) "_COVER" else ""
-                return StillName(folder = burstFolder,
-                    wholeName = "%05dIMG_%05d%s%s".format(Locale.US, index, index, tag, cover))
+                val folder = burstFolder ?: "BURST"
+                return StillName(folder = burstFolder, wholeName = "%s_%03d".format(Locale.US, folder, number))
             }
         }
         val (suffix, at) = pendingSuffix.getAndSet(null) ?: return StillName()

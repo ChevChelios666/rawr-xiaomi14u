@@ -500,8 +500,7 @@ class NativeCaptureScreenController(
         // Pre-capture: the frames held from before the press freeze now (live frames take the camera from here on);
         // they are numbered first and saved after release.
         val preEstimate = if (action.pre) coordinator.freezePrecapture() else 0
-        com.rawr.camera.storage.CaptureFileNames.startBurst(tag, folder, firstLive = preEstimate + 1,
-            retainRaw = action.format == CaptureOutputFormat.Jpeg)
+        com.rawr.camera.storage.CaptureFileNames.startBurst(tag, folder, firstLive = preEstimate + 1)
         update { it.copy(burst = it.burst.copy(running = true, shots = 0, fps = action.fps, limit = action.limit,
             stoppedFull = false, startedAtMs = android.os.SystemClock.uptimeMillis(), preFrames = 0)) }
         val interval = (1000L / action.fps.coerceIn(1, 60)).coerceAtLeast(1L)
@@ -556,7 +555,7 @@ class NativeCaptureScreenController(
                     android.util.Log.i("RawrCamCapture", "BURST_RUN fps=${action.fps} queued=$queued " +
                         "accepted=$live pre=$pre ms=$liveMs refused=${burstRefused.get()}")
                     onBurstFinished(BurstRun(folder, tag, action.fps, startedWall, liveMs, pre, preEstimate + 1, live,
-                        action.format.name, action.format == CaptureOutputFormat.Jpeg))
+                        action.burstFormat, action.burstFormat == "Jpeg"))
                     update { it.copy(burst = it.burst.copy(running = false, lastCount = it.burst.shots,
                         stoppedFull = burstRefused.get(), preFrames = pre)) }
                 }

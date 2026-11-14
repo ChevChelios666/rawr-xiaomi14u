@@ -199,6 +199,7 @@ class MainActivity : ComponentActivity() {
             val filmSimQuick by captureViewModel.filmSimQuick.collectAsStateWithLifecycle()
             val viewfinderQuick by captureViewModel.viewfinderQuick.collectAsStateWithLifecycle()
             val latestGalleryImage by captureViewModel.latestGalleryImage.collectAsStateWithLifecycle()
+            val latestBurst by captureViewModel.latestBurst.collectAsStateWithLifecycle()
             val videoSelection = androidx.compose.runtime.remember(captureViewModel) {
                 captureViewModel.controller.state.map { it.videoCrop to it.videoFps }.distinctUntilChanged()
             }
@@ -248,8 +249,13 @@ class MainActivity : ComponentActivity() {
                             )
                         )
                     },
-                    latestImageUri = latestGalleryImage,
-                    onOpenLatestImage = { latestGalleryImage?.let(::openGalleryImage) },
+                    // Burst: the last burst (its cover) and the burst viewer; other modes the last photo.
+                    latestImageUri = if (burst) latestBurst else latestGalleryImage,
+                    onOpenLatestImage = {
+                        if (burst) startActivity(com.rawr.camera.burst.BurstViewerActivity.intent(this@MainActivity,
+                            captureViewModel.latestBurstFolder))
+                        else latestGalleryImage?.let(::openGalleryImage)
+                    },
                     onOpenRenderer = { startActivity(Intent(this@MainActivity, com.rawr.camera.renderer.RendererActivity::class.java)) },
                     filmQuick = filmSimQuick,
                     onFilmEvent = captureViewModel::onFilmEvent,

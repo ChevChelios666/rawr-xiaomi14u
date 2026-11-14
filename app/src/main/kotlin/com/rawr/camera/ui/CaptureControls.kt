@@ -544,6 +544,10 @@ internal fun Thumbnail(state: CaptureUiState, imageUri: Uri?, onClick: () -> Uni
         thumbnail =
             imageUri?.let { uri ->
                 withContext(Dispatchers.IO) {
+                    // Burst frames are files in Rawr's own storage.
+                    if (uri.scheme == "file") {
+                        uri.path?.let { com.rawr.camera.burst.BurstStore.decode(java.io.File(it), 256) }
+                    } else
                     // DNG-only captures: the platform thumbnailer cannot decode most RAWs.
                     if (com.rawr.camera.storage.GalleryMediaStore(context).isDng(uri)) {
                         com.rawr.camera.renderer.library.DngLibrary.get(context).thumbnail(uri)
