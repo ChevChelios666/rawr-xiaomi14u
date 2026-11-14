@@ -16,22 +16,28 @@ internal object CaptureFileNames {
         pendingSuffix.set(if (suffix.isEmpty()) null else suffix to System.nanoTime())
     }
 
-    fun takeStillSuffix(): String = takeStill().first
+    fun takeStillSuffix(): String = takeStill().suffix
+
+    /** The next still's name: a tag after Rawr's own name, or (a burst frame) a whole name and its folder. */
+    data class StillName(val suffix: String = "", val folder: String? = null, val wholeName: String? = null)
 
     /**
-     * The next still's name tag and, for a burst frame, its folder (null: the save location itself).
-     * X14U Burst: each queued frame takes its reserved number ("_BURST004945_041"), the press frame "_COVER" too.
+     * X14U Burst: each queued frame takes its reserved number, named the way Pixel phones name burst frames so
+     * Google Photos stacks them: "00040IMG_00040_BURST20261114032628123_COVER" (index from 0, one shared burst id,
+     * the press frame is the cover).
      */
-    fun takeStill(): Pair<String, String?> {
+    fun takeStill(): StillName {
         burstTag?.let { tag ->
             val number = burstNumbers.pollFirst()
             if (number != null) {
+                val index = number - 1
                 val cover = if (number == burstCover) "_COVER" else ""
-                return (tag + "_%03d".format(Locale.US, number) + cover) to burstFolder
+                return StillName(folder = burstFolder,
+                    wholeName = "%05dIMG_%05d%s%s".format(Locale.US, index, index, tag, cover))
             }
         }
-        val (suffix, at) = pendingSuffix.getAndSet(null) ?: return "" to null
-        return (if (System.nanoTime() - at < 20_000_000_000L) suffix else "") to null
+        val (suffix, at) = pendingSuffix.getAndSet(null) ?: return StillName()
+        return StillName(suffix = if (System.nanoTime() - at < 20_000_000_000L) suffix else "")
     }
 
     @Volatile private var burstTag: String? = null
@@ -73,7 +79,7 @@ internal object CaptureFileNames {
 
     /** True when this job's RAW stays (privately) after its photo is saved; the burst folder it goes to. */
     fun retainedRawFolder(jobName: String): String? {
-        return retainedTags.entries.firstOrNull { jobName.contains(it.key + "_") }?.value
+        return retainedTags.entries.firstOrNull { jobName.contains(it.key) }?.value
     }
 
     /** Leaving Burst: later photos get plain names. */

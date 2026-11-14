@@ -406,8 +406,8 @@ class StillOutputStore(
 
     private fun captureBaseName(wallClockMillis: Long): Pair<String, String?> {
         val uniqueMillis = lastNameTimestamp.updateAndGet { previous -> maxOf(wallClockMillis, previous + 1) }
-        val (suffix, folder) = CaptureFileNames.takeStill()
-        return (CaptureFileNames.baseName(uniqueMillis) + suffix) to folder
+        val name = CaptureFileNames.takeStill()
+        return (name.wholeName ?: (CaptureFileNames.baseName(uniqueMillis) + name.suffix)) to name.folder
     }
 
     private fun prepareFile(displayName: String, mimeType: String, destination: CaptureSaveLocation): PreparedFile? {

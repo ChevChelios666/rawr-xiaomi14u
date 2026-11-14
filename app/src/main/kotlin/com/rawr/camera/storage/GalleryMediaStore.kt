@@ -21,10 +21,11 @@ class GalleryMediaStore(private val context: Context) {
     fun findLatestRawrImage(): Uri? {
         val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
         val projection = arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DISPLAY_NAME)
-        val selection =
-            "(${MediaStore.Images.Media.DISPLAY_NAME} LIKE ? OR ${MediaStore.Images.Media.DISPLAY_NAME} LIKE ?) AND " +
-                "${MediaStore.Images.Media.IS_PENDING} = 0"
-        val selectionArgs = arrayOf("RAWR_%.jpg", "RAWR_%.dng")
+        // Burst frames carry Pixel-style names ("00040IMG_00040_BURST…") so Google Photos stacks them.
+        val name = MediaStore.Images.Media.DISPLAY_NAME
+        val selection = "($name LIKE ? OR $name LIKE ? OR $name LIKE ? OR $name LIKE ?) AND " +
+            "${MediaStore.Images.Media.IS_PENDING} = 0"
+        val selectionArgs = arrayOf("RAWR_%.jpg", "RAWR_%.dng", "%IMG_%_BURST%.jpg", "%IMG_%_BURST%.dng")
         val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} DESC, ${MediaStore.Images.Media._ID} DESC"
         val newest = context.contentResolver.query(collection, projection, selection, selectionArgs, sortOrder)?.use { cursor ->
             val rows = buildList {

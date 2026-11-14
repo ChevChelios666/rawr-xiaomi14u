@@ -494,7 +494,8 @@ class NativeCaptureScreenController(
         val token = foregroundToken() ?: return
         burstRefused.set(false)
         val now = java.util.Date()
-        val tag = "_BURST" + java.text.SimpleDateFormat("HHmmss", java.util.Locale.US).format(now)
+        // Pixel-style burst id (17 digits): Google Photos stacks frames that share it.
+        val tag = "_BURST" + java.text.SimpleDateFormat("yyyyMMddHHmmssSSS", java.util.Locale.US).format(now)
         val folder = "BURST_" + java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(now)
         // Pre-capture: the frames held from before the press freeze now (live frames take the camera from here on);
         // they are numbered first and saved after release.
