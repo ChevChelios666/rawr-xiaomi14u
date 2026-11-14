@@ -45,6 +45,9 @@ struct FrameMetadataSnapshot {
     // Developed (stills, scopes) but not presented: the viewfinder holds its
     // last image, e.g. during and for a long exposure.
     bool hidePreview = false;
+    // Hidden but still fed to the multiframe ring (X14U 50 MP shot's held viewfinder). Other hidden frames (a long
+    // exposure) stay out of it.
+    bool hiddenFeedsRing = false;
     CameraContextMetadataPtr cameraContext;
     uint64_t frameOrdinal = 0;
     uint64_t timestampNs = 0;  // SENSOR_TIMESTAMP; AImage/CaptureResult pairing key.

@@ -349,7 +349,11 @@ std::optional<FrameSubmitCoordinator::AcquiredSubmit> FrameSubmitCoordinator::ac
     } else if (videoIndex) {
         ++previewSkippedDuringVideo_;
     }
-    if (!swapIndex && !videoIndex) {
+    // A hidden frame (X14U 50 MP shot: the viewfinder holds its last 12 MP frame) still feeds the multiframe ring;
+    // the recorder skips the develop work without a presentation target. Dropping it here left the 50 MP shot's ring
+    // empty (MULTIFRAME_SNAPSHOT 0 frames, diagnostics 14 Nov 21:31): every 50 MP shot was a single frame.
+    const bool ringOnly = metadata.hidePreview && metadata.hiddenFeedsRing && capturePort_.multiframeEnabled();
+    if (!swapIndex && !videoIndex && !ringOnly) {
         performanceTracker_.recordDropped();
         return std::nullopt;
     }
