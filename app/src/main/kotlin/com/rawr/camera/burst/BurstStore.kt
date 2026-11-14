@@ -145,12 +145,14 @@ object BurstStore {
     /** A sampled bitmap for [file] (JPEG via BitmapFactory, DNG via ImageDecoder), longest side about [maxSide]. */
     fun decode(file: File, maxSide: Int): Bitmap? = runCatching {
         if (file.length() == 0L) return@runCatching null
+        // ImageDecoder applies the EXIF orientation (BitmapFactory didn't: frames showed turned).
         if (file.extension.equals("jpg", true)) {
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeFile(file.path, bounds)
-            var sample = 1
-            while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxSide) sample *= 2
-            BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })
+            ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, info, _ ->
+                var sample = 1
+                while (maxOf(info.size.width, info.size.height) / (sample * 2) >= maxSide) sample *= 2
+                decoder.setTargetSampleSize(sample)
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            }
         } else {
             ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, info, _ ->
                 val scale = maxSide / maxOf(info.size.width, info.size.height).toFloat()

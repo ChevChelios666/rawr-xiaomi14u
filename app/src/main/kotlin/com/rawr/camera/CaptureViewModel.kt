@@ -559,7 +559,13 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
 
     private val settingsSync by lazy {
         com.rawr.camera.integration.CaptureSettingsSync(
-            viewModelScope, effectiveValues, { latestSettings }, previewCoordinator, controller
+            viewModelScope,
+            // Burst runs single frames: no multiframe ring, merge-count noise limit or HDR+ Bracketed headroom
+            // (that one darkens the viewfinder the burst frames come from) carried over from Photo.
+            kotlinx.coroutines.flow.combine(effectiveValues, burstFlow) { values, burst ->
+                if (burst) values.copy(experimentalMultiframeEnabled = false) else values
+            },
+            { latestSettings }, previewCoordinator, controller
         )
     }
 
