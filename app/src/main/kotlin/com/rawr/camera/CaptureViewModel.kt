@@ -117,7 +117,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         burstFlow.value = on
         if (!on) controller.dispatch(com.rawr.camera.architecture.EndBurstMode)
         // Without this the first ~6 frames waited 25-110 ms each for a RAW buffer (diagnostics 14 Nov).
-        else previewCoordinator.prewarmStillBuffers(4)
+        else previewCoordinator.prewarmStillBuffers(6)
     }
 
     /** X14U Pano merge on the phone: progress and result for the viewfinder (clears a few seconds after the end). */

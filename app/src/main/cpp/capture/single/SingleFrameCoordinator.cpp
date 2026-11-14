@@ -1,4 +1,5 @@
 #include "capture/single/SingleFrameCoordinator.h"
+#include "capture/single/RawBufferPool.h"
 
 #include <android/log.h>
 #include <sys/resource.h>
@@ -360,6 +361,8 @@ class SingleFrameCoordinator::Impl {
                 entry = queue_.front();
             }
             if (entry->preparation.joinable()) entry->preparation.join();
+            // Burst: wait while the shutter is held (capture first); stopping still drains the queue.
+            while (StillDevelopGate::paused() && !stopped_) std::this_thread::sleep_for(std::chrono::milliseconds(20));
             if (diagnostic_)
                 diagnostic_("STILL_QUEUE_JOB_STARTED requestId=" + std::to_string(entry->id) + " waitMs=" +
                             std::to_string(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() -

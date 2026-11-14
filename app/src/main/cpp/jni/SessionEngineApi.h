@@ -90,6 +90,8 @@ std::string pollDngWriteCompletion(EngineHandle handle);
 bool stillCaptureHoldsCamera(EngineHandle handle);
 // X14U Burst: allocate still RAW buffers ahead (a worker thread), so a burst's first frames don't wait for them.
 void prewarmStillBuffers(EngineHandle handle, int count);
+// X14U Burst: background development waits while the shutter is held.
+void setStillDevelopPaused(bool paused);
 std::string pollJpegWriteCompletion(EngineHandle handle);
 uint64_t recoverStill(EngineHandle handle, const std::string& name, bool multiframe, int dng, int merged, int jpeg);
 std::string runHighlightReplay(EngineHandle handle, const std::string& inputPath);

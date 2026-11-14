@@ -1,4 +1,6 @@
 #pragma once
+#include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -56,7 +58,9 @@ class RawBufferPool final {
     }
 
    private:
-    static constexpr std::size_t kMaxBytes = std::size_t(128) * 1024 * 1024;
+    // 8 frames at 12 MP: a burst's journal writes can lag a few frames behind capture (Nov 14: the pool ran dry
+    // and frames waited 65-165 ms for fresh buffers).
+    static constexpr std::size_t kMaxBytes = std::size_t(208) * 1024 * 1024;
     static std::mutex& mutex() {
         static std::mutex m;
         return m;
@@ -68,6 +72,27 @@ class RawBufferPool final {
     static std::size_t& pooledBytes() {
         static std::size_t n = 0;
         return n;
+    }
+};
+
+// X14U Burst: background development waits while the shutter is held, so capture (RAW copies, journal writes,
+// gallery entries) has the phone to itself; it resumes on release. A run that is never released resumes after 60 s.
+class StillDevelopGate final {
+   public:
+    static void setPaused(bool paused) {
+        pausedSince().store(paused ? std::chrono::steady_clock::now().time_since_epoch().count() : 0);
+    }
+    static bool paused() {
+        const auto since = pausedSince().load();
+        if (!since) return false;
+        const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+        return now - since < std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::seconds(60)).count();
+    }
+
+   private:
+    static std::atomic<std::chrono::steady_clock::rep>& pausedSince() {
+        static std::atomic<std::chrono::steady_clock::rep> v{0};
+        return v;
     }
 };
 

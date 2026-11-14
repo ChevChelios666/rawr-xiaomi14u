@@ -273,6 +273,7 @@ class NativeCaptureScreenController(
             StopBurst -> stopBurst()
             EndBurstMode -> {
                 stopBurst()
+                coordinator.setStillDevelopPaused(false)
                 com.rawr.camera.storage.CaptureFileNames.endBurst()
                 update { it.copy(burst = it.burst.copy(lastCount = 0, stoppedFull = false)) }
             }
@@ -495,6 +496,8 @@ class NativeCaptureScreenController(
         update { it.copy(burst = it.burst.copy(running = true, shots = 0, fps = action.fps, limit = action.limit,
             stoppedFull = false, startedAtMs = android.os.SystemClock.uptimeMillis())) }
         val interval = (1000L / action.fps.coerceIn(1, 60)).coerceAtLeast(1L)
+        // Saving waits until the shutter is let go (it competed with capture and caused the dips, Nov 14).
+        coordinator.setStillDevelopPaused(true)
         burstJob = scope.launch {
             var queued = 0
             var next = android.os.SystemClock.uptimeMillis()
@@ -519,6 +522,7 @@ class NativeCaptureScreenController(
                 withContext(NonCancellable) {
                     // The frames already queued still count (they are on their way to the worker).
                     while (burstWaiting.get() > 0) delay(20L)
+                    coordinator.setStillDevelopPaused(false)
                     val ms = android.os.SystemClock.uptimeMillis() - state.value.burst.startedAtMs
                     android.util.Log.i("RawrCamCapture", "BURST_RUN fps=${action.fps} queued=$queued " +
                         "accepted=${state.value.burst.shots} ms=$ms refused=${burstRefused.get()}")
