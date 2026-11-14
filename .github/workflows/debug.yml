@@ -2,7 +2,7 @@ name: Rawr X14U build
 
 on:
   push:
-    branches: [main, test/rexture]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -80,18 +80,6 @@ jobs:
           gh release create debug rawr-x14u.apk --prerelease --target "$GITHUB_SHA" \
             --title "Rawr X14U" \
             --notes "Rawr X14U build of ${GITHUB_SHA::8}. Installs alongside Rawr and Rawr Debug."
-
-      # Test branch: its own prerelease, so the main build's `debug` release stays as it is.
-      - name: Publish Rexture test prerelease
-        if: github.event_name == 'push' && github.ref == 'refs/heads/test/rexture'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          cp app/build/outputs/apk/debug/app-debug.apk rawr-x14u-rexture.apk
-          gh release delete rexture-test --cleanup-tag --yes || true
-          gh release create rexture-test rawr-x14u-rexture.apk --prerelease --target "$GITHUB_SHA" \
-            --title "Rawr X14U Rexture (test)" \
-            --notes "Test build of ${GITHUB_SHA::8}: Rawr X14U with upstream Rawr 5a51774 (Rexture merge). Installs beside Rawr X14U."
 
       - uses: actions/upload-artifact@v7
         if: failure()
