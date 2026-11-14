@@ -275,6 +275,9 @@ class NativeCaptureScreenController(
 
             is StartBurst -> startBurst(action)
             StopBurst -> stopBurst()
+            is SyncBurstLastCount -> {
+                if (!state.value.burst.running) update { it.copy(burst = it.burst.copy(lastCount = action.count)) }
+            }
             EndBurstMode -> {
                 stopBurst()
                 coordinator.setStillDevelopPaused(false)

@@ -742,6 +742,15 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             val latest = withContext(Dispatchers.IO) { galleryMediaStore.findLatestRawrImage() }
             if (galleryRefreshGeneration.get() == generation) mutableLatestGalleryImage.value = latest
         }
+        // Back from the burst viewer (bursts deleted there): the burst thumbnail and its count follow the library.
+        if (burstFlow.value) viewModelScope.launch(Dispatchers.IO) {
+            val latest = com.rawr.camera.burst.BurstStore.latest(getApplication())
+            latestBurstFolder = latest?.folder
+            latestBurstFlow.value = latest?.coverFrame?.view?.let(Uri::fromFile)
+            withContext(Dispatchers.Main) {
+                controller.dispatch(com.rawr.camera.architecture.SyncBurstLastCount(latest?.frames?.size ?: 0))
+            }
+        }
     }
 
     private fun onJpegPublished(uri: Uri) {

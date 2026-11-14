@@ -187,3 +187,6 @@ data object StopBurst : ApplicationCaptureAction
 
 /** X14U: leaving Burst mode (stops a run, forgets the last count). */
 data object EndBurstMode : ApplicationCaptureAction
+
+/** X14U Burst: the thumbnail's frame count follows the burst library (0 = no burst left, e.g. all deleted). */
+data class SyncBurstLastCount(val count: Int) : ApplicationCaptureAction
