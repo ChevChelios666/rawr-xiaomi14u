@@ -2,6 +2,7 @@ package com.rawr.camera.fixtures
 
 import com.rawr.camera.architecture.ActivateSpotAe
 import com.rawr.camera.architecture.EndBurstMode
+import com.rawr.camera.architecture.SyncBurstLastCount
 import com.rawr.camera.architecture.StartBurst
 import com.rawr.camera.architecture.StopBurst
 import com.rawr.camera.architecture.ApplicationCaptureAction
@@ -228,7 +229,7 @@ class InMemoryCaptureScreenController(
                 triggerCaptureOrSelfTimer()
             }
 
-            is StartBurst, StopBurst, EndBurstMode -> Unit
+            is StartBurst, StopBurst, EndBurstMode, is SyncBurstLastCount -> Unit
         }
     }
 
