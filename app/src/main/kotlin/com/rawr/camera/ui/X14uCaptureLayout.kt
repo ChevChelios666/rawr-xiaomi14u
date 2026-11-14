@@ -270,6 +270,8 @@ internal fun X14uCaptureLayout(
     // Video recording, or a 50 MP shot running (its camera switch must not meet a lens change).
     // A burst run too (a lens or mode change mid-run would mix cameras).
     val recordingLock = (isVideo && videoLocked) || LocalCaptureExtras.current.fullSizeBusy || state.burst.running
+    // The selected lens's 50 MP shot is on (1x "50 mp"): its aperture is held at f/2.
+    val fiftyMp = LocalCaptureExtras.current.fullSizeShot
     // X14U video crop: the viewfinder takes the recording's shape (portrait: its height over its width).
     val videoAspect = if (isVideo) state.videoCrop.sizes().second.let { it.width.toFloat() / it.height } else 4f / 3f
     // Video: the status bar hides so the picture can run to the top of the screen, like stock.
@@ -626,7 +628,7 @@ internal fun X14uCaptureLayout(
     val editorFor: (String) -> X14uEditor
     when (panel) {
         null -> {
-            val all = exposureCells(state, quick, lensOptions)
+            val all = exposureCells(state, quick, lensOptions, fiftyMp)
             cells = if (simplePhoto) {
                 // Photo: only the cells the exposure mode lets you set (A: EV · M: SS, ISO · S: SS, EV · I: ISO, EV), plus F.
                 val owners = state.exposureOwners().map {
@@ -641,6 +643,7 @@ internal fun X14uCaptureLayout(
             editorFor = { key ->
                 if (key == ZOOM_KEY) zoomRuler(zoom, zoomChain, setZoom)
                 else if (key == PHOTO_FOCUS_KEY) photoFocusEditor(state, dispatch, onMfTouch)
+                else if (key == "f" && fiftyMp && apertureRow(lensOptions) >= 0) X14uEditor.Message("f/2 while 50 MP is on")
                 else exposureEditor(key, state, dispatch, lensOptions, recordingLock, onQuickEvent, wbTint, { wbTint = !wbTint }, onMfTouch)
             }
         }
@@ -1017,7 +1020,7 @@ internal fun X14uCaptureLayout(
             if (panel == null && simplePhoto) {
                 // A: what auto exposure picked, dim either side of EV; tapping one switches to S or I with its editor open.
                 val live = if (state.exposureControl.mode == ExposureMode.Auto) {
-                    exposureCells(state, quick, lensOptions).filter { it.key == "ss" || it.key == "iso" }
+                    exposureCells(state, quick, lensOptions, fiftyMp).filter { it.key == "ss" || it.key == "iso" }
                 } else emptyList()
                 X14uPhotoRow(cells, live, currentKey, state, dispatch, enabled = !recordingLock && !panoLocked, modifier = rowModifier,
                     onTap = onCellTap) { key ->
@@ -1471,7 +1474,9 @@ private fun apertureRow(options: LensOptionsQuickState?): Int {
         .takeIf { it >= 0 && it !in options.unavailable } ?: -1
 }
 
-private fun exposureCells(state: CaptureUiState, quick: ViewfinderQuickState, options: LensOptionsQuickState?): List<X14uCell> {
+private fun exposureCells(
+    state: CaptureUiState, quick: ViewfinderQuickState, options: LensOptionsQuickState?, fiftyMp: Boolean = false
+): List<X14uCell> {
     val (ev, evManual) = exposureValue(ExposureParameter.Ev, state)
     val (ss, ssManual) = exposureValue(ExposureParameter.Shutter, state)
     val (iso, isoManual) = exposureValue(ExposureParameter.Iso, state)
@@ -1488,7 +1493,9 @@ private fun exposureCells(state: CaptureUiState, quick: ViewfinderQuickState, op
     val awb = state.autoWhiteBalanceTemperatureK?.let { "${(it / 10f).roundToInt() * 10}K" } ?: "AWB"
     return listOf(
         X14uCell("ev", ev, "EV", evManual),
-        X14uCell("f", aperture.replace("f/", "F"), "A", enabled = row >= 0),
+        // 50 MP on the main lens: the shot runs at f/2 (aperture at 50 MP doesn't work yet), so the cell shows F2, greyed.
+        if (fiftyMp && row >= 0) X14uCell("f", "F2", "A", enabled = false)
+        else X14uCell("f", aperture.replace("f/", "F"), "A", enabled = row >= 0),
         X14uCell("ss", ss, "S", ssManual, auto = !ssManual),
         X14uCell("iso", iso, "ISO", isoManual, auto = !isoManual),
         X14uCell("wb", if (wbManual) "${state.whiteBalanceTemperatureK}K" else awb,
