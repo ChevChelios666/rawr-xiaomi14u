@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <mutex>
 #include <optional>
+#include <string>
 
 namespace rawrcam::camera {
 
@@ -49,6 +50,12 @@ public:
         carried_ = on ? last_ : std::nullopt;
         carriedExposure_ = on ? lastExposure_ : std::nullopt;
         carrying_.store(on, std::memory_order_relaxed);
+    }
+    // Gain the shot's camera needs at the carried exposure: the 0.5x (camera 3) and 3.2x (camera 4) full-size
+    // readouts give 0.70x the binned mode's raw signal at the same shutter and ISO (diagnostics 14 Nov:
+    // 47.5/68.2, 64.1/91.4, 66.3/93.3); the 1x (camera 2) matches (62.5/61.2).
+    static float fullSizeGain(const std::string& cameraId) {
+        return cameraId == "3" || cameraId == "4" ? 1.0f / 0.70f : 1.0f;
     }
     std::optional<AppliedExposure> carriedExposure() const {
         std::lock_guard<std::mutex> lock(mutex_);

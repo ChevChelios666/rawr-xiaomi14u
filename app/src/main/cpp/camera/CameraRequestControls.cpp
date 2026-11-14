@@ -177,12 +177,18 @@ CameraControlApplyResult applyCameraControlState(CameraRequest* request, const C
             const uint8_t off = camera2_priority::kOff;
             (void)request->setU8(camera2_priority::kAePriorityModeTag, 1, &off);
         }
+        // The full-size readouts of the 0.5x and 3.2x are half a stop less sensitive: more ISO (past the top of the
+        // range, the rest as a longer shutter), so the 50 MP RAW matches the 12 MP view's brightness.
+        const float gain = ShotHandover::fullSizeGain(state.capabilities.cameraId);
+        const int32_t isoMax = std::max(state.capabilities.sensitivityMin, state.capabilities.sensitivityMax);
+        const double wantedIso = double(pin->sensitivity) * gain;
+        const double extraShutter = wantedIso > isoMax && isoMax > 0 ? wantedIso / isoMax : 1.0;
         const int64_t pinnedExposure =
-            std::clamp(pin->exposureTimeNs, state.capabilities.exposureTimeMinNs,
+            std::clamp(int64_t(std::llround(double(pin->exposureTimeNs) * extraShutter)),
+                       state.capabilities.exposureTimeMinNs,
                        std::max(state.capabilities.exposureTimeMinNs, state.capabilities.exposureTimeMaxNs));
-        const int32_t pinnedSensitivity =
-            std::clamp(pin->sensitivity, state.capabilities.sensitivityMin,
-                       std::max(state.capabilities.sensitivityMin, state.capabilities.sensitivityMax));
+        const int32_t pinnedSensitivity = std::clamp(int32_t(std::lround(std::min(wantedIso, double(isoMax)))),
+                                                     state.capabilities.sensitivityMin, isoMax);
         (void)request->setI64(ACAMERA_SENSOR_EXPOSURE_TIME, 1, &pinnedExposure);
         (void)request->setI32(ACAMERA_SENSOR_SENSITIVITY, 1, &pinnedSensitivity);
         if (state.capabilities.maxFrameDurationNs > 0) {

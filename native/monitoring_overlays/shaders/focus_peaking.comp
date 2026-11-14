@@ -10,11 +10,11 @@ layout(std140, set = 0, binding = 2) uniform FocusParams {
 }
 pc;
 
-// Display-referred focus: 12x12 luma tile (8x8 output + 2px halo for Sobel of
-// the 10x10 alpha neighborhood) plus a 10x10 alpha tile for 3x3 max dilation.
-// Thickens 1px detections to ~3px so edges read at a glance.
-shared float lumaTile[144];   // 12x12
-shared float alphaTile[100];  // 10x10
+// Display-referred focus: 14x14 luma tile (8x8 output + 3px halo for Sobel of
+// the 12x12 alpha neighborhood) plus a 12x12 alpha tile for a radius-2 max dilation.
+// Thickens 1px detections to ~5px so edges stay visible on a scaled-down viewfinder.
+shared float lumaTile[196];   // 14x14
+shared float alphaTile[144];  // 12x12
 
 float lumaAt(ivec2 p) {
     p = clamp(p, ivec2(0), ivec2(int(pc.meta.x) - 1, int(pc.meta.y) - 1));
@@ -22,7 +22,7 @@ float lumaAt(ivec2 p) {
     return dot(rgb, vec3(0.2126, 0.7152, 0.0722));
 }
 
-float lload(int x, int y) { return lumaTile[y * 12 + x]; }
+float lload(int x, int y) { return lumaTile[y * 14 + x]; }
 
 vec4 over(vec4 top, vec4 bottom) { return top + bottom * (1.0 - top.a); }
 
@@ -53,17 +53,17 @@ float alphaFromScore(float score) {
 
 void main() {
     uint lid = gl_LocalInvocationIndex;
-    ivec2 origin = ivec2(gl_WorkGroupID.xy) * 8 - ivec2(2);
-    for (uint i = lid; i < 144u; i += 64u) {
-        ivec2 q = ivec2(int(i % 12u), int(i / 12u));
+    ivec2 origin = ivec2(gl_WorkGroupID.xy) * 8 - ivec2(3);
+    for (uint i = lid; i < 196u; i += 64u) {
+        ivec2 q = ivec2(int(i % 14u), int(i / 14u));
         lumaTile[i] = lumaAt(origin + q);
     }
     barrier();
 
-    // Cooperatively compute the 10x10 alpha neighborhood (100 values, 64 lanes).
-    for (uint i = lid; i < 100u; i += 64u) {
-        int ax = int(i % 10u);
-        int ay = int(i / 10u);
+    // Cooperatively compute the 12x12 alpha neighborhood (144 values, 64 lanes).
+    for (uint i = lid; i < 144u; i += 64u) {
+        int ax = int(i % 12u);
+        int ay = int(i / 12u);
         // Alpha (ax,ay) corresponds to lumaTile (ax+1, ay+1).
         alphaTile[i] = alphaFromScore(scoreAt(ax + 1, ay + 1));
     }
@@ -71,14 +71,15 @@ void main() {
 
     ivec2 p = ivec2(gl_GlobalInvocationID.xy);
     if (p.x >= int(pc.meta.x) || p.y >= int(pc.meta.y)) return;
-    int x = int(gl_LocalInvocationID.x) + 1;
-    int y = int(gl_LocalInvocationID.y) + 1;
-    float core = alphaTile[y * 10 + x];
+    int x = int(gl_LocalInvocationID.x) + 2;
+    int y = int(gl_LocalInvocationID.y) + 2;
+    float core = alphaTile[y * 12 + x];
     float m = 0.0;
-    for (int dy = -1; dy <= 1; dy++)
-        for (int dx = -1; dx <= 1; dx++) m = max(m, alphaTile[(y + dy) * 10 + (x + dx)]);
-    // Bright 1px core, dim halo: thin edge instead of a solid 3x3 block.
-    float a = max(core, 0.4 * m);
+    // A disc of radius 2 (5x5 without its corners) near full strength: lines survive the scale to the screen.
+    for (int dy = -2; dy <= 2; dy++)
+        for (int dx = -2; dx <= 2; dx++)
+            if (abs(dx) + abs(dy) < 4) m = max(m, alphaTile[(y + dy) * 12 + (x + dx)]);
+    float a = max(core, 0.9 * m);
     vec4 outv = vec4(clamp(pc.color.rgb, vec3(0.0), vec3(1.0)) * a, a);
     if (pc.meta.z != 0u) outv = over(outv, imageLoad(overlayImage, p));
     imageStore(overlayImage, p, outv);
