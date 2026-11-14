@@ -64,8 +64,10 @@ public:
     // the ends along the nearest segment; nothing goes past infinity (0). Others: the view's distance as is.
     static float fullSizeFocus(const std::string& cameraId, float diopters) {
         if (cameraId != "4" || !(diopters > 0.0f)) return diopters;
-        // 14 Nov: ~1.1 m ruler test (0.905 -> 0.627), 0.40 m tape (2.50 -> 2.57).
-        static constexpr std::array<std::array<float, 2>, 2> kCam4 = {{{0.905f, 0.627f}, {2.50f, 2.57f}}};
+        // User's tape tests 14 Nov (photo sharpest; sent = slider diopters x 0.693 of that build): 3 m (slider 4.3 m),
+        // 1.5 m (1.3 m), 0.7 m (0.6 m), 0.4 m (0.27 m). Beyond 3 m: infinity from ~5 m.
+        static constexpr std::array<std::array<float, 2>, 4> kCam4 = {
+            {{0.333f, 0.161f}, {0.667f, 0.533f}, {1.429f, 1.155f}, {2.500f, 2.567f}}};
         std::size_t i = 1;
         while (i + 1 < kCam4.size() && diopters > kCam4[i][0]) ++i;
         const auto& a = kCam4[i - 1];

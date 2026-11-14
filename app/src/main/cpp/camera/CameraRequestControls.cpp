@@ -35,7 +35,9 @@ void applyPreviewRequestDefaults(CameraRequest* request, const metadata::CameraC
                                    ? ACAMERA_STATISTICS_LENS_SHADING_MAP_MODE_ON
                                    : ACAMERA_STATISTICS_LENS_SHADING_MAP_MODE_OFF;
     const uint8_t distortion = ACAMERA_DISTORTION_CORRECTION_MODE_OFF;
-    const uint8_t hotPixel = ACAMERA_HOT_PIXEL_MODE_OFF;
+    // The HAL reports no hot pixel map on any X14U camera (diagnostics 14 Nov: hotPixels=0 everywhere), so nothing
+    // conceals defects; the 3.2x (camera 4) sensor shows coloured single-pixel specks. Test: its own correction on.
+    const uint8_t hotPixel = context.cameraId == "4" ? ACAMERA_HOT_PIXEL_MODE_HIGH_QUALITY : ACAMERA_HOT_PIXEL_MODE_OFF;
     const uint8_t hotPixelMap = ACAMERA_STATISTICS_HOT_PIXEL_MAP_MODE_ON;
     // Keep metadata enabled for every RAW frame without request swaps during bursts.
     (void)request->setU8(ACAMERA_STATISTICS_LENS_SHADING_MAP_MODE, 1, &shadingMap);
