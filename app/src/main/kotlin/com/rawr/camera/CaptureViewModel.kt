@@ -767,6 +767,28 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         galleryMediaStore.rememberPublishedJpeg(uri)
         galleryRefreshGeneration.incrementAndGet()
         mutableLatestGalleryImage.value = uri
+        registerHal50Files()
+    }
+
+    /**
+     * X14U HAL 50 MP probe: native writes RAWR_..._HAL50_<lens>.jpg to DCIM/Camera by path, which galleries don't
+     * list until the media library knows the file. A few seconds after each photo, recent ones are scanned in.
+     */
+    private fun registerHal50Files() {
+        viewModelScope.launch(Dispatchers.IO) {
+            kotlinx.coroutines.delay(4_000L)
+            val dir = java.io.File(android.os.Environment.getExternalStorageDirectory(), "DCIM/Camera")
+            val since = System.currentTimeMillis() - 120_000L
+            val paths = runCatching {
+                dir.listFiles { f -> f.name.contains("_HAL50_") && f.name.endsWith(".jpg") && f.lastModified() >= since }
+                    ?.map { it.absolutePath }
+            }.getOrNull().orEmpty()
+            if (paths.isEmpty()) return@launch
+            android.media.MediaScannerConnection.scanFile(getApplication(), paths.toTypedArray(),
+                Array(paths.size) { "image/jpeg" }) { path, uri ->
+                android.util.Log.i("RawrCamCapture", "HAL50_REGISTERED path=$path uri=$uri")
+            }
+        }
     }
 
     private fun videoSelectionLocked(): Boolean = recording.state.value.let { it.busy || it.recording }
