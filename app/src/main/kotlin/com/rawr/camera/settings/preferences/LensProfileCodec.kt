@@ -287,7 +287,7 @@ internal object LensProfileCodec {
             }
             objectField(streams, "auxJpeg")?.let { aux ->
                 outputSize(aux)
-                choice(aux, "still", listOf("camera", "plain", "session", "sessionPlain", "gcam", "gcamYuv"))
+                choice(aux, "still", listOf("camera", "plain", "session", "sessionPlain", "gcam", "gcamYuv", "java", "javaYuv"))
                 number(aux, "useCase", 0.0..Int.MAX_VALUE.toDouble(), true)
                 buffers(aux, count = false)
             }
@@ -572,7 +572,7 @@ internal object LensProfileCodec {
                 auxJpeg = streams?.optJSONObject("auxJpeg")?.let { aux ->
                     decodeSize(aux)?.let {
                         AuxJpegSettings(it, bufferUsage(aux), useCase(aux),
-                            aux.optString("still").takeIf { s -> s in listOf("camera", "plain", "session", "sessionPlain", "gcam", "gcamYuv") })
+                            aux.optString("still").takeIf { s -> s in listOf("camera", "plain", "session", "sessionPlain", "gcam", "gcamYuv", "java", "javaYuv") })
                     }
                 }
             ),

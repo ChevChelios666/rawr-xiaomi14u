@@ -2058,13 +2058,15 @@ bool NativeCameraController::waitFullSizeIdle(int64_t timeoutMs) { return impl_-
 bool NativeCameraController::hasHalSessionStill() {
     std::lock_guard<std::mutex> lock(impl_->mutex);
     const auto route = impl_->selectedRouteLocked();
-    return route && route->auxJpegSize && route->auxJpegStill >= 3;
+    return route && route->auxJpegSize && route->auxJpegStill >= 3 && route->auxJpegStill <= 6;
 }
 bool NativeCameraController::captureHalSessionStill() {
     auto& m = *impl_;
     std::unique_lock<std::mutex> lock(m.mutex);
     const auto route = m.selectedRouteLocked();
-    if (!m.active || m.halSessionBusy || !route || !route->auxJpegSize || route->auxJpegStill < 3) return false;
+    if (!m.active || m.halSessionBusy || !route || !route->auxJpegSize || route->auxJpegStill < 3 ||
+        route->auxJpegStill > 6)
+        return false;
     HalStillParams p;
     p.cameraId = route->cameraId;
     p.physicalId = route->physicalCameraId;

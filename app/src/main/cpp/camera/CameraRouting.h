@@ -194,6 +194,8 @@ struct LensRoute {
     // 3 / 4: the same (camera / plain) taken in its own short session without the RAW stream (HalStillSession):
     // the shutter takes only that 50 MP still. 5 / 6: that session with GCam's stream layout (PRIVATE 1440x1080
     // preview + 640x480 YUV) and a full-size JPEG (5, "gcam") or YUV (6, "gcamYuv", encoded by Rawr) still.
+    // 7 / 8 ("java" / "javaYuv"): the same shot through the Java Camera2 API (Kotlin HalJavaStill); native only
+    // keeps the aux stream out of the viewfinder session.
     uint8_t auxJpegStill = 0;
     // The viewfinder RAW reader: images it holds (0: the app's 6; 6..16 allowed), whether a profile-fixed
     // usage is checked with AHardwareBuffer_isSupported before the reader is created (CPU-only when it

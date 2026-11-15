@@ -229,7 +229,12 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         if (state.captureMode == com.rawr.camera.model.CaptureMode.Video || panoFlow.value || burstFlow.value) return false
         val lens = latestSettings.effectiveLensProfiles(DeviceLensDefaults.lenses)
             .firstOrNull { it.name.trim().equals(state.selectedLensId.trim(), ignoreCase = true) } ?: return false
-        if (lens.streams.auxJpeg?.still in setOf("session", "sessionPlain", "gcam", "gcamYuv")) {
+        val still = lens.streams.auxJpeg?.still
+        if (still == "java" || still == "javaYuv") {
+            shootHalJava(lens.camera.id, lens.camera.physical, still == "javaYuv", lens.name)
+            return true
+        }
+        if (still in setOf("session", "sessionPlain", "gcam", "gcamYuv")) {
             shootHalSession()
             return true
         }
@@ -263,6 +268,45 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                     // Live again once the reopened viewfinder's own frames are in.
                     kotlinx.coroutines.withTimeoutOrNull(5_000L) {
+                        while (previewCoordinator.heldNewFrames() < 2) kotlinx.coroutines.delay(30L)
+                    }
+                    previewCoordinator.setViewfinderHold(false)
+                    status(null)
+                    fullSizeBusyFlow.value = false
+                    registerHal50Files()
+                }
+            }
+        }
+    }
+
+    /**
+     * X14U HAL 50 MP probe through the Java Camera2 API (auxJpeg.still "java" / "javaYuv", HalJavaStill): the
+     * viewfinder holds its frame and lets the camera go, the probe opens it with GCam's stream layout, takes the
+     * still and closes it, and the viewfinder comes back.
+     */
+    private fun shootHalJava(cameraId: String, physicalId: String, yuv: Boolean, lensName: String) {
+        if (fullSizeJob?.isActive == true) return
+        fullSizeBusyFlow.value = true
+        fullSizeJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            fun status(message: String?) {
+                panoStatusClear?.cancel()
+                panoStatusFlow.value = message
+            }
+            try {
+                status("50 MP…")
+                previewCoordinator.setViewfinderHold(true)
+                previewCoordinator.stop()
+                val stamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss_SSS", java.util.Locale.US).format(java.util.Date())
+                val path = "/storage/emulated/0/DCIM/Camera/RAWR_${stamp}_HALJ_${lensName.trim()}.jpg"
+                val ok = com.rawr.camera.x14u.HalJavaStill.shoot(getApplication(), cameraId, physicalId, yuv, path)
+                if (!ok) {
+                    status("50 MP failed")
+                    kotlinx.coroutines.delay(2_000L)
+                }
+            } finally {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    previewCoordinator.start()
+                    kotlinx.coroutines.withTimeoutOrNull(6_000L) {
                         while (previewCoordinator.heldNewFrames() < 2) kotlinx.coroutines.delay(30L)
                     }
                     previewCoordinator.setViewfinderHold(false)
@@ -823,7 +867,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             val since = System.currentTimeMillis() - 120_000L
             val paths = runCatching {
                 dir.listFiles { f ->
-                    (f.name.contains("_HAL50_") || f.name.contains("_HALS_")) && f.name.endsWith(".jpg") &&
+                    (f.name.contains("_HAL50_") || f.name.contains("_HALS_") || f.name.contains("_HALJ_")) && f.name.endsWith(".jpg") &&
                         f.lastModified() >= since
                 }
                     ?.map { it.absolutePath }
