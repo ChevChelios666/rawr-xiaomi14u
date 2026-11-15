@@ -304,6 +304,17 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             }
             try {
                 status("50 MP…")
+                // Rawr's own exposure for the still (the camera's AE ran ~2.4x brighter at ~6x the ISO, 21:05 Nov 15).
+                val viewfinder = runCatching {
+                    com.rawr.camera.integration.NativeCameraUiSnapshot.parse(previewCoordinator.cameraControlSnapshot())
+                }.getOrNull()
+                val rawrExposureNs = viewfinder?.let { v ->
+                    v.deferredCaptureExposureNs.takeIf { it > 0L } ?: v.appliedExposureTimeNs
+                } ?: 0L
+                val rawrIso = viewfinder?.let { v ->
+                    v.deferredCaptureReportedSensitivity.takeIf { v.deferredCaptureExposureNs > 0L && it > 0 }
+                        ?: v.appliedSensitivity
+                } ?: 0
                 previewCoordinator.setViewfinderHold(true)
                 previewCoordinator.stop()
                 val stamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss_SSS", java.util.Locale.US).format(java.util.Date())
@@ -355,6 +366,17 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                     kotlinx.coroutines.delay(1_000L)
                 }
                 status("50 MP…")
+                // Rawr's own exposure for the still (the camera's AE ran ~2.4x brighter at ~6x the ISO, 21:05 Nov 15).
+                val viewfinder = runCatching {
+                    com.rawr.camera.integration.NativeCameraUiSnapshot.parse(previewCoordinator.cameraControlSnapshot())
+                }.getOrNull()
+                val rawrExposureNs = viewfinder?.let { v ->
+                    v.deferredCaptureExposureNs.takeIf { it > 0L } ?: v.appliedExposureTimeNs
+                } ?: 0L
+                val rawrIso = viewfinder?.let { v ->
+                    v.deferredCaptureReportedSensitivity.takeIf { v.deferredCaptureExposureNs > 0L && it > 0 }
+                        ?: v.appliedSensitivity
+                } ?: 0
                 previewCoordinator.setViewfinderHold(true)
                 previewCoordinator.stop()
                 stopped = true
@@ -363,7 +385,8 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 val stamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss_SSS", java.util.Locale.US).format(java.util.Date())
                 val ok = com.rawr.camera.x14u.HalJavaStill.shoot(getApplication(), cameraId, physicalId,
                     yuvStill = physicalId.isNotEmpty(), path = "/dev/null/$stamp", stillUsage = usage, plain = true,
-                    deviceRotationDegrees = previewCoordinator.captureDeviceRotationDegrees, mosaic = mosaic, shotInfo = shot)
+                    deviceRotationDegrees = previewCoordinator.captureDeviceRotationDegrees, mosaic = mosaic, shotInfo = shot,
+                    exposureNs = rawrExposureNs, sensitivity = rawrIso)
                 previewCoordinator.start()
                 stopped = false
                 if (!ok || mosaic.buffer == null) {

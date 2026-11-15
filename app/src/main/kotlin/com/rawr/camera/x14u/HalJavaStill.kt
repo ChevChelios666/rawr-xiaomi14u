@@ -60,7 +60,10 @@ object HalJavaStill {
         deviceRotationDegrees: Int = 0,
         /** Instead of a DNG: the mosaic for Rawr's own develop (HalRawSynth.BufferOut), and the shot's values. */
         mosaic: HalRawSynth.BufferOut? = null,
-        shotInfo: AtomicReference<HalRawSynth.ShotInfo?>? = null
+        shotInfo: AtomicReference<HalRawSynth.ShotInfo?>? = null,
+        /** Rawr's own viewfinder exposure for the still (AE off), when both are > 0; else the camera's AE. */
+        exposureNs: Long = 0L,
+        sensitivity: Int = 0
     ): Boolean {
         val started = System.nanoTime()
         fun ms() = "ms=%.0f".format((System.nanoTime() - started) / 1e6)
@@ -189,6 +192,16 @@ object HalJavaStill {
                 addTarget(still.surface)
                 set(CaptureRequest.CONTROL_ENABLE_ZSL, false)
                 set(CaptureRequest.CONTROL_AE_LOCK, true)
+                if (exposureNs > 0L && sensitivity > 0) {
+                    val times = chars.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE)
+                    val isos = chars.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE)
+                    val t = times?.let { exposureNs.coerceIn(it.lower, it.upper) } ?: exposureNs
+                    val iso = isos?.let { sensitivity.coerceIn(it.lower, it.upper) } ?: sensitivity
+                    set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
+                    set(CaptureRequest.SENSOR_EXPOSURE_TIME, t)
+                    set(CaptureRequest.SENSOR_SENSITIVITY, iso)
+                    log("MANUAL exposureNs=$t iso=$iso (rawr $exposureNs / $sensitivity)")
+                }
                 set(CaptureRequest.JPEG_QUALITY, (if (dngPath != null || mosaic != null) 100 else 98).toByte())
                 set(CaptureRequest.JPEG_ORIENTATION, orientation)
                 if (plain) {

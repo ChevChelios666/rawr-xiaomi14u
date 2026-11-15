@@ -77,8 +77,22 @@ bool SingleFrameCaptureAcquisition::beginDeferredSnapshot(AImage* imageLease, AH
             setpriority(PRIO_PROCESS, 0, 5);
             try {
                 if (synthesized) {
-                    // X14U synthesized 50 MP still: the viewfinder image isn't read at all.
-                    lease = imaging::RawFrameLease({});
+                    // X14U synthesized 50 MP still: the viewfinder image of the same moment is copied only as the
+                    // tone reference, then replaced.
+                    {
+                        const auto& vf = lease.get();
+                        const auto copy = imaging::copyCompletedRaw16AhbToPacked(
+                            vf.ahb, deferred.frame->width, deferred.frame->height, deferred.frame->raw16,
+                            vf.acquireFenceFd, vf.image);
+                        lease = imaging::RawFrameLease({});
+                        std::string toneLine = "SYNTH_TONE skipped reason=ref_copy_failed";
+                        if (copy.success) {
+                            deferred.frame->packedRowStrideBytes = deferred.frame->width * 2;
+                            remosaicBlockCfaStill(*deferred.frame);
+                            toneLine = synth::matchTone(*deferred.frame, *synthesized);
+                        }
+                        __android_log_print(ANDROID_LOG_INFO, "RawrCamNative", "%s", toneLine.c_str());
+                    }
                     synth::apply(*deferred.frame, std::move(*synthesized));
                     deferred.copyResult.success = true;
                     deferred.copyResult.sourceRowStrideBytes = deferred.frame->sourceRowStrideBytes;
