@@ -19,6 +19,9 @@ struct HalStillParams {
     int32_t width = 8192;
     int32_t height = 6144;
     bool plain = false;  // NR/edge off, sRGB curve, identity colour, unit gains, AWB off (Rawr develops it)
+    // GCam's stream layout (its live 50 MP sessions): PRIVATE 1440x1080 preview + 640x480 YUV beside the still.
+    bool gcamLayout = false;
+    bool yuvStill = false;  // full-size YUV still (encoded here) instead of the HAL's JPEG
     std::vector<CameraKeySetting> keys;  // the lens's vendor keys (session / request / still scopes)
     bool manualFocus = false;
     float focusDiopters = 0.0f;

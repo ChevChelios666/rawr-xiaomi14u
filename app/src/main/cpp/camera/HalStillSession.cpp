@@ -5,6 +5,8 @@
 #include <camera/NdkCameraManager.h>
 #include <camera/NdkCameraMetadataTags.h>
 #include <media/NdkImageReader.h>
+#include <android/hardware_buffer.h>
+#include <turbojpeg.h>
 
 #include <algorithm>
 #include <chrono>
@@ -45,6 +47,10 @@ struct State {
     int deviceErrorCode = 0;
     std::vector<uint8_t> jpeg;
     bool jpegReady = false;
+    // YUV still (gcamYuv): planar I420 copy, encoded after the session work.
+    std::vector<uint8_t> i420;
+    int yuvWidth = 0;
+    int yuvHeight = 0;
     std::string resultLine;
     std::optional<uint32_t> modeTag;
 };
@@ -170,6 +176,76 @@ void takeJpeg(void* context, AImageReader* reader) {
     }
 }
 
+// YUV still: the planes copied as I420 (the HAL's YUV_420_888 is usually NV21/NV12 with pixel stride 2).
+void takeYuv(void* context, AImageReader* reader) {
+    auto* s = static_cast<State*>(context);
+    AImage* image = nullptr;
+    while (AImageReader_acquireNextImage(reader, &image) == AMEDIA_OK && image) {
+        int32_t w = 0, h = 0;
+        (void)AImage_getWidth(image, &w);
+        (void)AImage_getHeight(image, &h);
+        bool ready;
+        {
+            std::lock_guard<std::mutex> lock(s->mutex);
+            ready = s->jpegReady;
+        }
+        if (!ready && w > 0 && h > 0) {
+            std::vector<uint8_t> out(std::size_t(w) * h * 3 / 2);
+            bool ok = true;
+            for (int plane = 0; plane < 3 && ok; ++plane) {
+                uint8_t* data = nullptr;
+                int length = 0;
+                int32_t rowStride = 0, pixelStride = 0;
+                ok = AImage_getPlaneData(image, plane, &data, &length) == AMEDIA_OK && data &&
+                     AImage_getPlaneRowStride(image, plane, &rowStride) == AMEDIA_OK &&
+                     AImage_getPlanePixelStride(image, plane, &pixelStride) == AMEDIA_OK;
+                if (!ok) break;
+                const int pw = plane ? w / 2 : w;
+                const int ph = plane ? h / 2 : h;
+                uint8_t* dst = out.data() + (plane == 0 ? 0 : std::size_t(w) * h + (plane - 1) * std::size_t(pw) * ph);
+                for (int y = 0; y < ph; ++y) {
+                    const uint8_t* row = data + std::size_t(y) * rowStride;
+                    if (pixelStride == 1) {
+                        std::copy(row, row + pw, dst + std::size_t(y) * pw);
+                    } else {
+                        for (int x = 0; x < pw; ++x) dst[std::size_t(y) * pw + x] = row[std::size_t(x) * pixelStride];
+                    }
+                }
+            }
+            if (ok) {
+                std::lock_guard<std::mutex> lock(s->mutex);
+                if (!s->jpegReady) {
+                    s->i420 = std::move(out);
+                    s->yuvWidth = w;
+                    s->yuvHeight = h;
+                    s->jpegReady = true;
+                    s->changed.notify_all();
+                }
+            }
+        }
+        AImage_delete(image);
+        image = nullptr;
+    }
+}
+
+std::vector<uint8_t> encodeI420(const std::vector<uint8_t>& i420, int w, int h, std::string* error) {
+    std::vector<uint8_t> out;
+    tjhandle tj = tj3Init(TJINIT_COMPRESS);
+    if (!tj) {
+        *error = "tj3Init";
+        return out;
+    }
+    (void)tj3Set(tj, TJPARAM_QUALITY, 97);
+    (void)tj3Set(tj, TJPARAM_SUBSAMP, TJSAMP_420);
+    unsigned char* jpeg = nullptr;
+    size_t size = 0;
+    if (tj3CompressFromYUV8(tj, i420.data(), w, 1, h, &jpeg, &size) == 0 && jpeg) out.assign(jpeg, jpeg + size);
+    else *error = tj3GetErrorStr(tj);
+    if (jpeg) tj3Free(jpeg);
+    tj3Destroy(tj);
+    return out;
+}
+
 // Frame size from the JPEG's SOF marker (what the camera really encoded).
 std::pair<int, int> jpegSize(const std::vector<uint8_t>& d) {
     std::size_t i = 2;
@@ -245,10 +321,13 @@ bool runHalStillSession(const HalStillParams& p, const std::function<void(const 
     ACameraMetadata* chars = nullptr;
     ACameraDevice* device = nullptr;
     AImageReader* previewReader = nullptr;
+    AImageReader* analysisReader = nullptr;  // gcam layouts: GCam's 640x480 YUV stream
     AImageReader* stillReader = nullptr;
     ACaptureSessionOutputContainer* container = nullptr;
     ACaptureSessionOutput* previewOutput = nullptr;
     ACaptureSessionOutput* stillOutput = nullptr;
+    ACaptureSessionOutput* analysisOutput = nullptr;
+    ACameraOutputTarget* analysisTarget = nullptr;
     ACameraOutputTarget* previewTarget = nullptr;
     ACameraOutputTarget* stillTarget = nullptr;
     ACaptureRequest* sessionParams = nullptr;
@@ -298,21 +377,34 @@ bool runHalStillSession(const HalStillParams& p, const std::function<void(const 
         diag("HALS_OPENED camera=" + p.cameraId + " physical=" + (p.physicalId.empty() ? "none" : p.physicalId) +
              " ms=" + std::to_string(ms()));
 
-        // Outputs: a 4:3 processed preview for AF/AE (not shown) and the full-size JPEG. No RAW.
-        if (AImageReader_new(1920, 1440, AIMAGE_FORMAT_YUV_420_888, 4, &previewReader) != AMEDIA_OK ||
-            AImageReader_new(p.width, p.height, AIMAGE_FORMAT_JPEG, 2, &stillReader) != AMEDIA_OK) {
+        // Outputs. Own layout: a 4:3 processed YUV preview for AF/AE (not shown) and the full-size JPEG. GCam layout
+        // (its live 50 MP sessions, dumpsys 15 Nov): PRIVATE 1440x1080 preview + 640x480 YUV + the full-size JPEG
+        // (aux lenses) or YUV (main, physical 2 of logical 0). No RAW either way.
+        const int previewW = p.gcamLayout ? 1440 : 1920;
+        const int previewH = p.gcamLayout ? 1080 : 1440;
+        const media_status_t previewMade =
+            p.gcamLayout ? AImageReader_newWithUsage(previewW, previewH, AIMAGE_FORMAT_PRIVATE,
+                                                     AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE, 4, &previewReader)
+                         : AImageReader_new(previewW, previewH, AIMAGE_FORMAT_YUV_420_888, 4, &previewReader);
+        if (previewMade != AMEDIA_OK ||
+            (p.gcamLayout && AImageReader_new(640, 480, AIMAGE_FORMAT_YUV_420_888, 4, &analysisReader) != AMEDIA_OK) ||
+            AImageReader_new(p.width, p.height, p.yuvStill ? AIMAGE_FORMAT_YUV_420_888 : AIMAGE_FORMAT_JPEG, 2,
+                             &stillReader) != AMEDIA_OK) {
             failure = "readers";
             break;
         }
         AImageReader_ImageListener drain{state, drainImages};
-        AImageReader_ImageListener take{state, takeJpeg};
+        AImageReader_ImageListener take{state, p.yuvStill ? takeYuv : takeJpeg};
         (void)AImageReader_setImageListener(previewReader, &drain);
+        if (analysisReader) (void)AImageReader_setImageListener(analysisReader, &drain);
         (void)AImageReader_setImageListener(stillReader, &take);
         ANativeWindow* previewWindow = nullptr;
+        ANativeWindow* analysisWindow = nullptr;
         ANativeWindow* stillWindow = nullptr;
         (void)AImageReader_getWindow(previewReader, &previewWindow);
+        if (analysisReader) (void)AImageReader_getWindow(analysisReader, &analysisWindow);
         (void)AImageReader_getWindow(stillReader, &stillWindow);
-        if (!previewWindow || !stillWindow) { failure = "windows"; break; }
+        if (!previewWindow || !stillWindow || (analysisReader && !analysisWindow)) { failure = "windows"; break; }
         const auto makeOutput = [&](ANativeWindow* window, ACaptureSessionOutput** out) {
             return p.physicalId.empty() ? ACaptureSessionOutput_create(window, out)
                                         : ACaptureSessionPhysicalOutput_create(window, p.physicalId.c_str(), out);
@@ -324,6 +416,12 @@ bool runHalStillSession(const HalStillParams& p, const std::function<void(const 
             ACameraOutputTarget_create(previewWindow, &previewTarget) != ACAMERA_OK ||
             ACameraOutputTarget_create(stillWindow, &stillTarget) != ACAMERA_OK) {
             failure = "outputs";
+            break;
+        }
+        if (analysisWindow && (makeOutput(analysisWindow, &analysisOutput) != ACAMERA_OK ||
+                               ACaptureSessionOutputContainer_add(container, analysisOutput) != ACAMERA_OK ||
+                               ACameraOutputTarget_create(analysisWindow, &analysisTarget) != ACAMERA_OK)) {
+            failure = "analysis_output";
             break;
         }
 
@@ -339,7 +437,9 @@ bool runHalStillSession(const HalStillParams& p, const std::function<void(const 
             failure = "session status=" + std::to_string(s);
             break;
         }
-        diag("HALS_SESSION preview=1920x1440 still=" + std::to_string(p.width) + "x" + std::to_string(p.height) +
+        diag("HALS_SESSION layout=" + std::string(p.gcamLayout ? "gcam" : "own") + " preview=" +
+             std::to_string(previewW) + "x" + std::to_string(previewH) + (p.gcamLayout ? " private+640x480yuv" : " yuv") +
+             " still=" + std::string(p.yuvStill ? "yuv " : "jpeg ") + std::to_string(p.width) + "x" + std::to_string(p.height) +
              " sessionKeys=" + std::to_string(sessionKeys) + " ms=" + std::to_string(ms()));
 
         // Viewfinder-like repeating request: AF / AE converge here, in the binned processed mode.
@@ -348,6 +448,7 @@ bool runHalStillSession(const HalStillParams& p, const std::function<void(const 
             break;
         }
         (void)ACaptureRequest_addTarget(preview, previewTarget);
+        if (analysisTarget) (void)ACaptureRequest_addTarget(preview, analysisTarget);
         (void)ACaptureRequest_setUserContext(preview, kPreviewTag);
         const auto common = [&](ACaptureRequest* r) {
             applyKeys(r, chars, p.cameraId, p.keys, CameraKeySetting::Scope::Request, diag);
@@ -394,6 +495,7 @@ bool runHalStillSession(const HalStillParams& p, const std::function<void(const 
         if (!p.manualFocus) {
             if (ACameraDevice_createCaptureRequest(device, TEMPLATE_PREVIEW, &trigger) == ACAMERA_OK) {
                 (void)ACaptureRequest_addTarget(trigger, previewTarget);
+                if (analysisTarget) (void)ACaptureRequest_addTarget(trigger, analysisTarget);
                 (void)ACaptureRequest_setUserContext(trigger, kTriggerTag);
                 common(trigger);
                 const uint8_t start = ACAMERA_CONTROL_AF_TRIGGER_START;
@@ -462,14 +564,25 @@ bool runHalStillSession(const HalStillParams& p, const std::function<void(const 
         const bool got = waitFor(std::chrono::milliseconds(8000),
                                  [&] { return (state->jpegReady && state->stillResult) || state->stillFailed; });
         std::vector<uint8_t> jpeg;
+        std::vector<uint8_t> i420;
+        int yuvW = 0, yuvH = 0;
         std::string result;
         {
             std::lock_guard<std::mutex> lock(state->mutex);
             jpeg = state->jpeg;
+            i420.swap(state->i420);
+            yuvW = state->yuvWidth;
+            yuvH = state->yuvHeight;
             result = state->stillResult ? state->resultLine : std::string("none");
             if (state->stillFailed) failure = "still_failed";
         }
         diag("HALS_RESULT " + result + " ms=" + std::to_string(ms()));
+        if (got && p.yuvStill && !i420.empty()) {
+            diag("HALS_YUV size=" + std::to_string(yuvW) + "x" + std::to_string(yuvH) + " ms=" + std::to_string(ms()));
+            std::string error;
+            jpeg = encodeI420(i420, yuvW, yuvH, &error);
+            if (jpeg.empty()) diag("HALS_ENCODE_FAILED " + error);
+        }
         if (!got || jpeg.empty()) {
             if (failure.empty()) failure = "no_jpeg";
             break;
@@ -502,6 +615,9 @@ bool runHalStillSession(const HalStillParams& p, const std::function<void(const 
     if (previewTarget) ACameraOutputTarget_free(previewTarget);
     if (stillTarget) ACameraOutputTarget_free(stillTarget);
     if (previewOutput) ACaptureSessionOutput_free(previewOutput);
+    if (analysisTarget) ACameraOutputTarget_free(analysisTarget);
+    if (analysisOutput) ACaptureSessionOutput_free(analysisOutput);
+    if (analysisReader) AImageReader_delete(analysisReader);
     if (stillOutput) ACaptureSessionOutput_free(stillOutput);
     if (container) ACaptureSessionOutputContainer_free(container);
     if (previewReader) AImageReader_delete(previewReader);

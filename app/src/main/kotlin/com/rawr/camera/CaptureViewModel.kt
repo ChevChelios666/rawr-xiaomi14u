@@ -229,7 +229,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         if (state.captureMode == com.rawr.camera.model.CaptureMode.Video || panoFlow.value || burstFlow.value) return false
         val lens = latestSettings.effectiveLensProfiles(DeviceLensDefaults.lenses)
             .firstOrNull { it.name.trim().equals(state.selectedLensId.trim(), ignoreCase = true) } ?: return false
-        if (lens.streams.auxJpeg?.still in setOf("session", "sessionPlain")) {
+        if (lens.streams.auxJpeg?.still in setOf("session", "sessionPlain", "gcam", "gcamYuv")) {
             shootHalSession()
             return true
         }

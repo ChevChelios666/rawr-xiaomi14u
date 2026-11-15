@@ -2071,6 +2071,8 @@ bool NativeCameraController::captureHalSessionStill() {
     p.width = int32_t(route->auxJpegSize->first);
     p.height = int32_t(route->auxJpegSize->second);
     p.plain = route->auxJpegStill == 4;
+    p.gcamLayout = route->auxJpegStill >= 5;
+    p.yuvStill = route->auxJpegStill == 6;
     p.keys = route->vendorKeys;
     // Focus and exposure intent of the viewfinder: its AF/AE regions, MF distance, manual exposure, EV.
     if (m.control.focusMode == FocusControlMode::Manual && m.control.capabilities.manualFocusSupported) {
@@ -2102,6 +2104,7 @@ bool NativeCameraController::captureHalSessionStill() {
     p.path = std::string("/storage/emulated/0/DCIM/Camera/") + name;
     m.diag("HALS_BEGIN lens=" + route->lensId + " camera=" + p.cameraId + " physical=" +
            (p.physicalId.empty() ? std::string("none") : p.physicalId) + " plain=" + (p.plain ? "1" : "0") +
+           " layout=" + (p.gcamLayout ? (p.yuvStill ? "gcamYuv" : "gcam") : "own") +
            " mf=" + (p.manualFocus ? std::to_string(p.focusDiopters) : std::string("af")) +
            " afRegion=" + (p.afRegions.empty() ? std::string("none") : "set") +
            " manualExposure=" + (p.manualExposure ? "1" : "0"));
