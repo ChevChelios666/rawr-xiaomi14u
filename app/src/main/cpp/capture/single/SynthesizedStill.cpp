@@ -151,7 +151,7 @@ std::string matchTone(const imaging::RawSnapshot& ref, Pending& p) {
     for (int b = 0; b < NB; ++b) {
         const size_t i = n * (2 * b + 1) / (2 * NB);
         const double sm = sv[i];
-        double f = std::clamp(rv[i] / sv[i], 0.25, 4.0);
+        double f = std::clamp(rv[i] / sv[i], 1.0 / 32.0, 32.0);
         // Output levels must keep rising.
         if (!knotS.empty()) {
             if (sm <= knotS.back()) continue;
@@ -162,10 +162,13 @@ std::string matchTone(const imaging::RawSnapshot& ref, Pending& p) {
         knotF.push_back(f);
     }
     if (knotS.size() < 3) return "SYNTH_TONE skipped reason=few_bins";
-    // Above the brightest bin: toward unity at full scale (clipped stays clipped), or the same gain when the still
-    // came out darker than the RAW (it clips there).
-    const double endF = std::max(knotF.back(), 1.0);
+    // Above the brightest bin: the same gain up to full scale, and the white level goes with it (an overexposed
+    // still's clipped areas stay marked clipped instead of being stretched back to full scale: H1L 23:04 Nov 15
+    // came out ~5x too bright and its highlights blew).
+    const double endF = knotF.back();
     if (knotS.back() < 65535.0) { knotS.push_back(65535.0); knotF.push_back(endF); }
+    const uint32_t outWhite = uint32_t(std::clamp(std::lround(65535.0 * endF), 1024L, 65535L));
+    p.whiteLevel = float(outWhite);
     std::vector<float> lut(65536);
     size_t k = 0;
     for (int v = 0; v < 65536; ++v) {
@@ -191,15 +194,14 @@ std::string matchTone(const imaging::RawSnapshot& ref, Pending& p) {
             const float f = lut[g];
             for (uint8_t* q : {r0 + 2 * x, r0 + 2 * x + 2, r1 + 2 * x, r1 + 2 * x + 2}) {
                 const uint32_t v = uint32_t(q[0] | (q[1] << 8));
-                if (v >= 65535u) continue;
-                const uint32_t o = uint32_t(std::min(65534.0f, v * f + 0.5f));
+                const uint32_t o = v >= 65535u ? outWhite : std::min(outWhite, uint32_t(v * f + 0.5f));
                 q[0] = uint8_t(o & 0xFF);
                 q[1] = uint8_t(o >> 8);
             }
         }
     }
-    int len = std::snprintf(line, sizeof line, "SYNTH_TONE applied cells=%zu corr=%.3f lsc=%d ref=%ux%u cfa=%u gains=", n,
-                            corr, lsc, ref.width, ref.height, cfa);
+    int len = std::snprintf(line, sizeof line, "SYNTH_TONE applied cells=%zu corr=%.3f lsc=%d ref=%ux%u cfa=%u white=%u gains=",
+                            n, corr, lsc, ref.width, ref.height, cfa, outWhite);
     for (size_t i = 0; i < knotS.size() && len < int(sizeof line) - 24; ++i)
         len += std::snprintf(line + len, sizeof line - len, "%s%.0f:%.2f", i ? "," : "", knotS[i], knotF[i]);
     return line;
@@ -225,7 +227,7 @@ void apply(imaging::RawSnapshot& frame, Pending&& p) {
         ctx->photoCfaBlock = 1;
         ctx->binnedFallbackContext = nullptr;
         ctx->baselineBlackLevelPhysicalRggb = {0.0f, 0.0f, 0.0f, 0.0f};
-        ctx->baselineWhiteLevel = 65535.0f;
+        ctx->baselineWhiteLevel = p.whiteLevel;
         // The camera's own pipeline applied lens shading, and nothing else of the sensor's layout is left.
         ctx->lensShadingMapWidth = 0;
         ctx->lensShadingMapHeight = 0;
@@ -238,9 +240,9 @@ void apply(imaging::RawSnapshot& frame, Pending&& p) {
         m.cameraContext = std::move(ctx);
     }
     m.blackLevelPhysicalRggb = {0.0f, 0.0f, 0.0f, 0.0f};
-    m.staticWhiteLevel = 65535.0f;
+    m.staticWhiteLevel = p.whiteLevel;
     m.reportedDynamicWhiteLevel.reset();
-    m.effectiveWhiteLevel = 65535.0f;
+    m.effectiveWhiteLevel = p.whiteLevel;
     m.forcedSensorModeId.reset();
     m.lensShadingMap.clear();
     m.lensShadingMapWidth = 0;

@@ -112,7 +112,7 @@ object HalJavaStill {
             for (r in listOf(preview, analysis)) r.setOnImageAvailableListener({ it.acquireLatestImage()?.close() }, handler)
             val stillImage = AtomicReference<ByteArray?>()
             val stillSize = AtomicReference("none")
-            val stillLatch = CountDownLatch(1)
+            var stillLatch = CountDownLatch(1)
             still.setOnImageAvailableListener({ reader ->
                 val image = reader.acquireNextImage() ?: return@setOnImageAvailableListener
                 try {
@@ -147,6 +147,7 @@ object HalJavaStill {
             val previewGains = AtomicReference<FloatArray?>()
             val afState = AtomicInteger(-1)
             val lastLine = AtomicReference("")
+            val lastPreview = AtomicReference<TotalCaptureResult?>()
             fun describe(r: CaptureResult) = "exposureNs=${r.get(CaptureResult.SENSOR_EXPOSURE_TIME)} " +
                 "iso=${r.get(CaptureResult.SENSOR_SENSITIVITY)} aperture=${r.get(CaptureResult.LENS_APERTURE)} " +
                 "focus=${r.get(CaptureResult.LENS_FOCUS_DISTANCE)} afState=${r.get(CaptureResult.CONTROL_AF_STATE)} " +
@@ -157,6 +158,7 @@ object HalJavaStill {
                     afState.set(r.get(CaptureResult.CONTROL_AF_STATE) ?: -1)
                     HalRawSynth.wbGains(r)?.let { previewGains.set(it) }
                     lastLine.set(describe(r))
+                    lastPreview.set(r)
                 }
             }
             fun CaptureRequest.Builder.common() = apply {
@@ -188,19 +190,32 @@ object HalJavaStill {
 
             val stillResult = AtomicReference("none")
             val stillCapture = AtomicReference<TotalCaptureResult?>()
-            val request = cam.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).common().apply {
+            val times = chars.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE)
+            val isos = chars.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE)
+            val manual = exposureNs > 0L && sensitivity > 0
+            val wantNs = times?.let { exposureNs.coerceIn(it.lower, it.upper) } ?: exposureNs
+            val wantIso = isos?.let { sensitivity.coerceIn(it.lower, it.upper) } ?: sensitivity
+            // controlOff: all of 3A off (lens at the AF-locked distance, the viewfinder's aperture) for a camera that
+            // runs its own ISO under AE OFF (logical camera 0: asked 317, got 1845 at f/1.63, 23:04 Nov 15).
+            fun stillRequest(controlOff: Boolean) = cam.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).common().apply {
                 addTarget(still.surface)
                 set(CaptureRequest.CONTROL_ENABLE_ZSL, false)
                 set(CaptureRequest.CONTROL_AE_LOCK, true)
-                if (exposureNs > 0L && sensitivity > 0) {
-                    val times = chars.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE)
-                    val isos = chars.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE)
-                    val t = times?.let { exposureNs.coerceIn(it.lower, it.upper) } ?: exposureNs
-                    val iso = isos?.let { sensitivity.coerceIn(it.lower, it.upper) } ?: sensitivity
+                if (manual) {
                     set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
-                    set(CaptureRequest.SENSOR_EXPOSURE_TIME, t)
-                    set(CaptureRequest.SENSOR_SENSITIVITY, iso)
-                    log("MANUAL exposureNs=$t iso=$iso (rawr $exposureNs / $sensitivity)")
+                    set(CaptureRequest.SENSOR_EXPOSURE_TIME, wantNs)
+                    set(CaptureRequest.SENSOR_SENSITIVITY, wantIso)
+                    if (controlOff) {
+                        val p = lastPreview.get()
+                        set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_OFF)
+                        set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
+                        p?.get(CaptureResult.LENS_FOCUS_DISTANCE)?.let { set(CaptureRequest.LENS_FOCUS_DISTANCE, it) }
+                        p?.get(CaptureResult.LENS_APERTURE)?.let { set(CaptureRequest.LENS_APERTURE, it) }
+                        p?.get(CaptureResult.SENSOR_FRAME_DURATION)?.let {
+                            set(CaptureRequest.SENSOR_FRAME_DURATION, maxOf(it, wantNs))
+                        }
+                    }
+                    log("MANUAL exposureNs=$wantNs iso=$wantIso controlOff=$controlOff (rawr $exposureNs / $sensitivity)")
                 }
                 set(CaptureRequest.JPEG_QUALITY, (if (dngPath != null || mosaic != null) 100 else 98).toByte())
                 set(CaptureRequest.JPEG_ORIENTATION, orientation)
@@ -223,7 +238,7 @@ object HalJavaStill {
                     set(CaptureRequest.COLOR_CORRECTION_TRANSFORM, ColorSpaceTransform(intArrayOf(1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1)))
                 }
             }
-            s.capture(request.build(), object : CameraCaptureSession.CaptureCallback() {
+            fun fire(controlOff: Boolean) = s.capture(stillRequest(controlOff).build(), object : CameraCaptureSession.CaptureCallback() {
                 override fun onCaptureCompleted(s: CameraCaptureSession, q: CaptureRequest, r: TotalCaptureResult) {
                     stillResult.set(describe(r))
                     stillCapture.set(r)
@@ -232,9 +247,30 @@ object HalJavaStill {
                     stillResult.set("failed reason=${f.reason}")
                 }
             }, handler)
+            fire(false)
             stillLatch.await(10, TimeUnit.SECONDS)
             Thread.sleep(100)  // the result usually lands with the image
             log("RESULT ${stillResult.get()} image=${stillSize.get()} ${ms()}")
+            // The camera ran its own ISO / shutter instead of the asked pair: once more with all of 3A off.
+            val got = stillCapture.get()
+            val gotIso = got?.get(CaptureResult.SENSOR_SENSITIVITY) ?: 0
+            val gotNs = got?.get(CaptureResult.SENSOR_EXPOSURE_TIME) ?: 0L
+            fun off(a: Double, b: Double) = a <= 0.0 || b <= 0.0 || a / b > 1.25 || b / a > 1.25
+            if (manual && stillImage.get() != null && (off(gotIso.toDouble(), wantIso.toDouble()) ||
+                    off(gotNs.toDouble(), wantNs.toDouble()))) {
+                log("MANUAL_IGNORED gotIso=$gotIso gotNs=$gotNs ${ms()}")
+                val first = stillImage.getAndSet(null)
+                val firstResult = stillCapture.getAndSet(null)
+                stillLatch = CountDownLatch(1)
+                fire(true)
+                stillLatch.await(10, TimeUnit.SECONDS)
+                Thread.sleep(100)
+                log("RESULT_CONTROL_OFF ${stillResult.get()} image=${stillSize.get()} ${ms()}")
+                if (stillImage.get() == null) {
+                    stillImage.set(first)
+                    stillCapture.set(firstResult)
+                }
+            }
             var bytes = stillImage.get() ?: run { log("FAILED reason=no_image ${ms()}"); return false }
             if (dngPath != null || mosaic != null) {
                 val r = stillCapture.get()

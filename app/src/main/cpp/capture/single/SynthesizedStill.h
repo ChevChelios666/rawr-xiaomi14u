@@ -23,6 +23,8 @@ struct Pending {
     float aperture = 0.0f;
     float focalLengthMm = 0.0f;
     float focusDiopters = -1.0f;
+    // Clipping point after matchTone scaled the frame (65535 untouched).
+    float whiteLevel = 65535.0f;
 };
 
 void set(Pending pending);
