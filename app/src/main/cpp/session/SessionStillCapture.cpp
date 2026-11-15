@@ -6,6 +6,7 @@
 #include "capture/CaptureRequest.h"
 #include "capture/BurstLimits.h"
 #include "capture/multiframe/MergeExposure.h"
+#include "capture/single/SynthesizedStill.h"
 #include "capture/persistence/CaptureJob.h"
 #include "capture/single/RawBufferPool.h"
 #include "develop/render/DenoiseProfile.h"
@@ -237,6 +238,8 @@ void SessionEngine::setPersistentEngineEnabled(bool enabled) {
     LOGI("PERSISTENT_ENGINE enabled=%s", enabled ? "true" : "false");
 }
 uint32_t SessionEngine::prepareExperimentalMultiframe(uint32_t maxFrames) {
+    // X14U synthesized 50 MP still waiting: the press is that single frame.
+    if (rawrcam::capture::synth::pending()) return 0;
     // Long exposure (shutter past the viewfinder cap): the ZSL ring holds only
     // viewfinder frames, so the merge takes a burst
     // of post-shutter frames at that shutter (full-size stills below on a

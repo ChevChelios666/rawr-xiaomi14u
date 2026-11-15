@@ -230,6 +230,12 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         val lens = latestSettings.effectiveLensProfiles(DeviceLensDefaults.lenses)
             .firstOrNull { it.name.trim().equals(state.selectedLensId.trim(), ignoreCase = true) } ?: return false
         val still = lens.streams.auxJpeg?.still
+        if (still == "rawrHal") {
+            // X14U 50 MP through the camera's own pipeline, developed by Rawr (synthesized RGGB frame).
+            shootSynthesized(lens.camera.id, lens.camera.physical,
+                lens.streams.auxJpeg?.bufferUsage?.removePrefix("0x")?.toLongOrNull(16) ?: 0x100003L)
+            return true
+        }
         if (still == "java" || still == "javaYuv" || still == "javaRaw") {
             val usage = lens.streams.auxJpeg?.bufferUsage?.removePrefix("0x")?.toLongOrNull(16) ?: 0L
             // javaRaw: YUV on the main (logical 0 / physical 2); the 3.2x / 5x cameras close on a full-size YUV
@@ -320,6 +326,68 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                     status(null)
                     fullSizeBusyFlow.value = false
                     registerHal50Files()
+                }
+            }
+        }
+    }
+
+    /**
+     * X14U 50 MP through the camera's own pipeline, developed by Rawr: own countdown (the self-timer), viewfinder
+     * held and stopped, the plain full-size still (YUV on the main, JPEG on 3.2x / 5x) turned into a linear RGGB
+     * frame (HalRawSynth), viewfinder back, then a normal press that takes that frame instead of the viewfinder's
+     * (native capture/single/SynthesizedStill): Rawr's JPEG and DNG with the usual names. Single frame (no merge).
+     */
+    private fun shootSynthesized(cameraId: String, physicalId: String, usage: Long) {
+        if (fullSizeJob?.isActive == true) return
+        fullSizeBusyFlow.value = true
+        fullSizeJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            fun status(message: String?) {
+                panoStatusClear?.cancel()
+                panoStatusFlow.value = message
+            }
+            suspend fun waitFor(timeoutMs: Long, ready: () -> Boolean) = kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
+                while (!ready()) kotlinx.coroutines.delay(30L)
+            } != null
+            var stopped = false
+            try {
+                for (left in controller.state.value.selfTimer.seconds downTo 1) {
+                    status("$left")
+                    kotlinx.coroutines.delay(1_000L)
+                }
+                status("50 MP…")
+                previewCoordinator.setViewfinderHold(true)
+                previewCoordinator.stop()
+                stopped = true
+                val mosaic = com.rawr.camera.x14u.HalRawSynth.BufferOut()
+                val shot = java.util.concurrent.atomic.AtomicReference<com.rawr.camera.x14u.HalRawSynth.ShotInfo?>()
+                val stamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss_SSS", java.util.Locale.US).format(java.util.Date())
+                val ok = com.rawr.camera.x14u.HalJavaStill.shoot(getApplication(), cameraId, physicalId,
+                    yuvStill = physicalId.isNotEmpty(), path = "/dev/null/$stamp", stillUsage = usage, plain = true,
+                    deviceRotationDegrees = previewCoordinator.captureDeviceRotationDegrees, mosaic = mosaic, shotInfo = shot)
+                previewCoordinator.start()
+                stopped = false
+                if (!ok || mosaic.buffer == null) {
+                    status("50 MP failed")
+                    kotlinx.coroutines.delay(2_000L)
+                    return@launch
+                }
+                // The viewfinder's own frames first (metadata and colour of this lens), then the press.
+                waitFor(6_000L) { previewCoordinator.heldNewFrames() >= 3 }
+                previewCoordinator.setSynthesizedStill(mosaic, shot.get())
+                status("50 MP · developing")
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    controller.dispatch(com.rawr.camera.architecture.TriggerCaptureNow)
+                }
+                waitFor(6_000L) { previewCoordinator.stillCaptureHoldsCamera() }
+                waitFor(20_000L) { !previewCoordinator.stillCaptureHoldsCamera() }
+            } finally {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    previewCoordinator.setSynthesizedStill(null, null)
+                    if (stopped) previewCoordinator.start()
+                    waitFor(6_000L) { previewCoordinator.heldNewFrames() >= 2 }
+                    previewCoordinator.setViewfinderHold(false)
+                    status(null)
+                    fullSizeBusyFlow.value = false
                 }
             }
         }

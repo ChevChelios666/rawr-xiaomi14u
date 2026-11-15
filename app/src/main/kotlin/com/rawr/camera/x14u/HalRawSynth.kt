@@ -60,13 +60,44 @@ object HalRawSynth {
         return (lin * WHITE).roundToInt().coerceIn(0, WHITE)
     }
 
-    /** Writes [nv21] (full-range BT.601, sRGB-coded camera RGB) as a CFA DNG at [file]. */
-    fun writeDng(file: File, nv21: ByteArray, width: Int, height: Int, chars: CameraCharacteristics, shot: ShotInfo) {
+    /** Where the RGGB rows go: a DNG file, or a direct buffer for Rawr's own develop. */
+    interface MosaicOut : java.io.Closeable {
+        fun begin(width: Int, height: Int)
+        fun row(bytes: ByteArray)
+    }
+
+    class DngOut(private val file: File, private val chars: CameraCharacteristics, private val shot: ShotInfo) : MosaicOut {
+        private var out: BufferedOutputStream? = null
+        override fun begin(width: Int, height: Int) {
+            out = BufferedOutputStream(FileOutputStream(file), 1 shl 20).also { it.write(buildIfd(width, height, chars, shot)) }
+        }
+        override fun row(bytes: ByteArray) { out?.write(bytes) }
+        override fun close() { out?.close() }
+    }
+
+    /** The mosaic in a direct buffer (little-endian uint16, RGGB, black 0, white 65535). */
+    class BufferOut : MosaicOut {
+        var buffer: ByteBuffer? = null
+            private set
+        var width = 0
+            private set
+        var height = 0
+            private set
+        override fun begin(width: Int, height: Int) {
+            this.width = width
+            this.height = height
+            buffer = ByteBuffer.allocateDirect(width * height * 2)
+        }
+        override fun row(bytes: ByteArray) { buffer?.put(bytes) }
+        override fun close() { buffer?.flip() }
+    }
+
+    /** Lays [nv21] (full-range BT.601 camera RGB through [ShotInfo.curve]) out as the RGGB mosaic into [sink]. */
+    fun writeDng(sink: MosaicOut, nv21: ByteArray, width: Int, height: Int, shot: ShotInfo) {
         // Curve decode at 1/16 code steps (the YUV->RGB conversion lands between 8-bit codes).
         val lut = IntArray(256 * 16 + 1) { i -> linearize(i / (255.0 * 16), shot.curve) }
-        val ifd = buildIfd(width, height, chars, shot)
-        BufferedOutputStream(FileOutputStream(file), 1 shl 20).use { out ->
-            out.write(ifd)
+        sink.use { out ->
+            out.begin(width, height)
             val row = ByteArray(width * 2)
             val uvBase = width * height
             for (y in 0 until height) {
@@ -90,7 +121,7 @@ object HalRawSynth {
                     row[x * 2] = s.toByte()
                     row[x * 2 + 1] = (s shr 8).toByte()
                 }
-                out.write(row)
+                out.row(row)
             }
         }
     }
@@ -99,7 +130,7 @@ object HalRawSynth {
      * The same from the camera's plain JPEG (the 3.2x / 5x cameras close themselves when asked for a full-size YUV
      * output; their JPEG works): decoded in bands of rows, sRGB-coded camera RGB per pixel.
      */
-    fun writeDngFromJpeg(file: File, jpeg: ByteArray, chars: CameraCharacteristics, shot: ShotInfo): Pair<Int, Int> {
+    fun writeDngFromJpeg(sink: MosaicOut, jpeg: ByteArray, shot: ShotInfo): Pair<Int, Int> {
         val decoder = android.graphics.BitmapRegionDecoder.newInstance(jpeg, 0, jpeg.size)
             ?: throw IllegalStateException("jpeg_decoder")
         try {
@@ -112,8 +143,8 @@ object HalRawSynth {
             }
             val band = 256
             val pixels = IntArray(width * band)
-            BufferedOutputStream(FileOutputStream(file), 1 shl 20).use { out ->
-                out.write(buildIfd(width, height, chars, shot))
+            sink.use { out ->
+                out.begin(width, height)
                 val row = ByteArray(width * 2)
                 var top = 0
                 while (top < height) {
@@ -137,7 +168,7 @@ object HalRawSynth {
                             row[x * 2] = s.toByte()
                             row[x * 2 + 1] = (s shr 8).toByte()
                         }
-                        out.write(row)
+                        out.row(row)
                     }
                     top += rows
                 }

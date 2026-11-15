@@ -273,6 +273,10 @@ class NativeCaptureScreenController(
                 selfTimer.trigger()
             }
 
+            com.rawr.camera.architecture.TriggerCaptureNow -> {
+                foregroundToken()?.let { enqueueStillCapture(it) }
+            }
+
             is StartBurst -> startBurst(action)
             StopBurst -> stopBurst()
             is SyncBurstLastCount -> {

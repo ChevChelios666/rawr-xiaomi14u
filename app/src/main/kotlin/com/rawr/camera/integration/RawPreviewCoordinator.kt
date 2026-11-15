@@ -697,6 +697,10 @@ class RawPreviewCoordinator(application: Application) : AutoCloseable {
     fun stillCaptureHoldsCamera(): Boolean = native.stillCaptureHoldsCamera(nativeHandle)
     fun hasHalSessionStill(): Boolean = native.hasHalSessionStill(nativeHandle)
     fun captureHalSessionStill(): Boolean = native.captureHalSessionStill(nativeHandle)
+    /** X14U: the synthesized 50 MP frame the next still takes (null clears it). */
+    fun setSynthesizedStill(mosaic: com.rawr.camera.x14u.HalRawSynth.BufferOut?, shot: com.rawr.camera.x14u.HalRawSynth.ShotInfo?): Boolean =
+        native.setSynthesizedStill(mosaic?.buffer, mosaic?.width ?: 0, mosaic?.height ?: 0, shot?.exposureNs ?: 0L,
+            shot?.iso ?: 0, shot?.aperture ?: 0f, shot?.focalLength ?: 0f, -1f)
 
     /** X14U Burst pre-capture (native PrecaptureRing); maxFrames 0 = off. */
     fun armPrecapture(maxFrames: Int, intervalMs: Int) {

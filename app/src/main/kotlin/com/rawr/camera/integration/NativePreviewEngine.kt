@@ -291,6 +291,9 @@ class NativePreviewEngine {
     external fun hasHalSessionStill(handle: Long): Boolean
     /** Blocks for the whole shot (seconds); off the main thread. */
     external fun captureHalSessionStill(handle: Long): Boolean
+    /** X14U: the synthesized 50 MP RGGB frame for the next still (direct buffer); null clears it. */
+    external fun setSynthesizedStill(buffer: java.nio.ByteBuffer?, width: Int, height: Int, exposureNs: Long, iso: Int,
+                                     aperture: Float, focalLength: Float, focusDiopters: Float): Boolean
     external fun prewarmStillBuffers(handle: Long, count: Int)
     external fun setStillDevelopPaused(paused: Boolean)
     external fun armPrecapture(handle: Long, maxFrames: Int, intervalMs: Int)

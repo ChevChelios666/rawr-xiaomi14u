@@ -229,7 +229,7 @@ class InMemoryCaptureScreenController(
                 triggerCaptureOrSelfTimer()
             }
 
-            is StartBurst, StopBurst, EndBurstMode, is SyncBurstLastCount -> Unit
+            is StartBurst, StopBurst, EndBurstMode, is SyncBurstLastCount, com.rawr.camera.architecture.TriggerCaptureNow -> Unit
         }
     }
 

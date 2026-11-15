@@ -57,7 +57,10 @@ object HalJavaStill {
         plain: Boolean = false,
         /** YUV still written as a synthesized CFA DNG here instead of a JPEG at [path] (HalRawSynth). */
         dngPath: String? = null,
-        deviceRotationDegrees: Int = 0
+        deviceRotationDegrees: Int = 0,
+        /** Instead of a DNG: the mosaic for Rawr's own develop (HalRawSynth.BufferOut), and the shot's values. */
+        mosaic: HalRawSynth.BufferOut? = null,
+        shotInfo: AtomicReference<HalRawSynth.ShotInfo?>? = null
     ): Boolean {
         val started = System.nanoTime()
         fun ms() = "ms=%.0f".format((System.nanoTime() - started) / 1e6)
@@ -186,7 +189,7 @@ object HalJavaStill {
                 addTarget(still.surface)
                 set(CaptureRequest.CONTROL_ENABLE_ZSL, false)
                 set(CaptureRequest.CONTROL_AE_LOCK, true)
-                set(CaptureRequest.JPEG_QUALITY, (if (dngPath != null) 100 else 98).toByte())
+                set(CaptureRequest.JPEG_QUALITY, (if (dngPath != null || mosaic != null) 100 else 98).toByte())
                 set(CaptureRequest.JPEG_ORIENTATION, orientation)
                 if (plain) {
                     set(CaptureRequest.NOISE_REDUCTION_MODE, CaptureRequest.NOISE_REDUCTION_MODE_OFF)
@@ -220,7 +223,7 @@ object HalJavaStill {
             Thread.sleep(100)  // the result usually lands with the image
             log("RESULT ${stillResult.get()} image=${stillSize.get()} ${ms()}")
             var bytes = stillImage.get() ?: run { log("FAILED reason=no_image ${ms()}"); return false }
-            if (dngPath != null) {
+            if (dngPath != null || mosaic != null) {
                 val r = stillCapture.get()
                 val shot = HalRawSynth.ShotInfo(
                     exposureNs = r?.get(CaptureResult.SENSOR_EXPOSURE_TIME),
@@ -240,13 +243,15 @@ object HalJavaStill {
                     "awb=${r?.get(CaptureResult.CONTROL_AWB_MODE)} cc=${r?.get(CaptureResult.COLOR_CORRECTION_MODE)} " +
                     "gains=${r?.get(CaptureResult.COLOR_CORRECTION_GAINS)}")
                 val synthStart = System.nanoTime()
+                val sink: HalRawSynth.MosaicOut = mosaic ?: HalRawSynth.DngOut(File(dngPath!!), chars, shot)
                 val (w, h) = if (yuvStill) {
                     val (sw, sh) = stillSize.get().split("x").map { it.toInt() }
-                    HalRawSynth.writeDng(File(dngPath), bytes, sw, sh, chars, shot)
+                    HalRawSynth.writeDng(sink, bytes, sw, sh, shot)
                     sw to sh
-                } else HalRawSynth.writeDngFromJpeg(File(dngPath), bytes, chars, shot)
+                } else HalRawSynth.writeDngFromJpeg(sink, bytes, shot)
+                shotInfo?.set(shot)
                 written = true
-                log("DNG path=$dngPath image=${w}x$h wbGains=${shot.wbGains?.joinToString(",")} " +
+                log("DNG path=${dngPath ?: "rawr-develop"} image=${w}x$h wbGains=${shot.wbGains?.joinToString(",")} " +
                     "synthMs=${(System.nanoTime() - synthStart) / 1_000_000} ${ms()}")
                 return true
             }

@@ -1,6 +1,7 @@
 #include "geometry/HorizonLock.h"
 #include "geometry/Stabilizer.h"
 #include "camera/ShotHandover.h"
+#include "capture/single/SynthesizedStill.h"
 #include "encoding/OutputAspect.h"
 #include <android/asset_manager_jni.h>
 #include <android/log.h>
@@ -960,6 +961,32 @@ Java_com_rawr_camera_integration_NativePreviewEngine_stillCaptureHoldsCamera(JNI
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_rawr_camera_integration_NativePreviewEngine_hasHalSessionStill(JNIEnv*, jobject, jlong h) {
     return rawrcam::session::hasHalSessionStill(handle(h)) ? JNI_TRUE : JNI_FALSE;
+}
+// X14U: the synthesized 50 MP frame (direct buffer, RGGB uint16 LE) for the next still request; empty clears it.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_rawr_camera_integration_NativePreviewEngine_setSynthesizedStill(JNIEnv* env, jobject, jobject buffer, jint width,
+                                                                       jint height, jlong exposureNs, jint iso,
+                                                                       jfloat aperture, jfloat focalLength,
+                                                                       jfloat focusDiopters) {
+    if (!buffer || width <= 0 || height <= 0) {
+        rawrcam::capture::synth::clear();
+        return JNI_TRUE;
+    }
+    auto* data = static_cast<const uint8_t*>(env->GetDirectBufferAddress(buffer));
+    const jlong capacity = env->GetDirectBufferCapacity(buffer);
+    const size_t bytes = size_t(width) * size_t(height) * 2u;
+    if (!data || capacity < jlong(bytes)) return JNI_FALSE;
+    rawrcam::capture::synth::Pending p;
+    p.raw16.assign(data, data + bytes);
+    p.width = uint32_t(width);
+    p.height = uint32_t(height);
+    p.exposureTimeNs = exposureNs;
+    p.sensitivity = iso;
+    p.aperture = aperture;
+    p.focalLengthMm = focalLength;
+    p.focusDiopters = focusDiopters;
+    rawrcam::capture::synth::set(std::move(p));
+    return JNI_TRUE;
 }
 // Blocks for the whole shot (seconds): call off the main thread.
 extern "C" JNIEXPORT jboolean JNICALL
