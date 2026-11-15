@@ -243,6 +243,17 @@ extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreview
                         pin && pin->focusDiopters ? *pin->focusDiopters : -1.0f);
 }
 
+// X14U H route (rawrHal): the 12 MP view restarts after the Java 50 MP still; keep its white balance, exposure and
+// lens position across the restart (the claimed tone/colour frame comes right after it).
+extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setCarryViewAcrossRestart(
+    JNIEnv*, jobject, jboolean on) {
+    rawrcam::camera::shotHandover().setCarry(on == JNI_TRUE, /*sameMode=*/true);
+    const auto wb = rawrcam::camera::shotHandover().carried();
+    __android_log_print(ANDROID_LOG_INFO, "RawrCamCameraNDK", "SYNTH_CARRY on=%d gains=%.3f,%.3f,%.3f,%.3f",
+                        on == JNI_TRUE ? 1 : 0, wb ? wb->gains[0] : 0.0f, wb ? wb->gains[1] : 0.0f,
+                        wb ? wb->gains[2] : 0.0f, wb ? wb->gains[3] : 0.0f);
+}
+
 extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setViewfinderHold(
     JNIEnv*, jobject, jboolean on) {
     rawrcam::camera::shotHandover().setHold(on == JNI_TRUE);

@@ -330,6 +330,7 @@ class RawPreviewCoordinator(application: Application) : AutoCloseable {
     fun setVideoCropSource(width: Int, height: Int) = native.setVideoCropSource(width, height)
     fun setStabilizer(enabled: Boolean, focalNorm: Float) = native.setStabilizer(enabled, focalNorm)
     fun setCarryWhiteBalance(on: Boolean) = native.setCarryWhiteBalance(on)
+    fun setCarryViewAcrossRestart(on: Boolean) = native.setCarryViewAcrossRestart(on)
     fun setViewfinderHold(on: Boolean) = native.setViewfinderHold(on)
     fun heldNewFrames(): Long = native.heldNewFrames()
     fun heldNewFullSizeFrames(): Long = native.heldNewFullSizeFrames()

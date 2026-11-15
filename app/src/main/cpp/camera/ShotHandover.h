@@ -46,12 +46,17 @@ public:
     // On: requests use the last applied white balance, exposure and lens position until off. The shot's session
     // otherwise starts auto exposure cold (darker, a different shutter: diagnostics 14 Nov, 3.2x) and its full-size
     // mode may not focus where the 12 MP view did.
-    void setCarry(bool on) {
+    // sameMode: the carry only bridges a restart of the 12 MP view itself (the X14U H route's 50 MP still runs in a
+    // separate Java session; the claimed 12 MP frame right after it must keep the view's white balance — its cold
+    // start gave B gain 1.93 vs 2.72, 22:38 Nov 15 — and exposure), so no full-size gain or focus scale.
+    void setCarry(bool on, bool sameMode = false) {
         std::lock_guard<std::mutex> lock(mutex_);
         carried_ = on ? last_ : std::nullopt;
         carriedExposure_ = on ? lastExposure_ : std::nullopt;
+        sameMode_.store(on && sameMode, std::memory_order_relaxed);
         carrying_.store(on, std::memory_order_relaxed);
     }
+    bool carrySameMode() const { return sameMode_.load(std::memory_order_relaxed); }
     // Gain the shot's camera needs at the carried exposure: the 0.5x (camera 3) and 3.2x (camera 4) full-size
     // readouts give 0.70x the binned mode's raw signal at the same shutter and ISO (diagnostics 14 Nov:
     // 47.5/68.2, 64.1/91.4, 66.3/93.3); the 1x (camera 2) matches (62.5/61.2).
@@ -117,6 +122,7 @@ private:
     std::optional<AppliedExposure> carriedExposure_;
     std::atomic<bool> hold_{false};
     std::atomic<bool> carrying_{false};
+    std::atomic<bool> sameMode_{false};
     std::atomic<uint64_t> lastGeneration_{0};
     std::atomic<uint64_t> holdStartGeneration_{0};
     std::atomic<int64_t> newFrames_{0};

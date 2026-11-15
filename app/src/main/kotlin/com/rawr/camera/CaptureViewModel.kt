@@ -360,6 +360,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 while (!ready()) kotlinx.coroutines.delay(30L)
             } != null
             var stopped = false
+            var carried = false
             try {
                 for (left in controller.state.value.selfTimer.seconds downTo 1) {
                     status("$left")
@@ -378,6 +379,10 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                         ?: v.appliedSensitivity
                 } ?: 0
                 previewCoordinator.setViewfinderHold(true)
+                // The restarted 12 MP view keeps its white balance (its cold start runs much warmer) and exposure for
+                // the frame the shot claims.
+                previewCoordinator.setCarryViewAcrossRestart(true)
+                carried = true
                 previewCoordinator.stop()
                 stopped = true
                 val mosaic = com.rawr.camera.x14u.HalRawSynth.BufferOut()
@@ -408,6 +413,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                     previewCoordinator.setSynthesizedStill(null, null)
                     if (stopped) previewCoordinator.start()
                     waitFor(6_000L) { previewCoordinator.heldNewFrames() >= 2 }
+                    if (carried) previewCoordinator.setCarryViewAcrossRestart(false)
                     previewCoordinator.setViewfinderHold(false)
                     status(null)
                     fullSizeBusyFlow.value = false

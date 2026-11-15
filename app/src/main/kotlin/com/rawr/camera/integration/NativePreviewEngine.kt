@@ -36,6 +36,7 @@ class NativePreviewEngine {
 
     /** X14U 50 MP shot: carry the viewfinder's white balance into the shot's session (true) or let go (false). */
     external fun setCarryWhiteBalance(on: Boolean)
+    external fun setCarryViewAcrossRestart(on: Boolean)
 
     /** X14U 50 MP shot: hold the viewfinder on its last frame (frames are developed, not shown). */
     external fun setViewfinderHold(on: Boolean)
