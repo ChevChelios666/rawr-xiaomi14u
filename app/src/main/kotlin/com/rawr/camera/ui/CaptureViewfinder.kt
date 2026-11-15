@@ -287,6 +287,19 @@ internal fun CaptureViewfinder(
                 modifier = Modifier.matchParentSize().zIndex(3f)
             )
         }
+        // X14U 50 MP through the camera's own pipeline runs its own countdown before the still: shown the same way.
+        val extras = LocalCaptureExtras.current
+        if (state.selfTimerRemainingMs == null) extras.fullSizeCountdownMs?.let { remaining ->
+            SelfTimerCountdownOverlay(
+                remainingMs = remaining,
+                orientation = state.orientation,
+                onCancel = {
+                    haptics.selection()
+                    extras.onCancelFullSizeCountdown()
+                },
+                modifier = Modifier.matchParentSize().zIndex(3f)
+            )
+        }
     }
 }
 

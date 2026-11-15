@@ -957,6 +957,34 @@ internal fun X14uCaptureLayout(
                     // Digital focal lengths: photo (and Photo+) through the zoom, video through the crop; not in Pano.
                     stopsAvailable = !pano && (zoomOn || (isVideo && chainLens != null)),
                     totalZoom = if (zoomOn) zoom else null,
+                    onResetPanel = { target ->
+                        when (target) {
+                            // Exposure: the Rawr AE options (metering, night look, balance, slowest shutter, gain,
+                            // speed) back to their defaults; Rawr / Device AE stays as chosen.
+                            X14uPanel.Exposure -> onQuickEvent(CaptureQuickEvent.SetRawrAeOption {
+                                com.rawr.camera.settings.model.RawrAeSettings(enabled = it.enabled)
+                            })
+                            // Look: tone (or AgX) and render exposure, highlights, and the film preset's own values;
+                            // the chosen profile and film preset stay.
+                            X14uPanel.Look -> {
+                                val agx = renderProfiles.agx
+                                if (agx != null) {
+                                    agxStripState(agx, state.renderExposureTenths, "").params.keys.forEach { key ->
+                                        dispatchAgx(dispatch, key, null)
+                                    }
+                                } else {
+                                    val tone = toneActions(state, dispatch)
+                                    TonemapCatalog.all.forEach { tone.reset(it.jsonKey) }
+                                }
+                                onQuickEvent(CaptureQuickEvent.SetHighlightMode(
+                                    if (isVideo) HighlightQuickMode.Off else HighlightQuickMode.Opposed))
+                                onQuickEvent(CaptureQuickEvent.SetHighlightCompression(quick.highlight.compressionDefault))
+                                filmQuick?.takeIf { film && it.modified }?.let { q ->
+                                    q.selectedPresetId?.let { onFilmEvent(CaptureFilmEvent.SelectPreset(it)) }
+                                }
+                            }
+                        }
+                    },
                     onStop = { stop ->
                         if (isVideo) {
                             dispatch(SetVideoCrop(state.videoCrop.copy(digitalZoom = stop.crop)))
@@ -1247,7 +1275,9 @@ private fun X14uLensRow(
     stopsAvailable: Boolean = false,
     /** Photo: the total zoom in use (chain units); null in video. */
     totalZoom: Float? = null,
-    onStop: (com.rawr.camera.settings.model.ResolvedStop) -> Unit = {}
+    onStop: (com.rawr.camera.settings.model.ResolvedStop) -> Unit = {},
+    /** RESET in the Look / Exposure pill: that panel's processing options back to their defaults. */
+    onResetPanel: (X14uPanel) -> Unit = {}
 ) {
     val haptics = LocalCaptureHaptics.current
     val extras = LocalCaptureExtras.current
@@ -1335,16 +1365,28 @@ private fun X14uLensRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             when (panel) {
-                X14uPanel.Look -> lookTabs.forEach { tab ->
-                    val on = tab == lookTab || (tab == "PROFILE" && lookTab !in lookTabs)
-                    PillItem(if (tab == "HL") "HIGHLIGHTS" else tab, on, orientation, width = null) {
+                X14uPanel.Look -> {
+                    lookTabs.forEach { tab ->
+                        val on = tab == lookTab || (tab == "PROFILE" && lookTab !in lookTabs)
+                        PillItem(if (tab == "HL") "HIGHLIGHTS" else tab, on, orientation, width = null) {
+                            haptics.selection()
+                            onLookTab(tab)
+                        }
+                    }
+                    PillItem("RESET", false, orientation, width = null) {
                         haptics.selection()
-                        onLookTab(tab)
+                        onResetPanel(X14uPanel.Look)
                     }
                 }
-                X14uPanel.Exposure -> PillItem(
-                    if (quick.rawrAe.enabled) "RAWR AE" else "DEVICE AE", true, orientation, width = null
-                ) { onTogglePanel(X14uPanel.Exposure) }
+                X14uPanel.Exposure -> {
+                    PillItem(
+                        if (quick.rawrAe.enabled) "RAWR AE" else "DEVICE AE", true, orientation, width = null
+                    ) { onTogglePanel(X14uPanel.Exposure) }
+                    PillItem("RESET", false, orientation, width = null) {
+                        haptics.selection()
+                        onResetPanel(X14uPanel.Exposure)
+                    }
+                }
                 null -> items.forEach { item ->
                     val lens = item as? com.rawr.camera.model.LensCapability
                     val stop = item as? com.rawr.camera.settings.model.ResolvedStop

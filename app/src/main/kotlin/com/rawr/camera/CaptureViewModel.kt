@@ -216,6 +216,15 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
 
     private var fullSizeJob: kotlinx.coroutines.Job? = null
 
+    /** The 50 MP (camera's own pipeline) shot's self-timer: ms left, null when none runs. */
+    private val fullSizeCountdownFlow = kotlinx.coroutines.flow.MutableStateFlow<Long?>(null)
+    val fullSizeCountdownMs: StateFlow<Long?> = fullSizeCountdownFlow
+
+    /** Tap on that countdown: the shot is called off (nothing was stopped yet). */
+    fun cancelFullSizeCountdown() {
+        if (fullSizeCountdownFlow.value != null) fullSizeJob?.cancel()
+    }
+
     /** A 50 MP shot is running: the capture screen locks the lens row and controls until it's back. */
     private val fullSizeBusyFlow = kotlinx.coroutines.flow.MutableStateFlow(false)
     val fullSizeBusy: StateFlow<Boolean> = fullSizeBusyFlow
@@ -381,10 +390,22 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             } != null
             var stopped = false
             var carried = false
+            var held = false
             try {
-                for (left in controller.state.value.selfTimer.seconds downTo 1) {
-                    status("$left")
-                    kotlinx.coroutines.delay(1_000L)
+                // The self-timer, shown like Rawr's own (big centred seconds; a tap calls the shot off).
+                val timerMs = controller.state.value.selfTimer.seconds * 1_000L
+                if (timerMs > 0) {
+                    val end = android.os.SystemClock.elapsedRealtime() + timerMs
+                    try {
+                        while (true) {
+                            val left = end - android.os.SystemClock.elapsedRealtime()
+                            if (left <= 0) break
+                            fullSizeCountdownFlow.value = left
+                            kotlinx.coroutines.delay(minOf(left, 100L))
+                        }
+                    } finally {
+                        fullSizeCountdownFlow.value = null
+                    }
                 }
                 status("50 MP…")
                 // Rawr's own exposure for the still (the camera's AE ran ~2.4x brighter at ~6x the ISO, 21:05 Nov 15).
@@ -399,6 +420,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                         ?: v.appliedSensitivity
                 } ?: 0
                 previewCoordinator.setViewfinderHold(true)
+                held = true
                 // The restarted 12 MP view keeps its white balance (its cold start runs much warmer) and exposure for
                 // the frame the shot claims.
                 previewCoordinator.setCarryViewAcrossRestart(true)
@@ -432,7 +454,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                     previewCoordinator.setSynthesizedStill(null, null)
                     if (stopped) previewCoordinator.start()
-                    waitFor(6_000L) { previewCoordinator.heldNewFrames() >= 2 }
+                    if (held) waitFor(6_000L) { previewCoordinator.heldNewFrames() >= 2 }
                     if (carried) previewCoordinator.setCarryViewAcrossRestart(false)
                     previewCoordinator.setViewfinderHold(false)
                     status(null)

@@ -216,6 +216,7 @@ class MainActivity : ComponentActivity() {
             val panoStatus by captureViewModel.panoStatus.collectAsStateWithLifecycle()
             val fullSizeShot by captureViewModel.fullSizeShot.collectAsStateWithLifecycle()
             val fullSizeBusy by captureViewModel.fullSizeBusy.collectAsStateWithLifecycle()
+            val fullSizeCountdownMs by captureViewModel.fullSizeCountdownMs.collectAsStateWithLifecycle()
             val tools by captureViewModel.tools.collectAsStateWithLifecycle()
             val stillsHint by captureViewModel.stillsHint.collectAsStateWithLifecycle()
             androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -296,6 +297,8 @@ class MainActivity : ComponentActivity() {
                     panoStatus = panoStatus,
                     fullSizeShot = fullSizeShot,
                     fullSizeBusy = fullSizeBusy,
+                    fullSizeCountdownMs = fullSizeCountdownMs,
+                    onCancelFullSizeCountdown = captureViewModel::cancelFullSizeCountdown,
                     onFullSizeShot = captureViewModel::tryShootFullSize,
                     onToggleAudioMuted = captureViewModel::toggleAudioMuted,
                     onOpenVideoSettings = {
