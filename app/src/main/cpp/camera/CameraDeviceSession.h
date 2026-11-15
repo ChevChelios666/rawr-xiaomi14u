@@ -161,6 +161,10 @@ class CameraDeviceSession final {
     std::mutex auxMutex_;
     std::vector<std::string> auxPaths_;
     Diagnostic auxDiag_;
+    // The lens's keys: its still-scope ones go on the HAL 50 MP still (e.g. sensor_meta_data.current_mode 0 for the
+    // full-size readout; without, the HAL upscales the binned mode: 15 Nov, sensorMode 1).
+    std::vector<CameraKeySetting> halKeys_;
+    std::string halKeysCameraId_;
     ACameraMetadata* characteristics_ = nullptr;
     ANativeWindow* rawWindow_ = nullptr;
     CameraSessionCallbackContext* sessionContext_ = nullptr;

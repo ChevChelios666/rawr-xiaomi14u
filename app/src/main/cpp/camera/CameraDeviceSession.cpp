@@ -609,6 +609,11 @@ bool CameraDeviceSession::createSession(ANativeWindow* window, const std::option
     }
 
     auxStill_ = recipe.auxJpeg ? recipe.auxJpegStill : 0;
+    halKeys_.clear();
+    if (auxStill_ && selected) {
+        halKeys_ = selected->vendorKeys;
+        halKeysCameraId_ = selected->cameraId;
+    }
     if (recipe.auxJpeg) {
         // The HAL 50 MP probe adds its JPEG as a logical output beside a physical RAW (the 1x aperture route).
         if (!physicalCameraId.empty() && !auxStill_) return fail("aux_jpeg", "reason=physical_camera_unsupported");
@@ -1107,6 +1112,11 @@ bool CameraDeviceSession::captureHal50Still(CameraRequestPipeline& pipeline, con
         (void)request->setU8(ACAMERA_CONTROL_CAPTURE_INTENT, 1, &intent);
         const uint8_t quality = 98;
         (void)request->setU8(ACAMERA_JPEG_QUALITY, 1, &quality);
+        if (!halKeys_.empty()) {
+            const auto applied = applyCameraKeySettings(request, characteristics_, halKeys_, halKeysCameraId_.c_str(),
+                                                        CameraKeySetting::Scope::Still, "lens", diag);
+            if (!applied.failures.empty()) diag("HAL50_STILL_KEYS_FAILED count=" + std::to_string(applied.failures.size()));
+        }
         if (plain) {
             const uint8_t nrOff = ACAMERA_NOISE_REDUCTION_MODE_OFF;
             const uint8_t edgeOff = ACAMERA_EDGE_MODE_OFF;
