@@ -388,8 +388,11 @@ bool runHalStillSession(const HalStillParams& p, const std::function<void(const 
                          : AImageReader_new(previewW, previewH, AIMAGE_FORMAT_YUV_420_888, 4, &previewReader);
         if (previewMade != AMEDIA_OK ||
             (p.gcamLayout && AImageReader_new(640, 480, AIMAGE_FORMAT_YUV_420_888, 4, &analysisReader) != AMEDIA_OK) ||
-            AImageReader_new(p.width, p.height, p.yuvStill ? AIMAGE_FORMAT_YUV_420_888 : AIMAGE_FORMAT_JPEG, 2,
-                             &stillReader) != AMEDIA_OK) {
+            (p.stillUsage ? AImageReader_newWithUsage(p.width, p.height,
+                                                      p.yuvStill ? AIMAGE_FORMAT_YUV_420_888 : AIMAGE_FORMAT_JPEG,
+                                                      p.stillUsage, 2, &stillReader)
+                          : AImageReader_new(p.width, p.height, p.yuvStill ? AIMAGE_FORMAT_YUV_420_888 : AIMAGE_FORMAT_JPEG,
+                                             2, &stillReader)) != AMEDIA_OK) {
             failure = "readers";
             break;
         }
@@ -440,6 +443,7 @@ bool runHalStillSession(const HalStillParams& p, const std::function<void(const 
         diag("HALS_SESSION layout=" + std::string(p.gcamLayout ? "gcam" : "own") + " preview=" +
              std::to_string(previewW) + "x" + std::to_string(previewH) + (p.gcamLayout ? " private+640x480yuv" : " yuv") +
              " still=" + std::string(p.yuvStill ? "yuv " : "jpeg ") + std::to_string(p.width) + "x" + std::to_string(p.height) +
+             " stillUsage=0x" + [&] { char b[20]; std::snprintf(b, sizeof(b), "%llx", (unsigned long long)p.stillUsage); return std::string(b); }() +
              " sessionKeys=" + std::to_string(sessionKeys) + " ms=" + std::to_string(ms()));
 
         // Viewfinder-like repeating request: AF / AE converge here, in the binned processed mode.

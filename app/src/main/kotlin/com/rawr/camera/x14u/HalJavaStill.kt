@@ -50,7 +50,7 @@ object HalJavaStill {
 
     /** True when the JPEG was written to [path]. */
     @SuppressLint("MissingPermission")
-    fun shoot(context: Context, cameraId: String, physicalId: String, yuvStill: Boolean, path: String): Boolean {
+    fun shoot(context: Context, cameraId: String, physicalId: String, yuvStill: Boolean, path: String, stillUsage: Long = 0L): Boolean {
         val started = System.nanoTime()
         fun ms() = "ms=%.0f".format((System.nanoTime() - started) / 1e6)
         val thread = HandlerThread("RawrHalJava").apply { start() }
@@ -87,7 +87,13 @@ object HalJavaStill {
 
             val preview = ImageReader.newInstance(1440, 1080, ImageFormat.PRIVATE, 4, HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE)
             val analysis = ImageReader.newInstance(640, 480, ImageFormat.YUV_420_888, 4)
-            val still = ImageReader.newInstance(8192, 6144, if (yuvStill) ImageFormat.YUV_420_888 else ImageFormat.JPEG, 2)
+            val stillFormat = if (yuvStill) ImageFormat.YUV_420_888 else ImageFormat.JPEG
+            // Usage 0x100000 keeps Xiaomi's camera service from sizing the stream down (GCam's readers carry it).
+            val still = if (stillUsage != 0L) {
+                runCatching { ImageReader.newInstance(8192, 6144, stillFormat, 2, stillUsage) }
+                    .onFailure { log("READER_USAGE_REFUSED usage=0x${stillUsage.toString(16)} ${it.message}") }
+                    .getOrNull() ?: ImageReader.newInstance(8192, 6144, stillFormat, 2)
+            } else ImageReader.newInstance(8192, 6144, stillFormat, 2)
             readers += listOf(preview, analysis, still)
             for (r in listOf(preview, analysis)) r.setOnImageAvailableListener({ it.acquireLatestImage()?.close() }, handler)
             val stillImage = AtomicReference<ByteArray?>()
@@ -120,7 +126,8 @@ object HalJavaStill {
             cam.createCaptureSession(config)
             configured.await(3, TimeUnit.SECONDS)
             val s = session ?: run { log("FAILED reason=session ${ms()}"); return false }
-            log("SESSION preview=1440x1080 private+640x480yuv still=${if (yuvStill) "yuv" else "jpeg"} 8192x6144 ${ms()}")
+            log("SESSION preview=1440x1080 private+640x480yuv still=${if (yuvStill) "yuv" else "jpeg"} 8192x6144 " +
+                "usage=0x${still.usage.toString(16)} ${ms()}")
 
             val frames = AtomicInteger()
             val afState = AtomicInteger(-1)

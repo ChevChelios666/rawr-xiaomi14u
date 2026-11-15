@@ -2075,6 +2075,7 @@ bool NativeCameraController::captureHalSessionStill() {
     p.plain = route->auxJpegStill == 4;
     p.gcamLayout = route->auxJpegStill >= 5;
     p.yuvStill = route->auxJpegStill == 6;
+    p.stillUsage = route->auxJpegBufferUsage.value_or(0);
     p.keys = route->vendorKeys;
     // Focus and exposure intent of the viewfinder: its AF/AE regions, MF distance, manual exposure, EV.
     if (m.control.focusMode == FocusControlMode::Manual && m.control.capabilities.manualFocusSupported) {

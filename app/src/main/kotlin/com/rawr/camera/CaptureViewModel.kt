@@ -231,7 +231,8 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             .firstOrNull { it.name.trim().equals(state.selectedLensId.trim(), ignoreCase = true) } ?: return false
         val still = lens.streams.auxJpeg?.still
         if (still == "java" || still == "javaYuv") {
-            shootHalJava(lens.camera.id, lens.camera.physical, still == "javaYuv", lens.name)
+            val usage = lens.streams.auxJpeg?.bufferUsage?.removePrefix("0x")?.toLongOrNull(16) ?: 0L
+            shootHalJava(lens.camera.id, lens.camera.physical, still == "javaYuv", lens.name, usage)
             return true
         }
         if (still in setOf("session", "sessionPlain", "gcam", "gcamYuv")) {
@@ -284,7 +285,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
      * viewfinder holds its frame and lets the camera go, the probe opens it with GCam's stream layout, takes the
      * still and closes it, and the viewfinder comes back.
      */
-    private fun shootHalJava(cameraId: String, physicalId: String, yuv: Boolean, lensName: String) {
+    private fun shootHalJava(cameraId: String, physicalId: String, yuv: Boolean, lensName: String, usage: Long) {
         if (fullSizeJob?.isActive == true) return
         fullSizeBusyFlow.value = true
         fullSizeJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -298,7 +299,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 previewCoordinator.stop()
                 val stamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss_SSS", java.util.Locale.US).format(java.util.Date())
                 val path = "/storage/emulated/0/DCIM/Camera/RAWR_${stamp}_HALJ_${lensName.trim()}.jpg"
-                val ok = com.rawr.camera.x14u.HalJavaStill.shoot(getApplication(), cameraId, physicalId, yuv, path)
+                val ok = com.rawr.camera.x14u.HalJavaStill.shoot(getApplication(), cameraId, physicalId, yuv, path, usage)
                 if (!ok) {
                     status("50 MP failed")
                     kotlinx.coroutines.delay(2_000L)

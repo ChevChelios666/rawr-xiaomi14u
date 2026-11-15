@@ -22,6 +22,10 @@ struct HalStillParams {
     // GCam's stream layout (its live 50 MP sessions): PRIVATE 1440x1080 preview + 640x480 YUV beside the still.
     bool gcamLayout = false;
     bool yuvStill = false;  // full-size YUV still (encoded here) instead of the HAL's JPEG
+    // Consumer usage of the still's reader (0: the reader default). Xiaomi's camera service sizes an output it
+    // can't find in its tables down to <= 1920 wide unless the consumer usage carries a "disallowed for rounding"
+    // flag: GCam's 8192x6144 readers carry 0x100000 (gralloc RENDERSCRIPT), logcat 15 Nov.
+    uint64_t stillUsage = 0;
     std::vector<CameraKeySetting> keys;  // the lens's vendor keys (session / request / still scopes)
     bool manualFocus = false;
     float focusDiopters = 0.0f;
