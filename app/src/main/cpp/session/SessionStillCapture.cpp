@@ -170,6 +170,14 @@ int SessionEngine::freezePrecapture() { return int(capture_.single().freezePreca
 int SessionEngine::beginPrecaptureDrain() { return int(capture_.single().beginPrecaptureDrain()); }
 void SessionEngine::endPrecapture() { capture_.single().endPrecapture(); }
 
+bool SessionEngine::hasHalSessionStill() {
+    auto* camera = cameraControls_.controller();
+    return camera && camera->hasHalSessionStill();
+}
+bool SessionEngine::captureHalSessionStill() {
+    auto* camera = cameraControls_.controller();
+    return camera && camera->captureHalSessionStill();
+}
 bool SessionEngine::stillCaptureHoldsCamera() {
     std::lock_guard<std::mutex> lock(mu_);
     return capture_.holdsCameraFrames();

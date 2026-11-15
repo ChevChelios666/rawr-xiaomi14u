@@ -287,6 +287,10 @@ class NativePreviewEngine {
     external fun pollDngWriteCompletion(handle: Long): String
 
     external fun stillCaptureHoldsCamera(handle: Long): Boolean
+    /** X14U HAL 50 MP session shot: the selected lens takes its 50 MP in a short session of its own. */
+    external fun hasHalSessionStill(handle: Long): Boolean
+    /** Blocks for the whole shot (seconds); off the main thread. */
+    external fun captureHalSessionStill(handle: Long): Boolean
     external fun prewarmStillBuffers(handle: Long, count: Int)
     external fun setStillDevelopPaused(paused: Boolean)
     external fun armPrecapture(handle: Long, maxFrames: Int, intervalMs: Int)

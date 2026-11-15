@@ -59,7 +59,7 @@ class CameraDeviceSession final {
     bool stopViewfinderForPhotos() const noexcept { return stopViewfinderForPhotos_; }
     bool hasCaptureStream() const noexcept { return captureConfigured_; }
     // X14U HAL 50 MP probe (LensRoute::auxJpegStill): the session's aux JPEG stream takes a still per shutter.
-    bool hal50Still() const noexcept { return auxJpegConfigured_ && auxStill_ != 0 && auxJpegWindow_; }
+    bool hal50Still() const noexcept { return auxJpegConfigured_ && (auxStill_ == 1 || auxStill_ == 2) && auxJpegWindow_; }
     // One copy of the repeating request filling only the aux JPEG stream (the camera's own full-size processing;
     // plain: noise reduction/sharpening off, sRGB curve, identity colour, unit gains); the JPEG goes to `path`.
     bool captureHal50Still(CameraRequestPipeline&, const CameraControlState&, const std::string& path,

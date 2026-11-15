@@ -118,7 +118,8 @@ struct RecipeInputs {
         c.source = lens.companionSize ? "profile" : lens.photoStream ? "capture_stream" : in.forcedCompanion ? "override" : "rule";
         r.companion = c;
     }
-    r.auxJpeg = lens.auxJpegSize;
+    // A session-mode HAL 50 MP lens keeps its viewfinder session plain: the 50 MP output lives in HalStillSession.
+    r.auxJpeg = lens.auxJpegStill >= 3 ? std::nullopt : lens.auxJpegSize;
     r.auxJpegBufferUsage = lens.auxJpegBufferUsage;
     r.auxJpegStill = lens.auxJpegSize ? lens.auxJpegStill : 0;
     r.still = stillStrategyFor(lens, r.companion.has_value());

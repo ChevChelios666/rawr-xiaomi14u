@@ -191,6 +191,8 @@ struct LensRoute {
     // X14U HAL 50 MP probe: each shutter also sends one still request to the aux JPEG stream (the camera's own
     // full-size processing) and saves the JPEG. 0 off, 1 the camera's processing, 2 plain (noise reduction and
     // sharpening off, sRGB curve, no colour correction, unit white balance: input for Rawr's own develop).
+    // 3 / 4: the same (camera / plain) taken in its own short session without the RAW stream (HalStillSession):
+    // the shutter takes only that 50 MP still.
     uint8_t auxJpegStill = 0;
     // The viewfinder RAW reader: images it holds (0: the app's 6; 6..16 allowed), whether a profile-fixed
     // usage is checked with AHardwareBuffer_isSupported before the reader is created (CPU-only when it

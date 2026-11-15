@@ -35,6 +35,7 @@
 #include "camera/CameraStartLadder.h"
 #include "camera/CameraWhiteBalanceControls.h"
 #include "camera/FullSizeSequence.h"
+#include "camera/HalStillSession.h"
 #include "camera/SessionRecipe.h"
 #include "camera/VendorGatePreset.h"
 #include "camera/SensitivityProbeStartup.h"
@@ -155,6 +156,7 @@ struct NativeCameraController::Impl final : CameraEventSink {
     bool active = false;
     bool starting = false;
     bool shutDown = false;
+    bool halSessionBusy = false;  // captureHalSessionStill owns the camera
     // Empty or unknown lens ids resolve to the profile's first lens at start.
     std::string lensId;
     // Built-in profile for this device model until the app supplies the
@@ -779,7 +781,7 @@ struct NativeCameraController::Impl final : CameraEventSink {
     }
 
     void startLocked(std::unique_lock<std::mutex>& lock) {
-        if (!active || deviceSession.hasDevice() || starting || shutDown) return;
+        if (!active || deviceSession.hasDevice() || starting || shutDown || halSessionBusy) return;
         fullSizeSequence.reset();
         fullSizeMoreExposures = false;
         fullSizeLastExposureTimestamp = 0;
@@ -2053,6 +2055,70 @@ bool NativeCameraController::captureFullSize(uint64_t requestId, uint32_t count,
     return impl_->captureFullSize(requestId, count, retainFocus, moreExposures);
 }
 bool NativeCameraController::waitFullSizeIdle(int64_t timeoutMs) { return impl_->waitFullSizeIdle(timeoutMs); }
+bool NativeCameraController::hasHalSessionStill() {
+    std::lock_guard<std::mutex> lock(impl_->mutex);
+    const auto route = impl_->selectedRouteLocked();
+    return route && route->auxJpegSize && route->auxJpegStill >= 3;
+}
+bool NativeCameraController::captureHalSessionStill() {
+    auto& m = *impl_;
+    std::unique_lock<std::mutex> lock(m.mutex);
+    const auto route = m.selectedRouteLocked();
+    if (!m.active || m.halSessionBusy || !route || !route->auxJpegSize || route->auxJpegStill < 3) return false;
+    HalStillParams p;
+    p.cameraId = route->cameraId;
+    p.physicalId = route->physicalCameraId;
+    p.width = int32_t(route->auxJpegSize->first);
+    p.height = int32_t(route->auxJpegSize->second);
+    p.plain = route->auxJpegStill == 4;
+    p.keys = route->vendorKeys;
+    // Focus and exposure intent of the viewfinder: its AF/AE regions, MF distance, manual exposure, EV.
+    if (m.control.focusMode == FocusControlMode::Manual && m.control.capabilities.manualFocusSupported) {
+        p.manualFocus = true;
+        p.focusDiopters = requestedFocusDiopters(m.control);
+    }
+    if (const auto* request = m.deviceSession.request()) {
+        RequestEntry e{};
+        if (request->get(ACAMERA_CONTROL_AF_REGIONS, &e) == ACAMERA_OK && e.count == 5 && e.data.i32)
+            p.afRegions.assign(e.data.i32, e.data.i32 + 5);
+        if (request->get(ACAMERA_CONTROL_AE_REGIONS, &e) == ACAMERA_OK && e.count == 5 && e.data.i32)
+            p.aeRegions.assign(e.data.i32, e.data.i32 + 5);
+    }
+    p.evSteps = m.control.requestedEvSteps;
+    if (m.control.exposureMode == ExposureControlMode::Manual) {
+        p.manualExposure = true;
+        p.exposureTimeNs = m.control.requestedExposureTimeNs;
+        p.sensitivity = m.control.requestedSensitivity;
+    }
+    char stamp[32] = {};
+    const std::time_t now = std::time(nullptr);
+    std::tm local{};
+    localtime_r(&now, &local);
+    std::strftime(stamp, sizeof(stamp), "%Y%m%d_%H%M%S", &local);
+    const auto msNow = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           std::chrono::system_clock::now().time_since_epoch()).count() % 1000;
+    char name[96] = {};
+    std::snprintf(name, sizeof(name), "RAWR_%s_%03d_HALS_%s.jpg", stamp, int(msNow), route->lensId.c_str());
+    p.path = std::string("/storage/emulated/0/DCIM/Camera/") + name;
+    m.diag("HALS_BEGIN lens=" + route->lensId + " camera=" + p.cameraId + " physical=" +
+           (p.physicalId.empty() ? std::string("none") : p.physicalId) + " plain=" + (p.plain ? "1" : "0") +
+           " mf=" + (p.manualFocus ? std::to_string(p.focusDiopters) : std::string("af")) +
+           " afRegion=" + (p.afRegions.empty() ? std::string("none") : "set") +
+           " manualExposure=" + (p.manualExposure ? "1" : "0"));
+    // Close the viewfinder session and device, as a lens switch does.
+    m.active = false;
+    m.halSessionBusy = true;
+    if (!m.retireSessionLocked(lock, std::chrono::seconds(3), "HALS")) m.forceRetireSessionLocked(lock, "HALS");
+    m.teardownCameraResourcesLocked(lock);
+    m.active = true;
+    lock.unlock();
+    const bool ok = runHalStillSession(p, [this](const std::string& line) { impl_->diag(line); });
+    lock.lock();
+    m.halSessionBusy = false;
+    // A stop requested meanwhile cleared `active`: stay closed then.
+    if (m.active) m.startLocked(lock);
+    return ok;
+}
 bool NativeCameraController::captureHal50Still() {
     std::lock_guard<std::mutex> lock(impl_->mutex);
     if (!impl_->deviceSession.hal50Still() || !impl_->active) return false;

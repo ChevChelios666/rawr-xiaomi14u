@@ -128,6 +128,7 @@ rawrcam_module(camera
     camera/CameraControlSurface.cpp
     camera/NativeCameraController.cpp
     camera/CameraDeviceSession.cpp
+    camera/HalStillSession.cpp
     camera/CameraCallbacks.cpp
     camera/CameraRequestPipeline.cpp
     camera/CameraRequest.cpp

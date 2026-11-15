@@ -227,9 +227,49 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         if (state.captureMode == com.rawr.camera.model.CaptureMode.Video || panoFlow.value || burstFlow.value) return false
         val lens = latestSettings.effectiveLensProfiles(DeviceLensDefaults.lenses)
             .firstOrNull { it.name.trim().equals(state.selectedLensId.trim(), ignoreCase = true) } ?: return false
+        if (lens.streams.auxJpeg?.still in setOf("session", "sessionPlain")) {
+            shootHalSession()
+            return true
+        }
         if (lens.runAsTarget() == null) return false
         shootFullSize()
         return true
+    }
+
+    /**
+     * X14U HAL 50 MP session shot (test lenses): the viewfinder holds its last frame while native closes the RAW
+     * session, takes the camera-processed 50 MP JPEG in a short session without RAW (AF/AE on a processed preview,
+     * like the stock camera) and reopens the viewfinder. No 12 MP photo with it.
+     */
+    private fun shootHalSession() {
+        if (fullSizeJob?.isActive == true) return
+        fullSizeBusyFlow.value = true
+        fullSizeJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            fun status(message: String?) {
+                panoStatusClear?.cancel()
+                panoStatusFlow.value = message
+            }
+            try {
+                status("50 MP…")
+                previewCoordinator.setViewfinderHold(true)
+                val ok = previewCoordinator.captureHalSessionStill()
+                if (!ok) {
+                    status("50 MP failed")
+                    kotlinx.coroutines.delay(2_000L)
+                }
+            } finally {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    // Live again once the reopened viewfinder's own frames are in.
+                    kotlinx.coroutines.withTimeoutOrNull(5_000L) {
+                        while (previewCoordinator.heldNewFrames() < 2) kotlinx.coroutines.delay(30L)
+                    }
+                    previewCoordinator.setViewfinderHold(false)
+                    status(null)
+                    fullSizeBusyFlow.value = false
+                    registerHal50Files()
+                }
+            }
+        }
     }
 
     /** The 50 MP shot (see [fullSizeShot]); a press while one runs is ignored. */
@@ -780,7 +820,10 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             val dir = java.io.File(android.os.Environment.getExternalStorageDirectory(), "DCIM/Camera")
             val since = System.currentTimeMillis() - 120_000L
             val paths = runCatching {
-                dir.listFiles { f -> f.name.contains("_HAL50_") && f.name.endsWith(".jpg") && f.lastModified() >= since }
+                dir.listFiles { f ->
+                    (f.name.contains("_HAL50_") || f.name.contains("_HALS_")) && f.name.endsWith(".jpg") &&
+                        f.lastModified() >= since
+                }
                     ?.map { it.absolutePath }
             }.getOrNull().orEmpty()
             if (paths.isEmpty()) return@launch

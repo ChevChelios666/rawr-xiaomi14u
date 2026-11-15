@@ -957,6 +957,15 @@ extern "C" JNIEXPORT jboolean JNICALL
 Java_com_rawr_camera_integration_NativePreviewEngine_stillCaptureHoldsCamera(JNIEnv*, jobject, jlong h) {
     return rawrcam::session::stillCaptureHoldsCamera(handle(h)) ? JNI_TRUE : JNI_FALSE;
 }
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_rawr_camera_integration_NativePreviewEngine_hasHalSessionStill(JNIEnv*, jobject, jlong h) {
+    return rawrcam::session::hasHalSessionStill(handle(h)) ? JNI_TRUE : JNI_FALSE;
+}
+// Blocks for the whole shot (seconds): call off the main thread.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_rawr_camera_integration_NativePreviewEngine_captureHalSessionStill(JNIEnv*, jobject, jlong h) {
+    return rawrcam::session::captureHalSessionStill(handle(h)) ? JNI_TRUE : JNI_FALSE;
+}
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_rawr_camera_integration_NativePreviewEngine_pollJpegWriteCompletion(JNIEnv* env, jobject, jlong h) {
     auto s = rawrcam::session::pollJpegWriteCompletion(handle(h));
