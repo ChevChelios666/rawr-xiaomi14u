@@ -142,7 +142,7 @@ object BurstStore {
         }
     }
 
-    /** A sampled bitmap for [file] (JPEG via BitmapFactory, DNG via ImageDecoder), longest side about [maxSide]. */
+    /** A sampled bitmap for [file] (ImageDecoder; EXIF orientation applied), longest side about [maxSide]. */
     fun decode(file: File, maxSide: Int): Bitmap? = runCatching {
         if (file.length() == 0L) return@runCatching null
         // ImageDecoder applies the EXIF orientation (BitmapFactory didn't: frames showed turned).
@@ -154,12 +154,39 @@ object BurstStore {
                 decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
             }
         } else {
-            ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, info, _ ->
+            // DNG: ImageDecoder leaves the Orientation tag out (15 Nov: RAW-only bursts showed turned), so it's
+            // applied here.
+            val bitmap = ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, info, _ ->
                 val scale = maxSide / maxOf(info.size.width, info.size.height).toFloat()
                 if (scale < 1f) decoder.setTargetSize((info.size.width * scale).toInt().coerceAtLeast(1),
                     (info.size.height * scale).toInt().coerceAtLeast(1))
                 decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
             }
+            oriented(bitmap, file)
         }
     }.getOrNull()
+
+    /** [bitmap] turned by [file]'s EXIF Orientation, unless the decoder already turned it. */
+    private fun oriented(bitmap: Bitmap, file: File): Bitmap {
+        val exif = runCatching { android.media.ExifInterface(file.path) }.getOrNull() ?: return bitmap
+        val orientation = exif.getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, 1)
+        val matrix = android.graphics.Matrix()
+        when (orientation) {
+            2 -> matrix.setScale(-1f, 1f)
+            3 -> matrix.setRotate(180f)
+            4 -> matrix.setScale(1f, -1f)
+            5 -> { matrix.setRotate(90f); matrix.postScale(-1f, 1f) }
+            6 -> matrix.setRotate(90f)
+            7 -> { matrix.setRotate(270f); matrix.postScale(-1f, 1f) }
+            8 -> matrix.setRotate(270f)
+            else -> return bitmap
+        }
+        if (orientation >= 5) {
+            // A quarter turn the decoder already made shows as swapped sides against the stored image.
+            val w = exif.getAttributeInt(android.media.ExifInterface.TAG_IMAGE_WIDTH, 0)
+            val h = exif.getAttributeInt(android.media.ExifInterface.TAG_IMAGE_LENGTH, 0)
+            if (w > 0 && h > 0 && w != h && (w > h) != (bitmap.width > bitmap.height)) return bitmap
+        }
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    }
 }

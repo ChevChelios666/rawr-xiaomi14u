@@ -206,9 +206,11 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     val fullSizeShot: StateFlow<Boolean> by lazy { kotlinx.coroutines.flow.combine(
         settingsEditor.values.map { it.effectiveLensProfiles(DeviceLensDefaults.lenses) },
         controller.state.map { Triple(it.selectedLensId, it.captureMode == com.rawr.camera.model.CaptureMode.Video, Unit) },
-        panoFlow
-    ) { lenses, (lensId, video, _), pano ->
-        !video && !pano && lenses.firstOrNull { it.name.trim().equals(lensId.trim(), ignoreCase = true) }
+        panoFlow,
+        burstFlow
+    ) { lenses, (lensId, video, _), pano, burst ->
+        // Burst runs 12 MP frames (no 50 MP shot there).
+        !video && !pano && !burst && lenses.firstOrNull { it.name.trim().equals(lensId.trim(), ignoreCase = true) }
             ?.runAsTarget() != null
     }.distinctUntilChanged().stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, false) }
 
