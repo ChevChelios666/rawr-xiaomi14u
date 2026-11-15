@@ -649,7 +649,9 @@ std::string serializeCameraProfile(const CameraProfile& profile) {
             }
             if (r.auxJpegStreamUseCase) a.number("useCase", r.auxJpegStreamUseCase);
             if (r.auxJpegStill)
-                a.text("still", r.auxJpegStill == 8   ? "javaYuv"
+                a.text("still", r.auxJpegStill == 10  ? "gcamPlain"
+                                : r.auxJpegStill == 9 ? "gcamYuvPlain"
+                                : r.auxJpegStill == 8 ? "javaYuv"
                                 : r.auxJpegStill == 7 ? "java"
                                 : r.auxJpegStill == 6 ? "gcamYuv"
                                 : r.auxJpegStill == 5 ? "gcam"
@@ -1074,6 +1076,8 @@ std::optional<LensRoute> readLens(const Json& l, std::string* error) {
         else if (still == "gcamYuv") r.auxJpegStill = 6;
         else if (still == "java") r.auxJpegStill = 7;
         else if (still == "javaYuv") r.auxJpegStill = 8;
+        else if (still == "gcamYuvPlain") r.auxJpegStill = 9;
+        else if (still == "gcamPlain") r.auxJpegStill = 10;
     }
 
     // Session.

@@ -2058,23 +2058,25 @@ bool NativeCameraController::waitFullSizeIdle(int64_t timeoutMs) { return impl_-
 bool NativeCameraController::hasHalSessionStill() {
     std::lock_guard<std::mutex> lock(impl_->mutex);
     const auto route = impl_->selectedRouteLocked();
-    return route && route->auxJpegSize && route->auxJpegStill >= 3 && route->auxJpegStill <= 6;
+    return route && route->auxJpegSize && route->auxJpegStill >= 3 &&
+           (route->auxJpegStill <= 6 || route->auxJpegStill >= 9);
 }
 bool NativeCameraController::captureHalSessionStill() {
     auto& m = *impl_;
     std::unique_lock<std::mutex> lock(m.mutex);
     const auto route = m.selectedRouteLocked();
     if (!m.active || m.halSessionBusy || !route || !route->auxJpegSize || route->auxJpegStill < 3 ||
-        route->auxJpegStill > 6)
+        route->auxJpegStill == 7 || route->auxJpegStill == 8)
         return false;
     HalStillParams p;
     p.cameraId = route->cameraId;
     p.physicalId = route->physicalCameraId;
     p.width = int32_t(route->auxJpegSize->first);
     p.height = int32_t(route->auxJpegSize->second);
-    p.plain = route->auxJpegStill == 4;
-    p.gcamLayout = route->auxJpegStill >= 5;
-    p.yuvStill = route->auxJpegStill == 6;
+    const auto still = route->auxJpegStill;
+    p.plain = still == 4 || still == 9 || still == 10;
+    p.gcamLayout = still >= 5;
+    p.yuvStill = still == 6 || still == 9;
     p.stillUsage = route->auxJpegBufferUsage.value_or(0);
     p.keys = route->vendorKeys;
     // Focus and exposure intent of the viewfinder: its AF/AE regions, MF distance, manual exposure, EV.

@@ -557,6 +557,11 @@ bool runHalStillSession(const HalStillParams& p, const std::function<void(const 
                 (void)ACaptureRequest_setEntry_u8(still, ACAMERA_COLOR_CORRECTION_MODE, 1, &matrix);
                 (void)ACaptureRequest_setEntry_float(still, ACAMERA_COLOR_CORRECTION_GAINS, 4, gains);
                 (void)ACaptureRequest_setEntry_rational(still, ACAMERA_COLOR_CORRECTION_TRANSFORM, 9, identity);
+                // GCam's full-res "RAW" switches (Aurora84PeerOptions): distortion correction and aberration off too.
+                const uint8_t distortionOff = ACAMERA_DISTORTION_CORRECTION_MODE_OFF;
+                const uint8_t aberrationOff = ACAMERA_COLOR_CORRECTION_ABERRATION_MODE_OFF;
+                (void)ACaptureRequest_setEntry_u8(still, ACAMERA_DISTORTION_CORRECTION_MODE, 1, &distortionOff);
+                (void)ACaptureRequest_setEntry_u8(still, ACAMERA_COLOR_CORRECTION_ABERRATION_MODE, 1, &aberrationOff);
             }
         }
         int stillSequence = 0;

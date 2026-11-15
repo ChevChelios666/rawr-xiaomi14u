@@ -235,7 +235,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             shootHalJava(lens.camera.id, lens.camera.physical, still == "javaYuv", lens.name, usage)
             return true
         }
-        if (still in setOf("session", "sessionPlain", "gcam", "gcamYuv")) {
+        if (still in setOf("session", "sessionPlain", "gcam", "gcamYuv", "gcamYuvPlain", "gcamPlain")) {
             shootHalSession()
             return true
         }
