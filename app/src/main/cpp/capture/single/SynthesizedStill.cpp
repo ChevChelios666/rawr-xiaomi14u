@@ -54,69 +54,89 @@ std::optional<Pending> take(uint64_t timestampNs) {
 namespace {
 inline uint16_t at(const std::vector<uint8_t>& v, size_t i) { return uint16_t(v[2 * i] | (v[2 * i + 1] << 8)); }
 
-// Mean green per cell of a GX x GY grid, and whether the cell clipped. greenOdd: green sits where (x + y) is odd.
+// Mean R, G, B per cell of a GX x GY grid, and each cell's peak sample (clipping).
 struct Grid {
     static constexpr int GX = 64, GY = 48;
-    std::vector<double> sum = std::vector<double>(GX * GY, 0.0);
-    std::vector<uint32_t> count = std::vector<uint32_t>(GX * GY, 0);
+    std::vector<double> sum[3] = {std::vector<double>(GX * GY, 0.0), std::vector<double>(GX * GY, 0.0),
+                                  std::vector<double>(GX * GY, 0.0)};
+    std::vector<uint32_t> count[3] = {std::vector<uint32_t>(GX * GY, 0), std::vector<uint32_t>(GX * GY, 0),
+                                      std::vector<uint32_t>(GX * GY, 0)};
     std::vector<uint16_t> peak = std::vector<uint16_t>(GX * GY, 0);
+    double mean(int ch, int c) const { return count[ch][c] ? sum[ch][c] / count[ch][c] : 0.0; }
 };
+// Channel (0 R, 1 G, 2 B) at (x & 1, y & 1) for Camera2's CFA codes RGGB / GRBG / GBRG / BGGR.
+constexpr int kCfaChannel[4][4] = {{0, 1, 1, 2}, {1, 0, 2, 1}, {1, 2, 0, 1}, {2, 1, 1, 0}};
 template <typename Black>
-Grid greens(const std::vector<uint8_t>& raw, uint32_t w, uint32_t h, bool greenOdd, Black black) {
+Grid channels(const std::vector<uint8_t>& raw, uint32_t w, uint32_t h, uint32_t cfa, Black black) {
     Grid g;
+    const int* map = kCfaChannel[cfa & 3u];
     for (uint32_t y = 0; y < h; ++y) {
         const int cy = int(uint64_t(y) * Grid::GY / h);
-        const uint32_t x0 = ((y & 1u) ^ (greenOdd ? 1u : 0u));
         const size_t row = size_t(y) * w;
-        for (uint32_t x = x0; x < w; x += 2) {
+        for (uint32_t x = 0; x < w; ++x) {
             const int c = cy * Grid::GX + int(uint64_t(x) * Grid::GX / w);
+            const int ch = map[(y & 1u) * 2 + (x & 1u)];
             const uint16_t v = at(raw, row + x);
-            g.sum[c] += double(v) - black(x, y);
-            g.count[c]++;
+            g.sum[ch][c] += double(v) - black(x, y);
+            g.count[ch][c]++;
             if (v > g.peak[c]) g.peak[c] = v;
         }
     }
     return g;
 }
+double median(std::vector<double> v) {
+    if (v.empty()) return 1.0;
+    std::nth_element(v.begin(), v.begin() + v.size() / 2, v.end());
+    return v[v.size() / 2];
+}
 }  // namespace
 
 std::string matchTone(const imaging::RawSnapshot& ref, Pending& p) {
-    char line[512];
+    char line[640];
     const auto& m = ref.metadata;
     const auto& ctx = m.cameraContext;
     if (ref.width < 64 || ref.height < 48 || ref.raw16.size() < size_t(ref.width) * ref.height * 2 || p.width < 64 ||
         p.raw16.size() < size_t(p.width) * p.height * 2)
         return "SYNTH_TONE skipped reason=no_ref";
     const uint32_t cfa = ctx ? ctx->rawPreviewCfa : 0u;
-    const bool refGreenOdd = cfa == 0u || cfa == 3u;  // RGGB / BGGR: green where x + y is odd
     float white = m.effectiveWhiteLevel > 0.0f ? m.effectiveWhiteLevel : m.staticWhiteLevel;
     if (white <= 0.0f && ctx) white = ctx->baselineWhiteLevel;
     if (white <= 0.0f) return "SYNTH_TONE skipped reason=no_white";
     const auto& bl = m.blackLevelPhysicalRggb;
     const float blackMean = (bl[0] + bl[1] + bl[2] + bl[3]) / 4.0f;
     const double range = double(white) - blackMean;
-    const Grid r = greens(ref.raw16, ref.width, ref.height, refGreenOdd,
-                          [&](uint32_t x, uint32_t y) { return double(bl[(y & 1u) * 2 + (x & 1u)]); });
-    const Grid s = greens(p.raw16, p.width, p.height, true, [](uint32_t, uint32_t) { return 0.0; });
+    const Grid r = channels(ref.raw16, ref.width, ref.height, cfa,
+                            [&](uint32_t x, uint32_t y) { return double(bl[(y & 1u) * 2 + (x & 1u)]); });
+    const Grid s = channels(p.raw16, p.width, p.height, 0u, [](uint32_t, uint32_t) { return 0.0; });
     // The 12 MP RAW still carries lens shading; its map (R, G_even, G_odd, B per point) brings it level.
     const uint32_t mw = m.lensShadingMapWidth, mh = m.lensShadingMapHeight;
     const bool lsc = mw >= 2 && mh >= 2 && m.lensShadingMap.size() >= size_t(mw) * mh * 4;
-    std::vector<std::pair<double, double>> pairs;  // (synth, ref in synth units)
+    std::vector<std::pair<double, double>> pairs;  // green: (synth, ref in synth units)
+    std::vector<double> redRatio, blueRatio;        // per cell (synth R/G) / (ref R/G), same for B
     for (int cy = 0; cy < Grid::GY; ++cy) {
         for (int cx = 0; cx < Grid::GX; ++cx) {
             const int c = cy * Grid::GX + cx;
-            if (!r.count[c] || !s.count[c]) continue;
+            if (!r.count[1][c] || !s.count[1][c]) continue;
             if (r.peak[c] >= white * 0.95f || s.peak[c] >= 64000) continue;
-            double gain = 1.0;
+            double gain[3] = {1.0, 1.0, 1.0};
             if (lsc) {
                 const uint32_t gx = uint32_t(std::lround((cx + 0.5) / Grid::GX * (mw - 1)));
                 const uint32_t gy = uint32_t(std::lround((cy + 0.5) / Grid::GY * (mh - 1)));
                 const size_t k = (size_t(gy) * mw + gx) * 4;
-                gain = 0.5 * (m.lensShadingMap[k + 1] + m.lensShadingMap[k + 2]);
+                gain[0] = m.lensShadingMap[k];
+                gain[1] = 0.5 * (m.lensShadingMap[k + 1] + m.lensShadingMap[k + 2]);
+                gain[2] = m.lensShadingMap[k + 3];
             }
-            const double rv = r.sum[c] / r.count[c] * gain / range * 65535.0;
-            const double sv = s.sum[c] / s.count[c];
-            if (rv > 40.0 && sv > 40.0) pairs.emplace_back(sv, rv);
+            double rv[3], sv[3];
+            for (int ch = 0; ch < 3; ++ch) {
+                rv[ch] = r.mean(ch, c) * gain[ch] / range * 65535.0;
+                sv[ch] = s.mean(ch, c);
+            }
+            if (rv[1] > 40.0 && sv[1] > 40.0) pairs.emplace_back(sv[1], rv[1]);
+            if (rv[1] > 40.0 && sv[1] > 40.0 && rv[0] > 20.0 && sv[0] > 20.0 && rv[2] > 20.0 && sv[2] > 20.0) {
+                redRatio.push_back((sv[0] / sv[1]) / (rv[0] / rv[1]));
+                blueRatio.push_back((sv[2] / sv[1]) / (rv[2] / rv[1]));
+            }
         }
     }
     const size_t n = pairs.size();
@@ -136,6 +156,13 @@ std::string matchTone(const imaging::RawSnapshot& ref, Pending& p) {
     if (corr < 0.6) {
         std::snprintf(line, sizeof line, "SYNTH_TONE skipped reason=no_match cells=%zu corr=%.3f lsc=%d", n, corr, lsc);
         return line;
+    }
+    // Colour: the 50 MP still's R/G and B/G against the 12 MP RAW's, cell by cell (the 3.2x / 5x plain stills
+    // carry less blue than their sensor: 0.84x at 21:05, and Rawr's develop halved it in the JPEG at 23:41 Nov 15).
+    double kR = 1.0, kB = 1.0;
+    if (redRatio.size() >= 300) {
+        kR = std::clamp(1.0 / median(redRatio), 0.5, 2.0);
+        kB = std::clamp(1.0 / median(blueRatio), 0.5, 2.0);
     }
     // Quantile matching (the cells' synth and ref levels sorted separately, so a slight shift between the two
     // frames doesn't bias the gains the way a per-cell ratio binned by either side does): at each of NB quantiles,
@@ -183,7 +210,8 @@ std::string matchTone(const imaging::RawSnapshot& ref, Pending& p) {
         }
         lut[v] = float(f);
     }
-    // Every 2x2 RGGB site by the gain for its green.
+    // Every 2x2 RGGB site by the gain for its green, red and blue also by the colour factors.
+    const float fR = float(kR), fB = float(kB);
     auto& raw = p.raw16;
     const uint32_t w = p.width, h = p.height & ~1u;
     for (uint32_t y = 0; y < h; y += 2) {
@@ -192,16 +220,20 @@ std::string matchTone(const imaging::RawSnapshot& ref, Pending& p) {
         for (uint32_t x = 0; x + 1 < w; x += 2) {
             const uint32_t g = (uint32_t(r0[2 * x + 2] | (r0[2 * x + 3] << 8)) + uint32_t(r1[2 * x] | (r1[2 * x + 1] << 8))) >> 1;
             const float f = lut[g];
-            for (uint8_t* q : {r0 + 2 * x, r0 + 2 * x + 2, r1 + 2 * x, r1 + 2 * x + 2}) {
+            uint8_t* sites[4] = {r0 + 2 * x, r0 + 2 * x + 2, r1 + 2 * x, r1 + 2 * x + 2};  // R G G B
+            const float k[4] = {f * fR, f, f, f * fB};
+            for (int i = 0; i < 4; ++i) {
+                uint8_t* q = sites[i];
                 const uint32_t v = uint32_t(q[0] | (q[1] << 8));
-                const uint32_t o = v >= 65535u ? outWhite : std::min(outWhite, uint32_t(v * f + 0.5f));
+                const uint32_t o = v >= 65535u ? outWhite : std::min(outWhite, uint32_t(v * k[i] + 0.5f));
                 q[0] = uint8_t(o & 0xFF);
                 q[1] = uint8_t(o >> 8);
             }
         }
     }
-    int len = std::snprintf(line, sizeof line, "SYNTH_TONE applied cells=%zu corr=%.3f lsc=%d ref=%ux%u cfa=%u white=%u gains=",
-                            n, corr, lsc, ref.width, ref.height, cfa, outWhite);
+    int len = std::snprintf(line, sizeof line, "SYNTH_TONE applied cells=%zu corr=%.3f lsc=%d ref=%ux%u cfa=%u white=%u "
+                            "colour=%zu kR=%.3f kB=%.3f gains=",
+                            n, corr, lsc, ref.width, ref.height, cfa, outWhite, redRatio.size(), kR, kB);
     for (size_t i = 0; i < knotS.size() && len < int(sizeof line) - 24; ++i)
         len += std::snprintf(line + len, sizeof line - len, "%s%.0f:%.2f", i ? "," : "", knotS[i], knotF[i]);
     return line;

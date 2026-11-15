@@ -37,7 +37,8 @@ std::optional<Pending> take(uint64_t timestampNs);
 // Brings the synthesized frame's tones to the viewfinder RAW frame of the same moment (ref, already copied and
 // Bayer): the camera's own pipeline lifts shadows (local tone mapping) even with a plain curve, so the 50 MP
 // greens are quantile-matched to the 12 MP RAW's (black-subtracted, lens-shading-corrected) on a coarse grid, and every 2x2 site is scaled by the gain for its green. Leaves the frame as it was when the two don't
-// line up. Returns a log line.
+// line up. Also matches its R/G and B/G to the RAW's (median per-cell ratio): the 3.2x / 5x plain stills carry
+// less blue than their sensor. Returns a log line.
 std::string matchTone(const imaging::RawSnapshot& ref, Pending& pending);
 // Puts the synthesized frame into the claimed viewfinder snapshot: pixels, size and full-size metadata.
 void apply(imaging::RawSnapshot& frame, Pending&& pending);
