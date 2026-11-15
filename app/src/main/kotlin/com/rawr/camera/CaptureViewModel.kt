@@ -232,7 +232,10 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         val still = lens.streams.auxJpeg?.still
         if (still == "java" || still == "javaYuv" || still == "javaRaw") {
             val usage = lens.streams.auxJpeg?.bufferUsage?.removePrefix("0x")?.toLongOrNull(16) ?: 0L
-            shootHalJava(lens.camera.id, lens.camera.physical, still != "java", lens.name, usage, raw = still == "javaRaw")
+            // javaRaw: YUV on the main (logical 0 / physical 2); the 3.2x / 5x cameras close on a full-size YUV
+            // output (17:53 Nov 15) but take the JPEG.
+            val yuv = still == "javaYuv" || (still == "javaRaw" && lens.camera.physical.isNotEmpty())
+            shootHalJava(lens.camera.id, lens.camera.physical, yuv, lens.name, usage, raw = still == "javaRaw")
             return true
         }
         if (still in setOf("session", "sessionPlain", "gcam", "gcamYuv", "gcamYuvPlain", "gcamPlain")) {

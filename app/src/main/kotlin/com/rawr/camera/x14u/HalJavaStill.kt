@@ -186,7 +186,7 @@ object HalJavaStill {
                 addTarget(still.surface)
                 set(CaptureRequest.CONTROL_ENABLE_ZSL, false)
                 set(CaptureRequest.CONTROL_AE_LOCK, true)
-                set(CaptureRequest.JPEG_QUALITY, 98.toByte())
+                set(CaptureRequest.JPEG_QUALITY, (if (dngPath != null) 100 else 98).toByte())
                 set(CaptureRequest.JPEG_ORIENTATION, orientation)
                 if (plain) {
                     set(CaptureRequest.NOISE_REDUCTION_MODE, CaptureRequest.NOISE_REDUCTION_MODE_OFF)
@@ -214,8 +214,7 @@ object HalJavaStill {
             Thread.sleep(100)  // the result usually lands with the image
             log("RESULT ${stillResult.get()} image=${stillSize.get()} ${ms()}")
             var bytes = stillImage.get() ?: run { log("FAILED reason=no_image ${ms()}"); return false }
-            if (yuvStill && dngPath != null) {
-                val (w, h) = stillSize.get().split("x").map { it.toInt() }
+            if (dngPath != null) {
                 val r = stillCapture.get()
                 val shot = HalRawSynth.ShotInfo(
                     exposureNs = r?.get(CaptureResult.SENSOR_EXPOSURE_TIME),
@@ -226,7 +225,11 @@ object HalJavaStill {
                     deviceRotationDegrees = deviceRotationDegrees
                 )
                 val synthStart = System.nanoTime()
-                HalRawSynth.writeDng(File(dngPath), bytes, w, h, chars, shot)
+                val (w, h) = if (yuvStill) {
+                    val (sw, sh) = stillSize.get().split("x").map { it.toInt() }
+                    HalRawSynth.writeDng(File(dngPath), bytes, sw, sh, chars, shot)
+                    sw to sh
+                } else HalRawSynth.writeDngFromJpeg(File(dngPath), bytes, chars, shot)
                 written = true
                 log("DNG path=$dngPath image=${w}x$h wbGains=${shot.wbGains?.joinToString(",")} " +
                     "synthMs=${(System.nanoTime() - synthStart) / 1_000_000} ${ms()}")

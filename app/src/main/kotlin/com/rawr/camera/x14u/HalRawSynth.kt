@@ -74,6 +74,63 @@ object HalRawSynth {
         }
     }
 
+    /**
+     * The same from the camera's plain JPEG (the 3.2x / 5x cameras close themselves when asked for a full-size YUV
+     * output; their JPEG works): decoded in bands of rows, sRGB-coded camera RGB per pixel.
+     */
+    fun writeDngFromJpeg(file: File, jpeg: ByteArray, chars: CameraCharacteristics, shot: ShotInfo): Pair<Int, Int> {
+        val decoder = android.graphics.BitmapRegionDecoder.newInstance(jpeg, 0, jpeg.size)
+            ?: throw IllegalStateException("jpeg_decoder")
+        try {
+            val width = decoder.width
+            val height = decoder.height and 1.inv()
+            val lut = IntArray(256) { i ->
+                val v = i / 255.0
+                val lin = if (v <= 0.04045) v / 12.92 else ((v + 0.055) / 1.055).pow(2.4)
+                (lin * WHITE).roundToInt().coerceIn(0, WHITE)
+            }
+            val options = android.graphics.BitmapFactory.Options().apply {
+                inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
+                inPreferredColorSpace = android.graphics.ColorSpace.get(android.graphics.ColorSpace.Named.SRGB)
+            }
+            val band = 256
+            val pixels = IntArray(width * band)
+            BufferedOutputStream(FileOutputStream(file), 1 shl 20).use { out ->
+                out.write(buildIfd(width, height, chars, shot))
+                val row = ByteArray(width * 2)
+                var top = 0
+                while (top < height) {
+                    val rows = minOf(band, height - top)
+                    val bitmap = decoder.decodeRegion(android.graphics.Rect(0, top, width, top + rows), options)
+                        ?: throw IllegalStateException("jpeg_band_$top")
+                    bitmap.getPixels(pixels, 0, width, 0, 0, width, rows)
+                    bitmap.recycle()
+                    for (r in 0 until rows) {
+                        val evenRow = ((top + r) and 1) == 0
+                        val base = r * width
+                        for (x in 0 until width) {
+                            val p = pixels[base + x]
+                            val evenCol = (x and 1) == 0
+                            val code = when {
+                                evenRow && evenCol -> (p shr 16) and 0xFF
+                                !evenRow && !evenCol -> p and 0xFF
+                                else -> (p shr 8) and 0xFF
+                            }
+                            val s = lut[code]
+                            row[x * 2] = s.toByte()
+                            row[x * 2 + 1] = (s shr 8).toByte()
+                        }
+                        out.write(row)
+                    }
+                    top += rows
+                }
+            }
+            return width to height
+        } finally {
+            decoder.recycle()
+        }
+    }
+
     private class Entry(val tag: Int, val type: Int, val count: Int, val data: ByteArray)
 
     private fun le(size: Int) = ByteBuffer.allocate(size).order(ByteOrder.LITTLE_ENDIAN)
