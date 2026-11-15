@@ -2059,14 +2059,14 @@ bool NativeCameraController::hasHalSessionStill() {
     std::lock_guard<std::mutex> lock(impl_->mutex);
     const auto route = impl_->selectedRouteLocked();
     return route && route->auxJpegSize && route->auxJpegStill >= 3 &&
-           (route->auxJpegStill <= 6 || route->auxJpegStill >= 9);
+           (route->auxJpegStill <= 6 || route->auxJpegStill == 9 || route->auxJpegStill == 10);
 }
 bool NativeCameraController::captureHalSessionStill() {
     auto& m = *impl_;
     std::unique_lock<std::mutex> lock(m.mutex);
     const auto route = m.selectedRouteLocked();
     if (!m.active || m.halSessionBusy || !route || !route->auxJpegSize || route->auxJpegStill < 3 ||
-        route->auxJpegStill == 7 || route->auxJpegStill == 8)
+        route->auxJpegStill == 7 || route->auxJpegStill == 8 || route->auxJpegStill > 10)
         return false;
     HalStillParams p;
     p.cameraId = route->cameraId;

@@ -230,9 +230,9 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         val lens = latestSettings.effectiveLensProfiles(DeviceLensDefaults.lenses)
             .firstOrNull { it.name.trim().equals(state.selectedLensId.trim(), ignoreCase = true) } ?: return false
         val still = lens.streams.auxJpeg?.still
-        if (still == "java" || still == "javaYuv") {
+        if (still == "java" || still == "javaYuv" || still == "javaRaw") {
             val usage = lens.streams.auxJpeg?.bufferUsage?.removePrefix("0x")?.toLongOrNull(16) ?: 0L
-            shootHalJava(lens.camera.id, lens.camera.physical, still == "javaYuv", lens.name, usage)
+            shootHalJava(lens.camera.id, lens.camera.physical, still != "java", lens.name, usage, raw = still == "javaRaw")
             return true
         }
         if (still in setOf("session", "sessionPlain", "gcam", "gcamYuv", "gcamYuvPlain", "gcamPlain")) {
@@ -285,7 +285,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
      * viewfinder holds its frame and lets the camera go, the probe opens it with GCam's stream layout, takes the
      * still and closes it, and the viewfinder comes back.
      */
-    private fun shootHalJava(cameraId: String, physicalId: String, yuv: Boolean, lensName: String, usage: Long) {
+    private fun shootHalJava(cameraId: String, physicalId: String, yuv: Boolean, lensName: String, usage: Long, raw: Boolean = false) {
         if (fullSizeJob?.isActive == true) return
         fullSizeBusyFlow.value = true
         fullSizeJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -299,7 +299,10 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 previewCoordinator.stop()
                 val stamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss_SSS", java.util.Locale.US).format(java.util.Date())
                 val path = "/storage/emulated/0/DCIM/Camera/RAWR_${stamp}_HALJ_${lensName.trim()}.jpg"
-                val ok = com.rawr.camera.x14u.HalJavaStill.shoot(getApplication(), cameraId, physicalId, yuv, path, usage)
+                // javaRaw: the plain full-size YUV as a synthesized 50 MP DNG for Rawr's renderer (HalRawSynth).
+                val dng = if (raw) "/storage/emulated/0/DCIM/Camera/RAWR_${stamp}_HALR_${lensName.trim()}.dng" else null
+                val ok = com.rawr.camera.x14u.HalJavaStill.shoot(getApplication(), cameraId, physicalId, yuv, path, usage,
+                    plain = raw, dngPath = dng, deviceRotationDegrees = previewCoordinator.captureDeviceRotationDegrees)
                 if (!ok) {
                     status("50 MP failed")
                     kotlinx.coroutines.delay(2_000L)
@@ -868,14 +871,14 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             val since = System.currentTimeMillis() - 120_000L
             val paths = runCatching {
                 dir.listFiles { f ->
-                    (f.name.contains("_HAL50_") || f.name.contains("_HALS_") || f.name.contains("_HALJ_")) && f.name.endsWith(".jpg") &&
+                    (f.name.contains("_HAL50_") || f.name.contains("_HALS_") || f.name.contains("_HALJ_") || f.name.contains("_HALR_")) && (f.name.endsWith(".jpg") || f.name.endsWith(".dng")) &&
                         f.lastModified() >= since
                 }
                     ?.map { it.absolutePath }
             }.getOrNull().orEmpty()
             if (paths.isEmpty()) return@launch
             android.media.MediaScannerConnection.scanFile(getApplication(), paths.toTypedArray(),
-                Array(paths.size) { "image/jpeg" }) { path, uri ->
+                Array(paths.size) { if (paths[it].endsWith(".dng")) "image/x-adobe-dng" else "image/jpeg" }) { path, uri ->
                 android.util.Log.i("RawrCamCapture", "HAL50_REGISTERED path=$path uri=$uri")
             }
         }

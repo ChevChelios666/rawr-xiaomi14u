@@ -13,6 +13,7 @@ import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
+import android.hardware.camera2.params.ColorSpaceTransform
 import android.hardware.camera2.params.OutputConfiguration
 import android.hardware.camera2.params.SessionConfiguration
 import android.media.Image
@@ -50,7 +51,14 @@ object HalJavaStill {
 
     /** True when the JPEG was written to [path]. */
     @SuppressLint("MissingPermission")
-    fun shoot(context: Context, cameraId: String, physicalId: String, yuvStill: Boolean, path: String, stillUsage: Long = 0L): Boolean {
+    fun shoot(
+        context: Context, cameraId: String, physicalId: String, yuvStill: Boolean, path: String, stillUsage: Long = 0L,
+        /** Plain keys on the still (camera-native RGB, no NR/sharpening/curve games: input for Rawr's develop). */
+        plain: Boolean = false,
+        /** YUV still written as a synthesized CFA DNG here instead of a JPEG at [path] (HalRawSynth). */
+        dngPath: String? = null,
+        deviceRotationDegrees: Int = 0
+    ): Boolean {
         val started = System.nanoTime()
         fun ms() = "ms=%.0f".format((System.nanoTime() - started) / 1e6)
         val thread = HandlerThread("RawrHalJava").apply { start() }
@@ -130,6 +138,7 @@ object HalJavaStill {
                 "usage=0x${still.usage.toString(16)} ${ms()}")
 
             val frames = AtomicInteger()
+            val previewGains = AtomicReference<FloatArray?>()
             val afState = AtomicInteger(-1)
             val lastLine = AtomicReference("")
             fun describe(r: CaptureResult) = "exposureNs=${r.get(CaptureResult.SENSOR_EXPOSURE_TIME)} " +
@@ -140,6 +149,7 @@ object HalJavaStill {
                 override fun onCaptureCompleted(s: CameraCaptureSession, q: CaptureRequest, r: TotalCaptureResult) {
                     frames.incrementAndGet()
                     afState.set(r.get(CaptureResult.CONTROL_AF_STATE) ?: -1)
+                    HalRawSynth.wbGains(r)?.let { previewGains.set(it) }
                     lastLine.set(describe(r))
                 }
             }
@@ -171,16 +181,30 @@ object HalJavaStill {
             log("AF afState=${afState.get()} ${ms()}")
 
             val stillResult = AtomicReference("none")
+            val stillCapture = AtomicReference<TotalCaptureResult?>()
             val request = cam.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).common().apply {
                 addTarget(still.surface)
                 set(CaptureRequest.CONTROL_ENABLE_ZSL, false)
                 set(CaptureRequest.CONTROL_AE_LOCK, true)
                 set(CaptureRequest.JPEG_QUALITY, 98.toByte())
                 set(CaptureRequest.JPEG_ORIENTATION, orientation)
+                if (plain) {
+                    set(CaptureRequest.NOISE_REDUCTION_MODE, CaptureRequest.NOISE_REDUCTION_MODE_OFF)
+                    set(CaptureRequest.EDGE_MODE, CaptureRequest.EDGE_MODE_OFF)
+                    set(CaptureRequest.DISTORTION_CORRECTION_MODE, CaptureRequest.DISTORTION_CORRECTION_MODE_OFF)
+                    set(CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE, CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE_OFF)
+                    set(CaptureRequest.TONEMAP_MODE, CaptureRequest.TONEMAP_MODE_PRESET_CURVE)
+                    set(CaptureRequest.TONEMAP_PRESET_CURVE, CaptureRequest.TONEMAP_PRESET_CURVE_SRGB)
+                    set(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_OFF)
+                    set(CaptureRequest.COLOR_CORRECTION_MODE, CaptureRequest.COLOR_CORRECTION_MODE_TRANSFORM_MATRIX)
+                    set(CaptureRequest.COLOR_CORRECTION_GAINS, android.hardware.camera2.params.RggbChannelVector(1f, 1f, 1f, 1f))
+                    set(CaptureRequest.COLOR_CORRECTION_TRANSFORM, ColorSpaceTransform(intArrayOf(1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1)))
+                }
             }
             s.capture(request.build(), object : CameraCaptureSession.CaptureCallback() {
                 override fun onCaptureCompleted(s: CameraCaptureSession, q: CaptureRequest, r: TotalCaptureResult) {
                     stillResult.set(describe(r))
+                    stillCapture.set(r)
                 }
                 override fun onCaptureFailed(s: CameraCaptureSession, q: CaptureRequest, f: android.hardware.camera2.CaptureFailure) {
                     stillResult.set("failed reason=${f.reason}")
@@ -190,6 +214,24 @@ object HalJavaStill {
             Thread.sleep(100)  // the result usually lands with the image
             log("RESULT ${stillResult.get()} image=${stillSize.get()} ${ms()}")
             var bytes = stillImage.get() ?: run { log("FAILED reason=no_image ${ms()}"); return false }
+            if (yuvStill && dngPath != null) {
+                val (w, h) = stillSize.get().split("x").map { it.toInt() }
+                val r = stillCapture.get()
+                val shot = HalRawSynth.ShotInfo(
+                    exposureNs = r?.get(CaptureResult.SENSOR_EXPOSURE_TIME),
+                    iso = r?.get(CaptureResult.SENSOR_SENSITIVITY),
+                    aperture = r?.get(CaptureResult.LENS_APERTURE),
+                    focalLength = r?.get(CaptureResult.LENS_FOCAL_LENGTH),
+                    wbGains = previewGains.get(),
+                    deviceRotationDegrees = deviceRotationDegrees
+                )
+                val synthStart = System.nanoTime()
+                HalRawSynth.writeDng(File(dngPath), bytes, w, h, chars, shot)
+                written = true
+                log("DNG path=$dngPath image=${w}x$h wbGains=${shot.wbGains?.joinToString(",")} " +
+                    "synthMs=${(System.nanoTime() - synthStart) / 1_000_000} ${ms()}")
+                return true
+            }
             if (yuvStill) {
                 val (w, h) = stillSize.get().split("x").map { it.toInt() }
                 val out = ByteArrayOutputStream(bytes.size / 4)
