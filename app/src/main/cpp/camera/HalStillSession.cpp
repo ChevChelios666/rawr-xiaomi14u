@@ -425,6 +425,9 @@ bool runHalStillSession(const HalStillParams& p, const std::function<void(const 
         {
             const uint8_t quality = 98;
             (void)ACaptureRequest_setEntry_u8(still, ACAMERA_JPEG_QUALITY, 1, &quality);
+            // A fresh full-size exposure, not a ZSL frame from the binned preview (GCam's full-res stills: Aurora84PeerOptions.zz).
+            const uint8_t zslOff = ACAMERA_CONTROL_ENABLE_ZSL_FALSE;
+            (void)ACaptureRequest_setEntry_u8(still, ACAMERA_CONTROL_ENABLE_ZSL, 1, &zslOff);
             (void)ACaptureRequest_setEntry_i32(still, ACAMERA_JPEG_ORIENTATION, 1, &orientation);
             if (!p.manualExposure) {
                 const uint8_t lock = ACAMERA_CONTROL_AE_LOCK_ON;

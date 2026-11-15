@@ -1112,6 +1112,8 @@ bool CameraDeviceSession::captureHal50Still(CameraRequestPipeline& pipeline, con
         (void)request->setU8(ACAMERA_CONTROL_CAPTURE_INTENT, 1, &intent);
         const uint8_t quality = 98;
         (void)request->setU8(ACAMERA_JPEG_QUALITY, 1, &quality);
+        const uint8_t zslOff = ACAMERA_CONTROL_ENABLE_ZSL_FALSE;  // a fresh exposure, not a ZSL preview frame
+        (void)request->setU8(ACAMERA_CONTROL_ENABLE_ZSL, 1, &zslOff);
         if (!halKeys_.empty()) {
             const auto applied = applyCameraKeySettings(request, characteristics_, halKeys_, halKeysCameraId_.c_str(),
                                                         CameraKeySetting::Scope::Still, "lens", diag);
