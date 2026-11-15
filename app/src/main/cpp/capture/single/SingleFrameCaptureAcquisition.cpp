@@ -73,7 +73,7 @@ bool SingleFrameCaptureAcquisition::beginDeferredSnapshot(AImage* imageLease, AH
     auto synthesized = synth::take(timestampNs);
     try {
         worker_ = std::thread([this, lease = std::move(lease), deferred = std::move(*deferred),
-                               synthesized = std::move(synthesized)]() mutable {
+                               synthesized = std::move(synthesized), timestampNs]() mutable {
             setpriority(PRIO_PROCESS, 0, 5);
             try {
                 if (synthesized) {
