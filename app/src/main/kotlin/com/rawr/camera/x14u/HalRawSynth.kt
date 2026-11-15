@@ -32,17 +32,38 @@ object HalRawSynth {
         val focalLength: Float?,
         /** The viewfinder's AWB gains (R, G, B) before the still. */
         val wbGains: FloatArray?,
-        val deviceRotationDegrees: Int
+        val deviceRotationDegrees: Int,
+        /**
+         * The tone curve the still came out with (the result's TONEMAP_CURVE green points, in/out pairs 0..1), or
+         * null for linear. 18:27 Nov 15: with PRESET_CURVE sRGB requested the output was linear (its channel ratios
+         * matched the viewfinder's AWB gains), so the curve is taken from what the result reports, not assumed.
+         */
+        val curve: FloatArray? = null
     )
+
+    /** Linear 0..WHITE for a coded value 0..1 through the inverse of [curve] (identity when null). */
+    private fun linearize(code: Double, curve: FloatArray?): Int {
+        var lin = code
+        if (curve != null && curve.size >= 4) {
+            lin = curve[curve.size - 2].toDouble()
+            var i = 0
+            while (i + 3 < curve.size) {
+                val in0 = curve[i]; val out0 = curve[i + 1]; val in1 = curve[i + 2]; val out1 = curve[i + 3]
+                if (code <= out1) {
+                    lin = if (out1 > out0) in0 + (in1 - in0) * ((code - out0) / (out1 - out0)) else in0.toDouble()
+                    break
+                }
+                i += 2
+            }
+            if (code <= curve[1]) lin = curve[0].toDouble()
+        }
+        return (lin * WHITE).roundToInt().coerceIn(0, WHITE)
+    }
 
     /** Writes [nv21] (full-range BT.601, sRGB-coded camera RGB) as a CFA DNG at [file]. */
     fun writeDng(file: File, nv21: ByteArray, width: Int, height: Int, chars: CameraCharacteristics, shot: ShotInfo) {
-        // sRGB decode at 1/16 code steps (the YUV->RGB conversion lands between 8-bit codes).
-        val lut = IntArray(256 * 16 + 1) { i ->
-            val v = i / (255.0 * 16)
-            val lin = if (v <= 0.04045) v / 12.92 else ((v + 0.055) / 1.055).pow(2.4)
-            (lin * WHITE).roundToInt().coerceIn(0, WHITE)
-        }
+        // Curve decode at 1/16 code steps (the YUV->RGB conversion lands between 8-bit codes).
+        val lut = IntArray(256 * 16 + 1) { i -> linearize(i / (255.0 * 16), shot.curve) }
         val ifd = buildIfd(width, height, chars, shot)
         BufferedOutputStream(FileOutputStream(file), 1 shl 20).use { out ->
             out.write(ifd)
@@ -84,11 +105,7 @@ object HalRawSynth {
         try {
             val width = decoder.width
             val height = decoder.height and 1.inv()
-            val lut = IntArray(256) { i ->
-                val v = i / 255.0
-                val lin = if (v <= 0.04045) v / 12.92 else ((v + 0.055) / 1.055).pow(2.4)
-                (lin * WHITE).roundToInt().coerceIn(0, WHITE)
-            }
+            val lut = IntArray(256) { i -> linearize(i / 255.0, shot.curve) }
             val options = android.graphics.BitmapFactory.Options().apply {
                 inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
                 inPreferredColorSpace = android.graphics.ColorSpace.get(android.graphics.ColorSpace.Named.SRGB)

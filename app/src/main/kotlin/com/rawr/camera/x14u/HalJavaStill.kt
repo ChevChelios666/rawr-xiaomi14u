@@ -193,8 +193,14 @@ object HalJavaStill {
                     set(CaptureRequest.EDGE_MODE, CaptureRequest.EDGE_MODE_OFF)
                     set(CaptureRequest.DISTORTION_CORRECTION_MODE, CaptureRequest.DISTORTION_CORRECTION_MODE_OFF)
                     set(CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE, CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE_OFF)
-                    set(CaptureRequest.TONEMAP_MODE, CaptureRequest.TONEMAP_MODE_PRESET_CURVE)
-                    set(CaptureRequest.TONEMAP_PRESET_CURVE, CaptureRequest.TONEMAP_PRESET_CURVE_SRGB)
+                    // An sRGB-shaped contrast curve for shadow precision in 8 bits; what the camera really applied is
+                    // read back from the result (it ignored PRESET_CURVE sRGB: 18:27 Nov 15).
+                    set(CaptureRequest.TONEMAP_MODE, CaptureRequest.TONEMAP_MODE_CONTRAST_CURVE)
+                    val pts = FloatArray(66) { j ->
+                        val x = (j / 2) / 32f
+                        if (j % 2 == 0) x else (if (x <= 0.0031308f) x * 12.92f else (1.055 * Math.pow(x.toDouble(), 1 / 2.4) - 0.055).toFloat())
+                    }
+                    set(CaptureRequest.TONEMAP_CURVE, android.hardware.camera2.params.TonemapCurve(pts, pts, pts))
                     set(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_OFF)
                     set(CaptureRequest.COLOR_CORRECTION_MODE, CaptureRequest.COLOR_CORRECTION_MODE_TRANSFORM_MATRIX)
                     set(CaptureRequest.COLOR_CORRECTION_GAINS, android.hardware.camera2.params.RggbChannelVector(1f, 1f, 1f, 1f))
@@ -222,8 +228,17 @@ object HalJavaStill {
                     aperture = r?.get(CaptureResult.LENS_APERTURE),
                     focalLength = r?.get(CaptureResult.LENS_FOCAL_LENGTH),
                     wbGains = previewGains.get(),
-                    deviceRotationDegrees = deviceRotationDegrees
+                    deviceRotationDegrees = deviceRotationDegrees,
+                    curve = r?.takeIf { it.get(CaptureResult.TONEMAP_MODE) == CaptureResult.TONEMAP_MODE_CONTRAST_CURVE }
+                        ?.get(CaptureResult.TONEMAP_CURVE)?.let { c ->
+                            val n = c.getPointCount(android.hardware.camera2.params.TonemapCurve.CHANNEL_GREEN)
+                            FloatArray(n * 2).also { c.copyColorCurve(android.hardware.camera2.params.TonemapCurve.CHANNEL_GREEN, it, 0) }
+                        }
                 )
+                log("PLAIN tonemapMode=${r?.get(CaptureResult.TONEMAP_MODE)} curvePoints=${shot.curve?.size?.div(2)} " +
+                    "nr=${r?.get(CaptureResult.NOISE_REDUCTION_MODE)} edge=${r?.get(CaptureResult.EDGE_MODE)} " +
+                    "awb=${r?.get(CaptureResult.CONTROL_AWB_MODE)} cc=${r?.get(CaptureResult.COLOR_CORRECTION_MODE)} " +
+                    "gains=${r?.get(CaptureResult.COLOR_CORRECTION_GAINS)}")
                 val synthStart = System.nanoTime()
                 val (w, h) = if (yuvStill) {
                     val (sw, sh) = stillSize.get().split("x").map { it.toInt() }
