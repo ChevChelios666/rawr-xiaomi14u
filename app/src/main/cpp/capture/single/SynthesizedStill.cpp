@@ -137,19 +137,21 @@ std::string matchTone(const imaging::RawSnapshot& ref, Pending& p) {
         std::snprintf(line, sizeof line, "SYNTH_TONE skipped reason=no_match cells=%zu corr=%.3f lsc=%d", n, corr, lsc);
         return line;
     }
-    // Brightness bins of equal count: median synth level and median ref/synth ratio each.
-    std::sort(pairs.begin(), pairs.end());
+    // Quantile matching (the cells' synth and ref levels sorted separately, so a slight shift between the two
+    // frames doesn't bias the gains the way a per-cell ratio binned by either side does): at each of NB quantiles,
+    // the synth level and the ref/synth gain there.
+    std::vector<double> sv, rv;
+    sv.reserve(n);
+    rv.reserve(n);
+    for (auto& [a, b] : pairs) { sv.push_back(a); rv.push_back(b); }
+    std::sort(sv.begin(), sv.end());
+    std::sort(rv.begin(), rv.end());
     constexpr int NB = 10;
     std::vector<double> knotS, knotF;
     for (int b = 0; b < NB; ++b) {
-        const size_t lo = n * b / NB, hi = n * (b + 1) / NB;
-        if (hi <= lo) continue;
-        std::vector<double> q;
-        q.reserve(hi - lo);
-        for (size_t i = lo; i < hi; ++i) q.push_back(pairs[i].second / pairs[i].first);
-        std::nth_element(q.begin(), q.begin() + q.size() / 2, q.end());
-        double sm = pairs[(lo + hi) / 2].first;
-        double f = std::clamp(q[q.size() / 2], 0.25, 4.0);
+        const size_t i = n * (2 * b + 1) / (2 * NB);
+        const double sm = sv[i];
+        double f = std::clamp(rv[i] / sv[i], 0.25, 4.0);
         // Output levels must keep rising.
         if (!knotS.empty()) {
             if (sm <= knotS.back()) continue;
