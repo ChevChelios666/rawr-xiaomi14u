@@ -44,6 +44,10 @@ import java.util.concurrent.atomic.AtomicReference
 object HalJavaStill {
     private const val TAG = "RawrCamCapture"
     private val CLIENT = CaptureRequest.Key("com.xiaomi.sessionparams.clientName", String::class.java)
+    const val APERTURE_TAG = "com.xiaomi.lens.aperture"
+    private val APERTURE = CaptureRequest.Key(APERTURE_TAG, Float::class.javaObjectType)
+    private val APERTURE_MODE = CaptureRequest.Key("com.xiaomi.lens.apertureMode", Int::class.javaObjectType)
+    private val APP_MODULE = CaptureRequest.Key("xiaomi.app.module", Int::class.javaObjectType)
     private val MFNR = CaptureRequest.Key("org.codeaurora.qcamera3.sessionParameters.enableMFNR", Int::class.javaObjectType)
     private val MODE = CaptureResult.Key("org.codeaurora.qcamera3.sensor_meta_data.current_mode", Int::class.javaObjectType)
 
@@ -63,7 +67,9 @@ object HalJavaStill {
         shotInfo: AtomicReference<HalRawSynth.ShotInfo?>? = null,
         /** Rawr's own viewfinder exposure for the still (AE off), when both are > 0; else the camera's AE. */
         exposureNs: Long = 0L,
-        sensitivity: Int = 0
+        sensitivity: Int = 0,
+        /** The 1x's variable aperture (f-number) on every request (Xiaomi's keys, as the lens's Aperture choices). */
+        aperture: Float? = null
     ): Boolean {
         val started = System.nanoTime()
         fun ms() = "ms=%.0f".format((System.nanoTime() - started) / 1e6)
@@ -97,7 +103,7 @@ object HalJavaStill {
                 if (device == null) Thread.sleep(100)
             }
             val cam = device ?: run { log("FAILED reason=open ${ms()}"); return false }
-            log("OPENED camera=$cameraId physical=${physicalId.ifEmpty { "none" }} ${ms()}")
+            log("OPENED camera=$cameraId physical=${physicalId.ifEmpty { "none" }} aperture=${aperture ?: "auto"} ${ms()}")
 
             val preview = ImageReader.newInstance(1440, 1080, ImageFormat.PRIVATE, 4, HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE)
             val analysis = ImageReader.newInstance(640, 480, ImageFormat.YUV_420_888, 4)
@@ -163,6 +169,11 @@ object HalJavaStill {
             }
             fun CaptureRequest.Builder.common() = apply {
                 runCatching { set(CLIENT, "com.android.camera") }
+                if (aperture != null) {
+                    runCatching { set(APERTURE, aperture) }
+                    runCatching { set(APERTURE_MODE, 1) }
+                    runCatching { set(APP_MODULE, 167) }
+                }
                 set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
                 set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
             }

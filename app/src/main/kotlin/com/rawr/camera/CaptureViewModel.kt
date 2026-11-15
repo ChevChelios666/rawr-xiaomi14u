@@ -230,11 +230,31 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         val lens = latestSettings.effectiveLensProfiles(DeviceLensDefaults.lenses)
             .firstOrNull { it.name.trim().equals(state.selectedLensId.trim(), ignoreCase = true) } ?: return false
         val still = lens.streams.auxJpeg?.still
+        fun usageOf(l: com.rawr.camera.settings.model.LensProfile) =
+            l.streams.auxJpeg?.bufferUsage?.removePrefix("0x")?.toLongOrNull(16) ?: 0x100003L
         if (still == "rawrHal") {
             // X14U 50 MP through the camera's own pipeline, developed by Rawr (synthesized RGGB frame).
-            shootSynthesized(lens.camera.id, lens.camera.physical,
-                lens.streams.auxJpeg?.bufferUsage?.removePrefix("0x")?.toLongOrNull(16) ?: 0x100003L)
+            shootSynthesized(lens.camera.id, lens.camera.physical, usageOf(lens))
             return true
+        }
+        val lenses = latestSettings.effectiveLensProfiles(DeviceLensDefaults.lenses)
+        val runAs = lens.runAsTarget()?.let { name -> lenses.firstOrNull { it.name.trim().equals(name.trim(), ignoreCase = true) } }
+        if (runAs?.streams?.auxJpeg?.still == "rawrHal") {
+            // The lens's "50 mp" runs as a rawrHal lens (3.2x / 5x): the same route on that lens's camera.
+            shootSynthesized(runAs.camera.id, runAs.camera.physical, usageOf(runAs))
+            return true
+        }
+        if (runAs != null) {
+            // 1x "50 mp" at an aperture other than the full-size RAW mode's (f/2 only): the camera's own 50 MP on the
+            // aperture's camera (logical 0 / physical 2), with the aperture's keys on the still.
+            val resolved = runCatching { com.rawr.camera.settings.preferences.LensOptionsCodec.resolve(lens) }.getOrNull()
+            val aperture = resolved?.vendorKeys
+                ?.firstOrNull { it.enabled && it.tag == com.rawr.camera.x14u.HalJavaStill.APERTURE_TAG }
+                ?.values?.firstOrNull()?.toFloat()
+            if (resolved != null && aperture != null && aperture > 0f) {
+                shootSynthesized(resolved.camera.id, resolved.camera.physical, 0x100003L, aperture)
+                return true
+            }
         }
         if (still == "java" || still == "javaYuv" || still == "javaRaw") {
             val usage = lens.streams.auxJpeg?.bufferUsage?.removePrefix("0x")?.toLongOrNull(16) ?: 0L
@@ -348,7 +368,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
      * frame (HalRawSynth), viewfinder back, then a normal press that takes that frame instead of the viewfinder's
      * (native capture/single/SynthesizedStill): Rawr's JPEG and DNG with the usual names. Single frame (no merge).
      */
-    private fun shootSynthesized(cameraId: String, physicalId: String, usage: Long) {
+    private fun shootSynthesized(cameraId: String, physicalId: String, usage: Long, aperture: Float? = null) {
         if (fullSizeJob?.isActive == true) return
         fullSizeBusyFlow.value = true
         fullSizeJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -391,7 +411,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 val ok = com.rawr.camera.x14u.HalJavaStill.shoot(getApplication(), cameraId, physicalId,
                     yuvStill = physicalId.isNotEmpty(), path = "/dev/null/$stamp", stillUsage = usage, plain = true,
                     deviceRotationDegrees = previewCoordinator.captureDeviceRotationDegrees, mosaic = mosaic, shotInfo = shot,
-                    exposureNs = rawrExposureNs, sensitivity = rawrIso)
+                    exposureNs = rawrExposureNs, sensitivity = rawrIso, aperture = aperture)
                 previewCoordinator.start()
                 stopped = false
                 if (!ok || mosaic.buffer == null) {
