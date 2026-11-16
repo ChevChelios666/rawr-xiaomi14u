@@ -241,6 +241,39 @@ std::string matchTone(const imaging::RawSnapshot& ref, Pending& p) {
 
 void apply(imaging::RawSnapshot& frame, Pending&& p) {
     auto& m = frame.metadata;
+    // The noise profile (S, O per CFA site, in the frame's raw units) belongs to the 12 MP RAW's levels: carried
+    // over unchanged it read as ~70x less noise on the 0..65535 frame, so the wavelet denoise did next to nothing
+    // (02:15 Nov 16: "denoise override not working"). Re-expressed per colour in the new levels, with the full-size
+    // readout's own pixels carrying ~4x the binned mode's variance at the same normalized level.
+    if (m.sensorNoiseProfile.size() >= 8 && m.cameraContext) {
+        const uint32_t oldCfa = m.cameraContext->rawPreviewCfa & 3u;
+        const float oldWhite = m.effectiveWhiteLevel > 0.0f ? m.effectiveWhiteLevel : m.staticWhiteLevel;
+        constexpr double kFullSizeVariance = 4.0;
+        double a[3] = {0, 0, 0}, b[3] = {0, 0, 0};
+        int n[3] = {0, 0, 0};
+        for (int site = 0; site < 4; ++site) {
+            const double black = m.blackLevelPhysicalRggb[site];
+            const double range = double(oldWhite) - black;
+            if (!(range > 0.0)) continue;
+            const int ch = kCfaChannel[oldCfa][site];
+            const double S = m.sensorNoiseProfile[2 * site], O = m.sensorNoiseProfile[2 * site + 1];
+            a[ch] += S / range;
+            b[ch] += (S * black + O) / (range * range);
+            n[ch]++;
+        }
+        if (n[0] && n[1] && n[2]) {
+            const double W = p.whiteLevel;
+            std::vector<double> profile(8);
+            for (int site = 0; site < 4; ++site) {
+                const int ch = kCfaChannel[0][site];  // the synthesized frame is RGGB
+                profile[2 * site] = kFullSizeVariance * a[ch] / n[ch] * W;
+                profile[2 * site + 1] = kFullSizeVariance * b[ch] / n[ch] * W * W;
+            }
+            m.sensorNoiseProfile = std::move(profile);
+        } else {
+            m.sensorNoiseProfile.clear();
+        }
+    }
     const double sx = frame.width ? double(p.width) / frame.width : 1.0;
     const double sy = frame.height ? double(p.height) / frame.height : 1.0;
     if (m.cameraContext) {
