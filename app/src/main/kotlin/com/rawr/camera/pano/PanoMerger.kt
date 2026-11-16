@@ -103,8 +103,9 @@ internal class PanoMerger(private val context: Context) {
         context.contentResolver.query(collection, projection, selection, args, null)?.use { c ->
             while (c.moveToNext()) {
                 val name = c.getString(1) ?: continue
-                // Frames only ("…_PANO2231_03.jpg"), not an earlier merge of the same set.
-                if (!Regex("_PANO${tag}_\\d+\\.jpe?g$", RegexOption.IGNORE_CASE).containsMatchIn(name)) continue
+                // Frames only ("…_PANO2231_03.jpg", or "…_PANO2231_03_MF6.jpg" when Rexture merged the frame), not
+                // an earlier merge of the same set. (Nov 16: the _MF6 frames didn't match, so the set never merged.)
+                if (!Regex("_PANO${tag}_\\d+(_MF\\d+)?\\.jpe?g$", RegexOption.IGNORE_CASE).containsMatchIn(name)) continue
                 out += Frame(ContentUris.withAppendedId(collection, c.getLong(0)), name, c.getString(2) ?: "DCIM/Camera/",
                     c.getLong(3))
             }
@@ -113,7 +114,7 @@ internal class PanoMerger(private val context: Context) {
     }
 
     private fun frameNumber(name: String): Int =
-        Regex("_(\\d+)\\.jpe?g$", RegexOption.IGNORE_CASE).find(name)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        Regex("_PANO\\d*_(\\d+)(_MF\\d+)?\\.jpe?g$", RegexOption.IGNORE_CASE).find(name)?.groupValues?.get(1)?.toIntOrNull() ?: 0
 
     /** "" on success. */
     /** The set's frames (JPEG and DNG) this app saved; DNGs can land late, so it looks a few times. */
