@@ -367,7 +367,7 @@ object HalJavaStill {
             val v = key.values
             when (key.type) {
                 com.rawr.camera.settings.model.VendorKeyType.Byte ->
-                    if (v.size == 1) set(CaptureRequest.Key(key.tag, java.lang.Byte::class.java), v[0].toInt().toByte())
+                    if (v.size == 1) set(CaptureRequest.Key(key.tag, Byte::class.javaObjectType), v[0].toInt().toByte())
                     else set(CaptureRequest.Key(key.tag, ByteArray::class.java), ByteArray(v.size) { v[it].toInt().toByte() })
                 com.rawr.camera.settings.model.VendorKeyType.Int32 ->
                     if (v.size == 1) set(CaptureRequest.Key(key.tag, Int::class.javaObjectType), v[0].toInt())
