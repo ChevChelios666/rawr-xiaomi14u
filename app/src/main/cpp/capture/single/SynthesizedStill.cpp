@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <memory>
+#include <thread>
 
 #include "metadata/CameraContextMetadata.h"
 
@@ -90,6 +91,48 @@ double median(std::vector<double> v) {
     return v[v.size() / 2];
 }
 }  // namespace
+
+uint32_t removeHotPixels(Pending& p) {
+    const uint32_t w = p.width, h = p.height;
+    if (w < 8 || h < 8 || p.raw16.size() < size_t(w) * h * 2) return 0;
+    auto* data = reinterpret_cast<uint16_t*>(p.raw16.data());  // little-endian, as the device
+    struct Fix { size_t index; uint16_t value; };
+    const uint32_t threads = std::clamp(std::thread::hardware_concurrency(), 1u, 8u);
+    std::vector<std::vector<Fix>> found(threads);
+    auto scan = [&](uint32_t part) {
+        const uint32_t y0 = std::max(2u, h * part / threads), y1 = std::min(h - 2, h * (part + 1) / threads);
+        auto& out = found[part];
+        uint16_t n[8];
+        for (uint32_t y = y0; y < y1; ++y) {
+            const uint16_t* row = data + size_t(y) * w;
+            for (uint32_t x = 2; x + 2 < w; ++x) {
+                const uint16_t v = row[x];
+                if (v < 1024) continue;
+                // Same-colour neighbours of an RGGB site are two away.
+                n[0] = row[x - 2]; n[1] = row[x + 2];
+                n[2] = row[x - 2 * size_t(w)]; n[3] = row[x + 2 * size_t(w)];
+                n[4] = row[x - 2 * size_t(w) - 2]; n[5] = row[x - 2 * size_t(w) + 2];
+                n[6] = row[x + 2 * size_t(w) - 2]; n[7] = row[x + 2 * size_t(w) + 2];
+                uint16_t top = 0;
+                for (uint16_t q : n) top = std::max(top, q);
+                const uint32_t margin = std::max<uint32_t>(512u, top / 2u);
+                if (uint32_t(v) <= uint32_t(top) + margin) continue;
+                std::nth_element(n, n + 4, n + 8);
+                out.push_back({size_t(y) * w + x, n[4]});
+            }
+        }
+    };
+    std::vector<std::thread> pool;
+    for (uint32_t t = 1; t < threads; ++t) pool.emplace_back(scan, t);
+    scan(0);
+    for (auto& t : pool) t.join();
+    uint32_t count = 0;
+    for (auto& part : found) {
+        for (const auto& f : part) data[f.index] = f.value;
+        count += uint32_t(part.size());
+    }
+    return count;
+}
 
 std::string matchTone(const imaging::RawSnapshot& ref, Pending& p) {
     char line[640];

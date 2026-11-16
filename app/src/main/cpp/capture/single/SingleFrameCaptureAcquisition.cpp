@@ -3,6 +3,7 @@
 #include <android/log.h>
 #include <unistd.h>
 
+#include <chrono>
 #include <stdexcept>
 
 #include "capture/single/StillBinnedCorner.h"
@@ -85,6 +86,11 @@ bool SingleFrameCaptureAcquisition::beginDeferredSnapshot(AImage* imageLease, AH
                             vf.ahb, deferred.frame->width, deferred.frame->height, deferred.frame->raw16,
                             vf.acquireFenceFd, vf.image);
                         lease = imaging::RawFrameLease({});
+                        const auto hotStart = std::chrono::steady_clock::now();
+                        const uint32_t hot = synth::removeHotPixels(*synthesized);
+                        __android_log_print(ANDROID_LOG_INFO, "RawrCamNative", "SYNTH_HOT_PIXELS fixed=%u ms=%lld", hot,
+                                            static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                std::chrono::steady_clock::now() - hotStart).count()));
                         std::string toneLine = "SYNTH_TONE skipped reason=ref_copy_failed";
                         if (copy.success) {
                             deferred.frame->packedRowStrideBytes = deferred.frame->width * 2;

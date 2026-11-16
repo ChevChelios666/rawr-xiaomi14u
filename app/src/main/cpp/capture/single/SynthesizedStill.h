@@ -34,6 +34,9 @@ void clear();
 void claim(uint64_t timestampNs);
 // The synthesized frame for the claimed timestamp (once).
 std::optional<Pending> take(uint64_t timestampNs);
+// Lone bright pixels (hot pixels the camera's plain still leaves in, shown as coloured dots after demosaic,
+// 3.2x 04:23 Nov 16): a site far above every same-colour neighbour takes their median. Returns how many.
+uint32_t removeHotPixels(Pending& pending);
 // Brings the synthesized frame's tones to the viewfinder RAW frame of the same moment (ref, already copied and
 // Bayer): the camera's own pipeline lifts shadows (local tone mapping) even with a plain curve, so the 50 MP
 // greens are quantile-matched to the 12 MP RAW's (black-subtracted, lens-shading-corrected) on a coarse grid, and every 2x2 site is scaled by the gain for its green. Leaves the frame as it was when the two don't
