@@ -73,7 +73,12 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     private val settingsEditor = SettingsPreferencesStore.editor(application, settingsDefaults)
 
     /** X14U: what the camera and captures use: global settings with the active lens's overrides applied. */
-    private val latestSettings: SettingsValues get() = settingsEditor.state.value.withLensOverrides()
+    private val latestSettings: SettingsValues get() = settingsEditor.state.value.withLensOverrides(runAs = shotRunsAsLens)
+
+    /** Pano and Burst shoot 12 MP frames: a lens's "50 mp" choice (its run-as lens's overrides) doesn't apply there. */
+    private val shotRunsAsLens: Boolean
+        // runCatching: the flows are declared further down (a read during construction keeps the default).
+        get() = runCatching { !panoFlow.value && !burstFlow.value }.getOrDefault(true)
     private val effectiveValues = settingsEditor.values.map { it.withLensOverrides() }
 
     /** A capture-screen edit: settings the active lens overrides change on the lens ([perLens] keys always). */

@@ -1000,7 +1000,7 @@ internal fun X14uCaptureLayout(
                 state, dispatch, onOpenSettings, videoLocked = recordingLock, showLog = false,
                 modifier = Modifier.padding(top = cutoutTop),
                 transparent = isVideo,
-                toggles = { X14uOptionToggles(quick, lensOptions, isVideo, enabled = !recordingLock, orientation, onQuickEvent, burst) },
+                toggles = { X14uOptionToggles(quick, lensOptions, isVideo, enabled = !recordingLock, orientation, onQuickEvent, burst || pano) },
                 toggleCount = x14uOptionToggleCount(quick, lensOptions, isVideo),
                 toolsOpen = toolsOpen,
                 onToggleTools = { openTools(!toolsOpen) },
@@ -1161,7 +1161,7 @@ private fun RowScope.X14uOptionToggles(
     enabled: Boolean,
     orientation: Orientation,
     onQuickEvent: (CaptureQuickEvent) -> Unit,
-    /** Burst shoots 12 MP frames: a row that runs the shot as another lens (50 MP) is greyed there (hidden in video). */
+    /** Burst / Pano shoot 12 MP frames: a row that runs the shot as another lens (50 MP) is hidden there, as in video. */
     burst: Boolean = false
 ) {
     val haptics = LocalCaptureHaptics.current
@@ -1169,7 +1169,8 @@ private fun RowScope.X14uOptionToggles(
         val row = options?.options?.indexOfFirst { it.name.trim().equals(name, ignoreCase = true) } ?: -1
         val runsAsLens = row >= 0 && options!!.options[row].choices.any { !it.runAs.isNullOrBlank() }
         val available = options != null && row >= 0 && row !in options.unavailable && !((burst || video) && runsAsLens)
-        if (video && !available) return@forEach
+        // Video, Burst and Pano shoot 12 MP frames: no 50 MP chip there.
+        if ((video && !available) || (burst && runsAsLens)) return@forEach
         val on = available && options!!.picks.getOrElse(row) { 0 } == 1
         TopBarSlot {
             val color = when {

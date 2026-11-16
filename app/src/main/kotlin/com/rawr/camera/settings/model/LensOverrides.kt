@@ -207,10 +207,10 @@ private fun sameName(a: String?, b: String?): Boolean =
  * The lens whose overrides apply now: the capture screen's lens, or the lens one of its chosen option choices runs
  * as (photo mode). In video a lens running as its video lens keeps its own overrides.
  */
-fun SettingsValues.overrideLens(): LensProfile? {
+fun SettingsValues.overrideLens(runAs: Boolean = true): LensProfile? {
     val lenses = lensProfiles ?: return null
     val lens = lenses.firstOrNull { sameName(it.name, lastLensId) } ?: return null
-    if (isVideo) return lens
+    if (isVideo || !runAs) return lens
     val runAs = lens.runAsTarget() ?: return lens
     // X14U 1x "50 mp" at an aperture other than f/2 runs the camera's own 50 MP, not the run-as lens's RAW: its
     // overrides live on "<run-as> A" ("50MP A"; names are at most 6 characters) when that lens exists.
@@ -245,9 +245,12 @@ fun LensProfile.runAsTarget(): String? {
 /** True when the lens holds overrides for this lens row's pill dot (its own or its run-as lens's). */
 fun LensProfile.hasOverrides(): Boolean = overrides.isNotEmpty()
 
-/** Settings with the active lens's overrides applied (what the camera and captures use). */
-fun SettingsValues.withLensOverrides(): SettingsValues {
-    val overrides = overrideLens()?.overrides.orEmpty()
+/**
+ * Settings with the active lens's overrides applied (what the camera and captures use). [runAs] false: the lens's own
+ * overrides even while a choice runs the shot as another lens (X14U Pano and Burst shoot 12 MP frames).
+ */
+fun SettingsValues.withLensOverrides(runAs: Boolean = true): SettingsValues {
+    val overrides = overrideLens(runAs)?.overrides.orEmpty()
     return if (overrides.isEmpty()) this else LensOverrides.apply(this, overrides)
 }
 
