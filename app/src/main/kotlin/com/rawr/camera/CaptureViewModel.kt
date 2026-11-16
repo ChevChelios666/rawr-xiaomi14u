@@ -557,7 +557,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     private fun fullSizeCamera(): String? {
         val settings = latestSettings
         val lenses = settings.effectiveLensProfiles(DeviceLensDefaults.lenses)
-        val lens = lenses.firstOrNull { it.name.trim().equals(settings.lastLensId.trim(), ignoreCase = true) } ?: return null
+        val lens = lenses.firstOrNull { it.name.trim().equals(settings.lastLensId?.trim(), ignoreCase = true) } ?: return null
         val runAs = lens.runAsTarget() ?: return null
         return lenses.firstOrNull { it.name.trim().equals(runAs.trim(), ignoreCase = true) }?.camera?.id
     }
