@@ -1586,7 +1586,9 @@ private fun X14uCellRow(
     upright: Boolean = false,
     onTap: (String) -> Unit
 ) {
-    val scroll = cells.size > 6
+    // Up to 7 cells share the width (smaller text past 6: Pano's row in S / I / M holds 7 with F); more scroll.
+    val scroll = cells.size > 7
+    val compact = cells.size > 6
     Row(
         modifier
             .then(if (scroll) Modifier.horizontalScroll(rememberScrollState()) else Modifier)
@@ -1598,7 +1600,7 @@ private fun X14uCellRow(
                 Box(Modifier.padding(horizontal = 4.dp).size(1.dp, 22.dp).background(Color.White.copy(alpha = .2f)))
             }
             X14uCellView(
-                cell, cell.key == selectedKey, orientation, compact = scroll,
+                cell, cell.key == selectedKey, orientation, compact = compact,
                 modifier = (if (scroll) Modifier.width(66.dp) else Modifier.weight(1f)).fillMaxHeight(),
                 upright = upright,
                 onTap = onTap

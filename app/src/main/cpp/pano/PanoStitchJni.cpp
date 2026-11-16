@@ -11,6 +11,7 @@
 #include <vector>
 
 #include <opencv2/core.hpp>
+#include <opencv2/features2d.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/stitching.hpp>
@@ -119,21 +120,37 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_rawr_camera_pano_PanoStitcherNativ
         if (frames.size() < 2) {
             error = "fewer than two frames could be read";
         } else {
-            auto stitcher = cv::Stitcher::create(cv::Stitcher::PANORAMA);
             // Projection: 0 Auto (Rectilinear up to ~100° across, else Cylindrical), 1 Rectilinear, 2 Cylindrical,
             // 3 Panini, 4 Spherical (OpenCV's default).
             int p = projection;
             if (p == 0) p = (spanDegrees > 0.0f && spanDegrees <= 100.0f) ? 1 : 2;
-            if (p == 1) stitcher->setWarper(cv::makePtr<cv::PlaneWarper>());
-            else if (p == 2) stitcher->setWarper(cv::makePtr<cv::CylindricalWarper>());
-            else if (p == 3) stitcher->setWarper(cv::makePtr<cv::PaniniWarper>(1.5f, 1.0f));
-            else stitcher->setWarper(cv::makePtr<cv::SphericalWarper>());
             __android_log_print(ANDROID_LOG_INFO, kTag, "PANO_PROJECTION chosen=%d asked=%d span=%.1f", p, int(projection),
                                 double(spanDegrees));
             const double frameMp = double(frames[0].total()) / 1e6;
-            if (composeMegapixels > 0.0f && composeMegapixels < frameMp) stitcher->setCompositingResol(composeMegapixels);
+            // Up to three tries: OpenCV's defaults (ORB at 0.6 MP, confidence 1.0), then, when the frames didn't
+            // match (Nov 17: 2-frame sets at 20-30 % overlap indoors all failed with "didn't overlap enough"), SIFT
+            // at 1 MP with a looser match, then looser still. Working sets stitch on the first try as before.
             cv::Mat pano;
-            const auto status = stitcher->stitch(frames, pano);
+            cv::Stitcher::Status status = cv::Stitcher::ERR_NEED_MORE_IMGS;
+            for (int attempt = 0; attempt < 3; ++attempt) {
+                auto stitcher = cv::Stitcher::create(cv::Stitcher::PANORAMA);
+                if (p == 1) stitcher->setWarper(cv::makePtr<cv::PlaneWarper>());
+                else if (p == 2) stitcher->setWarper(cv::makePtr<cv::CylindricalWarper>());
+                else if (p == 3) stitcher->setWarper(cv::makePtr<cv::PaniniWarper>(1.5f, 1.0f));
+                else stitcher->setWarper(cv::makePtr<cv::SphericalWarper>());
+                if (composeMegapixels > 0.0f && composeMegapixels < frameMp) stitcher->setCompositingResol(composeMegapixels);
+                if (attempt > 0) {
+                    stitcher->setFeaturesFinder(cv::SIFT::create(4000));
+                    stitcher->setRegistrationResol(1.0);
+                    stitcher->setFeaturesMatcher(cv::makePtr<cv::detail::BestOf2NearestMatcher>(false, attempt == 1 ? 0.25f : 0.2f));
+                    stitcher->setPanoConfidenceThresh(attempt == 1 ? 0.6 : 0.3);
+                }
+                status = stitcher->stitch(frames, pano);
+                __android_log_print(ANDROID_LOG_INFO, kTag, "PANO_STITCH_TRY attempt=%d frames=%zu status=%d", attempt,
+                                    frames.size(), int(status));
+                if (status == cv::Stitcher::OK && !pano.empty()) break;
+                if (status != cv::Stitcher::ERR_NEED_MORE_IMGS && status != cv::Stitcher::ERR_HOMOGRAPHY_EST_FAIL) break;
+            }
             frames.clear();
             if (status != cv::Stitcher::OK || pano.empty()) {
                 error = statusText(status);
