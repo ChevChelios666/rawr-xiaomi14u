@@ -446,11 +446,16 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 val mosaic = com.rawr.camera.x14u.HalRawSynth.BufferOut()
                 val shot = java.util.concurrent.atomic.AtomicReference<com.rawr.camera.x14u.HalRawSynth.ShotInfo?>()
                 val stamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss_SSS", java.util.Locale.US).format(java.util.Date())
-                val ok = com.rawr.camera.x14u.HalJavaStill.shoot(getApplication(), cameraId, physicalId,
-                    yuvStill = physicalId.isNotEmpty(), path = "/dev/null/$stamp", stillUsage = usage, plain = true,
-                    deviceRotationDegrees = previewCoordinator.captureDeviceRotationDegrees, mosaic = mosaic, shotInfo = shot,
-                    exposureNs = rawrExposureNs, sensitivity = rawrIso, aperture = aperture,
-                    keys = aux?.keys.orEmpty(), rawStream = aux?.rawStream == true)
+                // A camera that dies mid-session (16:30 Nov 16, full-size RAW + JPEG on cameras 4/5) must not take the
+                // app down with it.
+                val ok = runCatching {
+                    com.rawr.camera.x14u.HalJavaStill.shoot(getApplication(), cameraId, physicalId,
+                        yuvStill = physicalId.isNotEmpty(), path = "/dev/null/$stamp", stillUsage = usage, plain = true,
+                        deviceRotationDegrees = previewCoordinator.captureDeviceRotationDegrees, mosaic = mosaic, shotInfo = shot,
+                        exposureNs = rawrExposureNs, sensitivity = rawrIso, aperture = aperture,
+                        keys = aux?.keys.orEmpty(), rawStream = aux?.rawStream == true)
+                }.onFailure { android.util.Log.w("RawrCamCapture", "HALJ_THREW ${it.javaClass.simpleName}: ${it.message}") }
+                    .getOrDefault(false)
                 mark("still")
                 previewCoordinator.start()
                 stopped = false
