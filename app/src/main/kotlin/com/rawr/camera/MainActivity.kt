@@ -445,6 +445,9 @@ class MainActivity : ComponentActivity() {
             startActivity(intent)
         } catch (_: ActivityNotFoundException) {
             // No compatible gallery/photo viewer is installed; keep the camera usable.
+        } catch (_: SecurityException) {
+            // The photo is gone (e.g. a pano frame deleted after its merge, Nov 17 crash): show the newest one instead.
+            captureViewModel.refreshLatestGalleryImage()
         }
     }
 

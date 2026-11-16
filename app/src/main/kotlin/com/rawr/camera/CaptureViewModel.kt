@@ -191,6 +191,8 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             panoMerger.merge(tag, frames, startedAtMillis, spanDegrees, settings.panoProjection, settings.panoKeepFrames) { message ->
                 panoStatusClear?.cancel()
                 panoStatusFlow.value = message
+                // The thumbnail follows the new panorama (and leaves frames that "keep frames" off deletes).
+                if (message?.startsWith("Pano saved") == true) refreshLatestGalleryImage()
                 // Progress stays; a result clears after a few seconds.
                 if (message != null && !message.endsWith("…")) {
                     panoStatusClear = viewModelScope.launch {
@@ -199,6 +201,8 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                     }
                 }
             }
+            // Frame deletion runs on after "saved" (late DNGs): point the thumbnail at what's left.
+            if (!settings.panoKeepFrames) refreshLatestGalleryImage()
         }
     }
 
@@ -299,6 +303,8 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             fun status(message: String?) {
                 panoStatusClear?.cancel()
                 panoStatusFlow.value = message
+                // The thumbnail follows the new panorama (and leaves frames that "keep frames" off deletes).
+                if (message?.startsWith("Pano saved") == true) refreshLatestGalleryImage()
             }
             try {
                 status("50 MP…")
@@ -335,6 +341,8 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             fun status(message: String?) {
                 panoStatusClear?.cancel()
                 panoStatusFlow.value = message
+                // The thumbnail follows the new panorama (and leaves frames that "keep frames" off deletes).
+                if (message?.startsWith("Pano saved") == true) refreshLatestGalleryImage()
             }
             try {
                 status("50 MP…")
@@ -395,6 +403,8 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             fun status(message: String?) {
                 panoStatusClear?.cancel()
                 panoStatusFlow.value = message
+                // The thumbnail follows the new panorama (and leaves frames that "keep frames" off deletes).
+                if (message?.startsWith("Pano saved") == true) refreshLatestGalleryImage()
             }
             suspend fun waitFor(timeoutMs: Long, ready: () -> Boolean) = kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
                 while (!ready()) kotlinx.coroutines.delay(30L)
@@ -501,6 +511,8 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             fun status(message: String?) {
                 panoStatusClear?.cancel()
                 panoStatusFlow.value = message
+                // The thumbnail follows the new panorama (and leaves frames that "keep frames" off deletes).
+                if (message?.startsWith("Pano saved") == true) refreshLatestGalleryImage()
             }
             suspend fun waitFor(timeoutMs: Long, ready: () -> Boolean) = kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
                 while (!ready()) kotlinx.coroutines.delay(30L)

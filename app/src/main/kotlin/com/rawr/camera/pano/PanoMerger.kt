@@ -116,22 +116,33 @@ internal class PanoMerger(private val context: Context) {
     private fun frameNumber(name: String): Int =
         Regex("_PANO\\d*_(\\d+)(_MF\\d+)?\\.jpe?g$", RegexOption.IGNORE_CASE).find(name)?.groupValues?.get(1)?.toIntOrNull() ?: 0
 
-    /** "" on success. */
-    /** The set's frames (JPEG and DNG) this app saved; DNGs can land late, so it looks a few times. */
+    /**
+     * The set's frames (JPEG and DNG, "…_PANO2231_03[_MF6].jpg/.dng") this app saved, never the panorama itself
+     * ("…_PANO2231.jpg"): each row's name is checked before it goes. DNGs can land late, so it looks a few times.
+     */
     private suspend fun deleteFrames(tag: String, startedAtMillis: Long) {
+        val frameName = Regex("_PANO${tag}_\\d+(_MF\\d+)?\\.(jpe?g|dng)$", RegexOption.IGNORE_CASE)
+        val files = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL)
         for (wait in longArrayOf(0L, 5_000L, 20_000L, 60_000L)) {
             delay(wait)
             runCatching {
-                context.contentResolver.delete(
-                    MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL),
+                val ids = mutableListOf<Long>()
+                context.contentResolver.query(
+                    files,
+                    arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME),
                     "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? AND ${MediaStore.MediaColumns.OWNER_PACKAGE_NAME} = ? " +
                         "AND ${MediaStore.MediaColumns.DATE_ADDED} >= ?",
-                    arrayOf("%_PANO${tag}_%", context.packageName, ((startedAtMillis / 1000L) - 5L).toString())
-                )
+                    arrayOf("%_PANO${tag}_%", context.packageName, ((startedAtMillis / 1000L) - 5L).toString()),
+                    null
+                )?.use { c ->
+                    while (c.moveToNext()) if (frameName.containsMatchIn(c.getString(1) ?: "")) ids += c.getLong(0)
+                }
+                ids.forEach { id -> runCatching { context.contentResolver.delete(ContentUris.withAppendedId(files, id), null, null) } }
             }
         }
     }
 
+    /** "" on success. */
     private fun stitch(frames: List<Frame>, projection: Int, spanDegrees: Float): String {
         val resolver = context.contentResolver
         val rotations = frames.map { frame ->
@@ -146,7 +157,9 @@ internal class PanoMerger(private val context: Context) {
             } ?: 0
         }.toIntArray()
         val first = frames.first()
-        val outName = first.name.replace(Regex("_\\d+(\\.jpe?g)$", RegexOption.IGNORE_CASE), "$1")
+        // "…_PANO2231_01.jpg" or "…_PANO2231_01_MF6.jpg" → "…_PANO2231.jpg". (Nov 17: the _MF6 name was kept whole,
+        // so the panorama looked like a frame and "delete frames after merge" deleted it too.)
+        val outName = first.name.replace(Regex("_\\d+(_MF\\d+)?(\\.jpe?g)$", RegexOption.IGNORE_CASE), "$2")
         val outUri = resolver.insert(MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY),
             ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, outName)
