@@ -114,7 +114,48 @@ public:
     int64_t newFrames() const { return newFrames_.load(std::memory_order_relaxed); }
     int64_t newFullSizeFrames() const { return newFullSizeFrames_.load(std::memory_order_relaxed); }
 
+    // Closed-loop focus for the full-size shot (3.2x: the open-loop table drifts with heat, 01:09 Nov 15). The shot
+    // steps the lens through a few distances (diopters sent as is; < 0 = the usual carried focus) while every
+    // full-size frame's sharpness at the focus point is measured, then shoots at the sharpest.
+    void setFocusSweep(float diopters) {
+        sweep_.store(diopters, std::memory_order_relaxed);
+        sweepGeneration_.fetch_add(1, std::memory_order_relaxed);
+    }
+    float focusSweep() const { return sweep_.load(std::memory_order_relaxed); }
+    uint64_t sweepGeneration() const { return sweepGeneration_.load(std::memory_order_relaxed); }
+    // The lens distance the last carried request sent (diopters, -1 = none yet).
+    void noteSentFocus(float diopters) { sent_.store(diopters, std::memory_order_relaxed); }
+    float sentFocus() const { return sent_.load(std::memory_order_relaxed); }
+    // The view's AF area (normalized x0, y0, x1, y1); the measure uses it, else the frame centre.
+    void setFocusArea(const std::optional<std::array<float, 4>>& area) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        focusArea_ = area;
+    }
+    std::optional<std::array<float, 4>> focusArea() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return focusArea_;
+    }
+    void setFocusProbe(bool on) {
+        probeCount_.store(0, std::memory_order_relaxed);
+        sharpness_.store(-1.0f, std::memory_order_relaxed);
+        probe_.store(on, std::memory_order_relaxed);
+    }
+    bool focusProbe() const { return probe_.load(std::memory_order_relaxed); }
+    void noteSharpness(float value) {
+        sharpness_.store(value, std::memory_order_relaxed);
+        probeCount_.fetch_add(1, std::memory_order_relaxed);
+    }
+    float sharpness() const { return sharpness_.load(std::memory_order_relaxed); }
+    int64_t probeCount() const { return probeCount_.load(std::memory_order_relaxed); }
+
 private:
+    std::atomic<float> sweep_{-1.0f};
+    std::atomic<uint64_t> sweepGeneration_{0};
+    std::atomic<float> sent_{-1.0f};
+    std::optional<std::array<float, 4>> focusArea_;
+    std::atomic<bool> probe_{false};
+    std::atomic<float> sharpness_{-1.0f};
+    std::atomic<int64_t> probeCount_{0};
     mutable std::mutex mutex_;
     std::optional<AppliedWhiteBalance> last_;
     std::optional<AppliedWhiteBalance> carried_;

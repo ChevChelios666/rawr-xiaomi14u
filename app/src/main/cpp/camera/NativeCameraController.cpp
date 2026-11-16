@@ -145,6 +145,7 @@ struct NativeCameraController::Impl final : CameraEventSink {
     bool fullSizeDecisionRepeating = false;
     // X14U 50 MP shot: the carry state the repeating request was last built with (ShotHandover pin).
     bool carrySubmitted = false;
+    uint64_t sweepSubmitted = 0;
     StillExposureGuard stillExposureGuard;
     std::function<void()> pendingFocus;
     std::function<void()> pendingFocusMode;
@@ -1377,6 +1378,14 @@ struct NativeCameraController::Impl final : CameraEventSink {
             diag(std::string("SHOT50_REPEATING_REFRESH carry=") + (carrying ? "1" : "0") +
                  " sent=" + (submitRepeatingLocked() ? "1" : "0"));
         }
+        // The shot's focus sweep moved the lens: the repeating request carries the new distance.
+        if (const uint64_t sweep = shotHandover().sweepGeneration(); sweep != sweepSubmitted) {
+            sweepSubmitted = sweep;
+            if (shotHandover().carrying()) {
+                diag("SHOT50_FOCUS_STEP diopters=" + std::to_string(shotHandover().focusSweep()) +
+                     " sent=" + (submitRepeatingLocked() ? "1" : "0"));
+            }
+        }
         const uint64_t longTag = longExposureTag.load(std::memory_order_relaxed);
         // Freeze the viewfinder on the press until a single long frame is in,
         // and never show it (burst frames must reach the ZSL ring).
@@ -1876,6 +1885,8 @@ struct NativeCameraController::Impl final : CameraEventSink {
         c.spotY = spotMetering.point().y;
         if (const auto& af = focusControls.afRegion(); af && deviceSession.cameraContext())
             c.focusArea = normalizedRegion(deviceSession.cameraContext()->geometry, *af);
+        // The 12 MP view's AF area, for the 50 MP shot's focus measure (not replaced by the shot's own session).
+        if (!shotHandover().carrying()) shotHandover().setFocusArea(c.focusArea);
         std::lock_guard<std::mutex> published(rawrAeContextMutex);
         rawrAePublished = c;
     }

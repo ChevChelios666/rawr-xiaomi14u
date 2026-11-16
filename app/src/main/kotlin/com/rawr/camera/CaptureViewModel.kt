@@ -520,6 +520,13 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                     return@launch
                 }
                 kotlinx.coroutines.delay(300L)
+                // 3.2x: the full-size mode's lens scale drifts (heat, hysteresis), so focus is found on the shot's own
+                // frames: a few distances around the table's, sharpness measured at the focus point.
+                if (fullSizeCamera() == "4") {
+                    status("50 MP · focusing")
+                    focusSweep { timeoutMs, ready -> waitFor(timeoutMs, ready) }
+                    status("50 MP…")
+                }
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     controller.dispatch(com.rawr.camera.architecture.TriggerCapture)
                 }
@@ -530,6 +537,8 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 // Always back to 12 MP, even if the job was cancelled: held (on the carried white balance) until the
                 // 12 MP session's own frames are in, then live again.
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    previewCoordinator.setFocusProbe(false)
+                    previewCoordinator.setFocusSweep(-1f)
                     previewCoordinator.setViewfinderHold(true)
                     previewCoordinator.setRunAsForShot(false)
                     waitFor(4_000L) {
@@ -542,6 +551,79 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
         }
+    }
+
+    /** The camera the selected lens's "50 mp" shot runs on (its run-as lens), or null. */
+    private fun fullSizeCamera(): String? {
+        val settings = latestSettings
+        val lenses = settings.effectiveLensProfiles(DeviceLensDefaults.lenses)
+        val lens = lenses.firstOrNull { it.name.trim().equals(settings.lastLensId.trim(), ignoreCase = true) } ?: return null
+        val runAs = lens.runAsTarget() ?: return null
+        return lenses.firstOrNull { it.name.trim().equals(runAs.trim(), ignoreCase = true) }?.camera?.id
+    }
+
+    /**
+     * Closed-loop focus for the full-size shot: steps of max(0.12, 20 %) diopters at -2..+2 around the distance the
+     * table sent (one more step out when the sharpest sits at an end), each measured on the 4th full-size frame after
+     * the move (the request pipeline is ~3 frames deep), then a parabola through the best and its neighbours. A flat
+     * curve (< 3 %: no texture at the focus point) keeps the table's distance. Log SHOT50_FOCUS_SWEEP.
+     */
+    private suspend fun focusSweep(waitFor: suspend (Long, () -> Boolean) -> Boolean) {
+        val estimate = previewCoordinator.sentFocus()
+        if (estimate < 0f) return
+        previewCoordinator.setFocusProbe(true)
+        val measured = sortedMapOf<Float, Float>()
+        suspend fun measure(d: Float): Float? {
+            val target = d.coerceAtLeast(0f)
+            measured[target]?.let { return it }
+            previewCoordinator.setFocusSweep(target)
+            val start = previewCoordinator.focusProbeCount()
+            if (!waitFor(2_500L) { previewCoordinator.focusProbeCount() >= start + 4 }) return null
+            return previewCoordinator.focusSharpness().also { measured[target] = it }
+        }
+        val step = maxOf(0.12f, estimate * 0.2f)
+        for (k in -2..2) measure(estimate + k * step) ?: break
+        if (measured.size >= 3) {
+            var best = measured.maxByOrNull { it.value }!!.key
+            for (extra in 0 until 2) {
+                val keys = measured.keys.toList()
+                best = measured.maxByOrNull { it.value }!!.key
+                val next = when (best) {
+                    keys.first() -> if (best > 0f) best - step else null
+                    keys.last() -> best + step
+                    else -> null
+                } ?: break
+                measure(next) ?: break
+            }
+            best = measured.maxByOrNull { it.value }!!.key
+            val keys = measured.keys.toList()
+            val i = keys.indexOf(best)
+            var final = best
+            if (i in 1 until keys.size - 1) {
+                val (x0, x1, x2) = Triple(keys[i - 1], keys[i], keys[i + 1])
+                val (y0, y1, y2) = Triple(measured[x0]!!, measured[x1]!!, measured[x2]!!)
+                val denom = (x0 - x1) * (x0 - x2) * (x1 - x2)
+                if (denom != 0f) {
+                    val a = (x2 * (y1 - y0) + x1 * (y0 - y2) + x0 * (y2 - y1)) / denom
+                    val b = (x2 * x2 * (y0 - y1) + x1 * x1 * (y2 - y0) + x0 * x0 * (y1 - y2)) / denom
+                    if (a < 0f) final = (-b / (2 * a)).coerceIn(x0, x2)
+                }
+            }
+            val lo = measured.values.minOrNull() ?: 0f
+            val hi = measured.values.maxOrNull() ?: 0f
+            if (!(lo > 0f && hi / lo >= 1.03f)) final = estimate
+            previewCoordinator.setFocusSweep(final)
+            android.util.Log.i("RawrCamCapture", "SHOT50_FOCUS_SWEEP estimate=%.3f final=%.3f ratio=%.3f %s".format(
+                estimate, final, if (lo > 0f) hi / lo else 0f,
+                measured.entries.joinToString(" ") { "%.3f:%.1f".format(it.key, it.value) }))
+            // Frames at the final distance before the shot (the merge reads the frames just before the press).
+            val start = previewCoordinator.focusProbeCount()
+            waitFor(2_500L) { previewCoordinator.focusProbeCount() >= start + 8 }
+        } else {
+            previewCoordinator.setFocusSweep(-1f)
+            android.util.Log.i("RawrCamCapture", "SHOT50_FOCUS_SWEEP skipped measured=${measured.size}")
+        }
+        previewCoordinator.setFocusProbe(false)
     }
 
     /**

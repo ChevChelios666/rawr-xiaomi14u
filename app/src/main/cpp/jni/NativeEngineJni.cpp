@@ -291,6 +291,25 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_rawr_camera_x14u_HalRawSynthNativ
     return ok ? JNI_TRUE : JNI_FALSE;
 }
 
+// X14U 50 MP closed-loop focus (CaptureViewModel.shootFullSize): lens steps, the distance sent, sharpness probe.
+extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setFocusSweep(JNIEnv*, jobject,
+                                                                                                   jfloat diopters) {
+    rawrcam::camera::shotHandover().setFocusSweep(diopters);
+}
+extern "C" JNIEXPORT jfloat JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_sentFocus(JNIEnv*, jobject) {
+    return rawrcam::camera::shotHandover().sentFocus();
+}
+extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setFocusProbe(JNIEnv*, jobject,
+                                                                                                   jboolean on) {
+    rawrcam::camera::shotHandover().setFocusProbe(on == JNI_TRUE);
+}
+extern "C" JNIEXPORT jfloat JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_focusSharpness(JNIEnv*, jobject) {
+    return rawrcam::camera::shotHandover().sharpness();
+}
+extern "C" JNIEXPORT jlong JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_focusProbeCount(JNIEnv*, jobject) {
+    return rawrcam::camera::shotHandover().probeCount();
+}
+
 extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setCarryViewAcrossRestart(
     JNIEnv*, jobject, jboolean on) {
     rawrcam::camera::shotHandover().setCarry(on == JNI_TRUE, /*sameMode=*/true);

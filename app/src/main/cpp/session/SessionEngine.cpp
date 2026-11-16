@@ -3,6 +3,9 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <vector>
+#include <android/hardware_buffer.h>
+#include "camera/ShotHandover.h"
 #include <chrono>
 #include <cmath>
 #include <sstream>
@@ -383,7 +386,54 @@ bool SessionEngine::submitMetadata(const metadata::FrameMetadataSnapshot& metada
     }
     return ingressQueue_.enqueue(metadata);
 }
-void SessionEngine::enqueueRawFrame(imaging::AcquiredRawFrame frame) { ingressQueue_.enqueue(std::move(frame)); }
+namespace {
+// X14U 50 MP focus sweep: sharpness at the focus point of a full-size RAW frame (CPU, a 512 px window). 2x2 sums
+// (CFA-independent), squared central differences over the mean squared, so exposure doesn't move it.
+void measureFullSizeSharpness(const imaging::AcquiredRawFrame& frame) {
+    AHardwareBuffer_Desc desc{};
+    AHardwareBuffer_describe(frame.ahb, &desc);
+    if (uint64_t(desc.width) * desc.height < 30'000'000ull || desc.stride < desc.width) return;
+    const int fence = frame.acquireFenceFd >= 0 ? dup(frame.acquireFenceFd) : -1;
+    void* data = nullptr;
+    if (AHardwareBuffer_lock(frame.ahb, AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN, fence, nullptr, &data) != 0 || !data)
+        return;
+    const auto* px = static_cast<const uint16_t*>(data);
+    const auto area = camera::shotHandover().focusArea();
+    const float cx = area ? ((*area)[0] + (*area)[2]) * 0.5f : 0.5f;
+    const float cy = area ? ((*area)[1] + (*area)[3]) * 0.5f : 0.5f;
+    constexpr int kWindow = 512, kQuads = kWindow / 2;
+    const int x0 = std::clamp(int(cx * desc.width) - kWindow / 2, 0, int(desc.width) - kWindow) & ~1;
+    const int y0 = std::clamp(int(cy * desc.height) - kWindow / 2, 0, int(desc.height) - kWindow) & ~1;
+    std::vector<float> q(size_t(kQuads) * kQuads);
+    double mean = 0.0;
+    for (int y = 0; y < kQuads; ++y) {
+        const uint16_t* r0 = px + size_t(y0 + 2 * y) * desc.stride + x0;
+        const uint16_t* r1 = r0 + desc.stride;
+        for (int x = 0; x < kQuads; ++x) {
+            const float v = float(r0[2 * x]) + r0[2 * x + 1] + r1[2 * x] + r1[2 * x + 1];
+            q[size_t(y) * kQuads + x] = v;
+            mean += v;
+        }
+    }
+    AHardwareBuffer_unlock(frame.ahb, nullptr);
+    mean /= double(q.size());
+    double energy = 0.0;
+    for (int y = 1; y + 1 < kQuads; ++y) {
+        for (int x = 1; x + 1 < kQuads; ++x) {
+            const double gx = q[size_t(y) * kQuads + x + 1] - q[size_t(y) * kQuads + x - 1];
+            const double gy = q[size_t(y + 1) * kQuads + x] - q[size_t(y - 1) * kQuads + x];
+            energy += gx * gx + gy * gy;
+        }
+    }
+    const double n = double(kQuads - 2) * (kQuads - 2);
+    camera::shotHandover().noteSharpness(mean > 1.0 ? float(energy / n / (mean * mean) * 1e4) : 0.0f);
+}
+}  // namespace
+
+void SessionEngine::enqueueRawFrame(imaging::AcquiredRawFrame frame) {
+    if (frame.ahb && camera::shotHandover().focusProbe()) measureFullSizeSharpness(frame);
+    ingressQueue_.enqueue(std::move(frame));
+}
 void SessionEngine::stopIngress() { ingressQueue_.stop(); }
 void SessionEngine::tickRawReaderUsage() {
     const auto failed = failedCameraGeneration_.exchange(0);
