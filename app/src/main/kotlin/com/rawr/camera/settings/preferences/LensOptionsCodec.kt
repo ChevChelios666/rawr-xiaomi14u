@@ -179,7 +179,11 @@ internal object LensOptionsCodec {
             ?.let { n -> lenses.firstOrNull { it.name.trim().equals(n, ignoreCase = true) } }
         return lenses.filter { it.enabled }.flatMap { lens ->
             listOfNotNull(named(lens.videoLens)) +
-                lens.options.flatMap { o -> o.choices.mapNotNull { named(it.runAs) } }
+                lens.options.flatMap { o -> o.choices.mapNotNull { named(it.runAs) } } +
+                // X14U: a run-as lens's overrides at a chosen aperture ("50MP Aperture").
+                lens.options.flatMap { o ->
+                    o.choices.mapNotNull { c -> c.runAs?.let { named(it.trim() + com.rawr.camera.settings.model.APERTURE_LENS_SUFFIX) } }
+                }
         }.map { it.name.trim().lowercase() }.toSet()
     }
 
