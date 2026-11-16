@@ -57,6 +57,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -78,6 +79,7 @@ import com.rawr.camera.ui.CaptureTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -124,7 +126,9 @@ private object FrameCache {
 @Composable
 private fun FrameImage(
     file: java.io.File?, side: Int, modifier: Modifier, contentScale: ContentScale = ContentScale.Crop,
-    detailSide: Int? = null, imageModifier: Modifier = Modifier
+    detailSide: Int? = null, imageModifier: Modifier = Modifier,
+    /** Shown until this view's own decode is in (the playback frame, so scrubbing never flashes empty). */
+    placeholder: Bitmap? = null
 ) {
     var bitmap by remember(file?.path) { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(file?.path, file?.length(), side) { bitmap = file?.let { FrameCache.get(it, side) } }
@@ -134,7 +138,9 @@ private fun FrameImage(
         detail = if (detailSide != null && file != null) FrameCache.get(file, detailSide) else null
     }
     Box(modifier.background(Color(0xFF1C1A17)), contentAlignment = Alignment.Center) {
-        (detail ?: bitmap)?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize().then(imageModifier), contentScale = contentScale) }
+        (detail ?: bitmap ?: placeholder)?.let {
+            Image(it.asImageBitmap(), null, Modifier.fillMaxSize().then(imageModifier), contentScale = contentScale)
+        }
             ?: Text("…", color = Muted)
     }
 }
@@ -261,10 +267,42 @@ private fun BurstViewer(folder: String, onBack: () -> Unit) {
     val frame = burst.frames[index]
     val strip = rememberLazyListState()
     LaunchedEffect(index) { strip.animateScrollToItem((index - 3).coerceAtLeast(0)) }
+    // Playback frames: every frame decoded small up front (progress on the frame), so Play shows each one at the
+    // burst's own speed. It used to step on a timer while each 12 MP frame was still decoding, and skipped most.
+    val views = burst.frames.map { it.view?.path }
+    val playback = remember(folder, views) { mutableStateListOf<Bitmap?>().apply { repeat(burst.frames.size) { add(null) } } }
+    var prepared by remember(folder, views) { mutableStateOf(0) }
+    val allPrepared = prepared >= burst.frames.size
+    LaunchedEffect(folder, views) {
+        val files = burst.frames.map { it.view }
+        // About 192 MB of 16-bit frames in all: the long side shrinks for long bursts (480..1600 px).
+        val side = kotlin.math.sqrt(192.0 * 1024 * 1024 / files.size / 1.5).toInt().coerceIn(480, 1600)
+        val gate = kotlinx.coroutines.sync.Semaphore(3)
+        kotlinx.coroutines.coroutineScope {
+            files.forEachIndexed { i, file ->
+                launch(Dispatchers.IO) {
+                    val bitmap = gate.withPermit { file?.let { BurstStore.decodePlayback(it, side) } }
+                    withContext(Dispatchers.Main) {
+                        playback[i] = bitmap
+                        prepared++
+                    }
+                }
+            }
+        }
+    }
+    // Paced by the display clock from the press of Play: frame k shows at k / fps, none skipped (all decoded).
     LaunchedEffect(playing) {
+        if (!playing) return@LaunchedEffect
+        val fps = burst.fps.coerceIn(1, 60).toDouble()
+        val from = position
+        val start = androidx.compose.runtime.withFrameNanos { it }
         while (playing) {
-            delay((1000L / burst.fps.coerceIn(1, 60)))
-            if (position >= burst.frames.lastIndex) playing = false else position += 1
+            val now = androidx.compose.runtime.withFrameNanos { it }
+            val next = from + ((now - start) / 1e9 * fps).toInt()
+            if (next >= burst.frames.lastIndex) {
+                position = burst.frames.lastIndex
+                playing = false
+            } else if (next != position) position = next
         }
     }
     fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
@@ -335,13 +373,37 @@ private fun BurstViewer(folder: String, onBack: () -> Unit) {
                 },
             contentAlignment = Alignment.Center
         ) {
-            FrameImage(
-                frame.view, 1400, Modifier.fillMaxSize(), contentScale = ContentScale.Fit,
-                detailSide = if (zoom > 1.5f) 4096 else null,
-                imageModifier = Modifier.graphicsLayer {
-                    scaleX = zoom; scaleY = zoom; translationX = pan.x; translationY = pan.y
+            val zoomLayer = Modifier.graphicsLayer {
+                scaleX = zoom; scaleY = zoom; translationX = pan.x; translationY = pan.y
+            }
+            val playbackFrame = playback.getOrNull(index)
+            if (playing && playbackFrame != null) {
+                Box(Modifier.fillMaxSize().background(Color(0xFF1C1A17))) {
+                    Image(playbackFrame.asImageBitmap(), null, Modifier.fillMaxSize().then(zoomLayer),
+                        contentScale = ContentScale.Fit)
                 }
-            )
+            } else {
+                FrameImage(
+                    frame.view, 1400, Modifier.fillMaxSize(), contentScale = ContentScale.Fit,
+                    detailSide = if (zoom > 1.5f) 4096 else null,
+                    imageModifier = zoomLayer,
+                    placeholder = playbackFrame
+                )
+            }
+            if (!allPrepared) {
+                Column(
+                    Modifier.align(Alignment.BottomCenter).padding(10.dp).fillMaxWidth()
+                        .background(Color.Black.copy(alpha = .62f), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text("Preparing playback · $prepared / ${burst.frames.size}", color = Color.White, fontSize = 13.sp)
+                    Spacer(Modifier.height(6.dp))
+                    Box(Modifier.fillMaxWidth().height(3.dp).background(Line, RoundedCornerShape(2.dp))) {
+                        Box(Modifier.fillMaxWidth(prepared / burst.frames.size.toFloat()).height(3.dp)
+                            .background(CaptureColors.Accent, RoundedCornerShape(2.dp)))
+                    }
+                }
+            }
             if (zoom > 1.01f) {
                 Box(Modifier.align(Alignment.BottomEnd).padding(8.dp)) {
                     Badge(String.format(Locale.US, "%.1f×", zoom), Color.White)
@@ -361,7 +423,8 @@ private fun BurstViewer(folder: String, onBack: () -> Unit) {
                 }
             }
         }
-        Timeline(burst, index, selected, onIndex = { playing = false; position = it })
+        Timeline(burst, index, selected, ready = { playback.getOrNull(it) != null },
+            onIndex = { playing = false; position = it })
         Spacer(Modifier.height(8.dp))
         LazyRow(state = strip, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             items(burst.frames.size) { i ->
@@ -384,7 +447,8 @@ private fun BurstViewer(folder: String, onBack: () -> Unit) {
         Spacer(Modifier.height(10.dp))
         if (!selecting) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ActionButton(if (playing) "Pause" else "Play", Modifier.weight(1f)) {
+                ActionButton(if (playing) "Pause" else if (allPrepared) "Play" else "Play · preparing",
+                    Modifier.weight(1f), enabled = allPrepared || playing) {
                     if (!playing && index >= burst.frames.lastIndex) position = 0
                     playing = !playing
                 }
@@ -498,7 +562,7 @@ private fun ActionButton(label: String, modifier: Modifier, accent: Boolean = fa
 
 /** One tick per frame: before the press tinted, the press a line, selected frames marked; tap or drag to move. */
 @Composable
-private fun Timeline(burst: BurstInfo, index: Int, selected: Set<Int>, onIndex: (Int) -> Unit) {
+private fun Timeline(burst: BurstInfo, index: Int, selected: Set<Int>, ready: (Int) -> Boolean, onIndex: (Int) -> Unit) {
     val n = burst.frames.size
     fun at(x: Float, width: Float) = ((x / width) * n).toInt().coerceIn(0, n - 1)
     Column(Modifier.fillMaxWidth().background(Color(0xFF141312), RoundedCornerShape(14.dp)).border(1.dp, Line, RoundedCornerShape(14.dp))
@@ -512,7 +576,8 @@ private fun Timeline(burst: BurstInfo, index: Int, selected: Set<Int>, onIndex: 
             val tickW = (step * .55f).coerceIn(1f, 3f * density)
             burst.frames.forEachIndexed { i, f ->
                 val x = step * (i + .5f)
-                val color = if (f.number < burst.pressNumber) PreTint else Color(0xFFBDBDBD)
+                // Frames still preparing for playback are dim.
+                val color = (if (f.number < burst.pressNumber) PreTint else Color(0xFFBDBDBD)).copy(alpha = if (ready(i)) 1f else .3f)
                 drawLine(color, Offset(x, 6f), Offset(x, size.height * .72f), tickW)
                 if (f.number in selected) drawLine(CaptureColors.Accent, Offset(x, size.height * .8f), Offset(x, size.height), tickW * 1.4f)
             }

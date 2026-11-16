@@ -166,6 +166,27 @@ object BurstStore {
         }
     }.getOrNull()
 
+    /**
+     * A playback frame for [file]: longest side about [maxSide] (a JPEG decodes at the power-of-two step at or above
+     * 0.7x of it), 16-bit colour (half the memory; fine for motion), EXIF orientation applied.
+     */
+    fun decodePlayback(file: File, maxSide: Int): Bitmap? = runCatching {
+        if (file.length() == 0L) return@runCatching null
+        val decoded = if (file.extension.equals("jpg", true)) {
+            ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, info, _ ->
+                var sample = 1
+                while (maxOf(info.size.width, info.size.height) / (sample * 2) >= maxSide * 7 / 10) sample *= 2
+                decoder.setTargetSampleSize(sample)
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                decoder.memorySizePolicy = ImageDecoder.MEMORY_POLICY_LOW_RAM
+            }
+        } else {
+            decode(file, maxSide) ?: return@runCatching null
+        }
+        if (decoded.config == Bitmap.Config.RGB_565) decoded
+        else decoded.copy(Bitmap.Config.RGB_565, false)?.also { decoded.recycle() } ?: decoded
+    }.getOrNull()
+
     /** [bitmap] turned by [file]'s EXIF Orientation, unless the decoder already turned it. */
     private fun oriented(bitmap: Bitmap, file: File): Bitmap {
         val exif = runCatching { android.media.ExifInterface(file.path) }.getOrNull() ?: return bitmap
