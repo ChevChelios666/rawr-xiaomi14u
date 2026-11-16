@@ -1169,20 +1169,20 @@ private fun RowScope.X14uOptionToggles(
     lensOptionSlots(quick.lensOptions).filter { it.second.toggle }.forEach { (name, _) ->
         val row = options?.options?.indexOfFirst { it.name.trim().equals(name, ignoreCase = true) } ?: -1
         val runsAsLens = row >= 0 && options!!.options[row].choices.any { !it.runAs.isNullOrBlank() }
-        // 50 MP runs at f/2 only: with another aperture chosen the chip is greyed (pick f/2 first).
+        // 50 MP runs at f/2 only: with another aperture chosen the chip is greyed, and a tap turns 50 MP on at f/2
+        // (its choice locks Aperture to f/2; the chosen aperture comes back when 50 MP goes off).
         val apertureRow = apertureRow(options)
         val otherAperture = runsAsLens && apertureRow >= 0 &&
             options!!.options[apertureRow].choices.getOrNull(options.picks.getOrElse(apertureRow) { 0 })
                 ?.label?.trim()?.equals("f/2", ignoreCase = true) == false
-        val available = options != null && row >= 0 && row !in options.unavailable && !((burst || video) && runsAsLens) &&
-            !otherAperture
+        val available = options != null && row >= 0 && row !in options.unavailable && !((burst || video) && runsAsLens)
         // Video, Burst and Pano shoot 12 MP frames: no 50 MP chip there.
         if ((video && !available) || (burst && runsAsLens)) return@forEach
         val on = available && options!!.picks.getOrElse(row) { 0 } == 1
         TopBarSlot {
             val color = when {
                 on -> if (enabled) CaptureColors.Accent else CaptureColors.Accent.copy(alpha = .45f)
-                available && enabled -> Color.White.copy(alpha = .55f)
+                available && enabled && !otherAperture -> Color.White.copy(alpha = .55f)
                 else -> Color.White.copy(alpha = .22f)
             }
             Text(
