@@ -27,6 +27,7 @@ import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -410,9 +411,9 @@ private fun BurstViewer(folder: String, onBack: () -> Unit) {
                 }
             }
             Row(Modifier.align(Alignment.TopStart).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (frame.number == burst.pressNumber) Badge("● PRESS")
+                if (frame.number == burst.pressNumber) Badge("◉ SHUTTER")
                 if (frame.number == burst.cover) Badge("COVER")
-                if (frame.number < burst.pressNumber) Badge("BEFORE PRESS", Muted)
+                if (frame.number < burst.pressNumber) Badge("BEFORE SHUTTER", Muted)
             }
             if (selecting) {
                 val on = frame.number in selected
@@ -560,43 +561,81 @@ private fun ActionButton(label: String, modifier: Modifier, accent: Boolean = fa
     ) { Text(label, color = tint, fontSize = 14.sp, maxLines = 1) }
 }
 
-/** One tick per frame: before the press tinted, the press a line, selected frames marked; tap or drag to move. */
+/**
+ * One tick per frame: before the shutter press tinted, frames on screen / selected in the accent; tap or drag to move.
+ * The shutter press is its own marker (a dashed white line under a shutter icon, "0 s" below it), so the accent line
+ * only ever means the frame on screen.
+ */
 @Composable
 private fun Timeline(burst: BurstInfo, index: Int, selected: Set<Int>, ready: (Int) -> Boolean, onIndex: (Int) -> Unit) {
     val n = burst.frames.size
     fun at(x: Float, width: Float) = ((x / width) * n).toInt().coerceIn(0, n - 1)
+    val press = burst.frames.indexOfFirst { it.number == burst.pressNumber }
+    val pre = burst.frames.count { it.number < burst.pressNumber }
+    val marked = press >= 0 && pre > 0
     Column(Modifier.fillMaxWidth().background(Color(0xFF141312), RoundedCornerShape(14.dp)).border(1.dp, Line, RoundedCornerShape(14.dp))
         .padding(horizontal = 12.dp, vertical = 8.dp)) {
         Canvas(
-            Modifier.fillMaxWidth().height(40.dp)
+            Modifier.fillMaxWidth().height(56.dp)
                 .pointerInput(n) { detectTapGestures { onIndex(at(it.x, size.width.toFloat())) } }
                 .pointerInput(n) { detectDragGestures { change, _ -> onIndex(at(change.position.x, size.width.toFloat())) } }
         ) {
             val step = size.width / n
             val tickW = (step * .55f).coerceIn(1f, 3f * density)
+            // Top 16 dp: the shutter icon; ticks below it, selection marks at the bottom.
+            val top = 16f * density
+            val tickBottom = top + (size.height - top) * .72f
             burst.frames.forEachIndexed { i, f ->
                 val x = step * (i + .5f)
                 // Frames still preparing for playback are dim.
                 val color = (if (f.number < burst.pressNumber) PreTint else Color(0xFFBDBDBD)).copy(alpha = if (ready(i)) 1f else .3f)
-                drawLine(color, Offset(x, 6f), Offset(x, size.height * .72f), tickW)
-                if (f.number in selected) drawLine(CaptureColors.Accent, Offset(x, size.height * .8f), Offset(x, size.height), tickW * 1.4f)
+                drawLine(color, Offset(x, top + 6f), Offset(x, tickBottom), tickW)
+                if (f.number in selected) drawLine(CaptureColors.Accent, Offset(x, top + (size.height - top) * .8f), Offset(x, size.height), tickW * 1.4f)
             }
-            val press = burst.frames.indexOfFirst { it.number == burst.pressNumber }
-            if (press >= 0 && burst.preFrames > 0) {
+            if (marked) {
                 val x = step * press
-                drawLine(CaptureColors.Accent.copy(alpha = .7f), Offset(x, 0f), Offset(x, size.height * .76f), 2f * density)
+                drawLine(Color.White, Offset(x, 14f * density), Offset(x, tickBottom + 2f * density), 1.5f * density,
+                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(3f * density, 2f * density)))
+                val c = Offset(x, 7f * density)
+                drawCircle(Color.White, 6.5f * density, c, style = androidx.compose.ui.graphics.drawscope.Stroke(1.5f * density))
+                drawCircle(Color.White, 3.5f * density, c)
             }
             val cx = step * (index + .5f)
-            drawLine(CaptureColors.Accent, Offset(cx, 0f), Offset(cx, size.height * .76f), 3f * density)
+            drawLine(CaptureColors.Accent, Offset(cx, top), Offset(cx, tickBottom + 2f * density), 3f * density)
         }
-        Row {
-            val pre = burst.frames.count { it.number < burst.pressNumber }
-            val fps = burst.fps.coerceAtLeast(1).toFloat()
-            Text(if (pre > 0) "−%.1f s".format(Locale.US, pre / fps) else "0 s", color = Muted, fontFamily = Mono, fontSize = 10.sp)
-            Spacer(Modifier.weight(1f))
-            if (pre > 0) Text("press", color = CaptureColors.Accent, fontFamily = Mono, fontSize = 10.sp)
-            Spacer(Modifier.weight(1f))
-            Text("+%.1f s".format(Locale.US, (n - pre) / fps), color = Muted, fontFamily = Mono, fontSize = 10.sp)
+        val fps = burst.fps.coerceAtLeast(1).toFloat()
+        Box(Modifier.fillMaxWidth()) {
+            Text(if (pre > 0) "−%.1f s".format(Locale.US, pre / fps) else "0 s", color = Muted, fontFamily = Mono, fontSize = 10.sp,
+                modifier = Modifier.align(Alignment.CenterStart))
+            Text("+%.1f s".format(Locale.US, (n - pre) / fps), color = Muted, fontFamily = Mono, fontSize = 10.sp,
+                modifier = Modifier.align(Alignment.CenterEnd))
+            // "0 s" under the shutter line, unless it would run into the end labels.
+            val fraction = if (marked) press / n.toFloat() else -1f
+            if (fraction in .14f..0.86f) {
+                Text("0 s", color = Color.White, fontFamily = Mono, fontSize = 10.sp,
+                    modifier = Modifier.layout { measurable, constraints ->
+                        val p = measurable.measure(constraints.copy(minWidth = 0))
+                        layout(constraints.maxWidth, p.height) {
+                            p.place((constraints.maxWidth * fraction - p.width / 2f).toInt()
+                                .coerceIn(0, (constraints.maxWidth - p.width).coerceAtLeast(0)), 0)
+                        }
+                    })
+            }
         }
+        Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            LegendKey(PreTint, "before shutter")
+            LegendKey(Color(0xFFBDBDBD), "while held")
+            LegendKey(CaptureColors.Accent, "on screen", narrow = true)
+        }
+    }
+}
+
+@Composable
+private fun LegendKey(color: Color, label: String, narrow: Boolean = false) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(if (narrow) 3.dp else 8.dp, 8.dp).background(color))
+        Spacer(Modifier.width(4.dp))
+        Text(label, color = Muted, fontSize = 10.sp)
     }
 }
