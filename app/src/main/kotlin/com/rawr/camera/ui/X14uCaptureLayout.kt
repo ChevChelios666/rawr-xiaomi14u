@@ -521,6 +521,8 @@ internal fun X14uCaptureLayout(
     val panoSet = remember { PanoSet() }
     val panoMotion = rememberPanoMotion(pano)
     val panoLocked = pano && panoSet.inSet
+    // A set locks the row: an open editor (EV's ruler, a pano choice) closes when it starts.
+    LaunchedEffect(panoLocked) { if (panoLocked) selected = null }
     val panoScope = androidx.compose.runtime.rememberCoroutineScope()
     val panoExtras = LocalCaptureExtras.current
     val panoState by rememberUpdatedState(state)
@@ -629,7 +631,7 @@ internal fun X14uCaptureLayout(
     when (panel) {
         null -> {
             val all = exposureCells(state, quick, lensOptions, fiftyMp)
-            cells = if (simplePhoto) {
+            val photoCells = if (simplePhoto) {
                 // Photo: only the cells the exposure mode lets you set (A: EV · M: SS, ISO · S: SS, EV · I: ISO, EV), plus F.
                 val owners = state.exposureOwners().map {
                     when (it) {
@@ -640,8 +642,14 @@ internal fun X14uCaptureLayout(
                 }
                 owners.mapNotNull { k -> all.firstOrNull { it.key == k } } + all.filter { it.key == "f" }
             } else all
+            // Pano: its own settings in the row (sweep, overlap, shape, stop at), a divider, then the exposure cells
+            // (EV in A) and F. The A·M·S·I pill and S / ISO stay out: frame 1 locks them for the set.
+            cells = if (pano) panoCells(panoSet) + photoCells.mapIndexed { i, cell ->
+                (if (i == 0) cell.copy(groupStart = true) else cell).let { if (panoLocked) it.copy(enabled = false) else it }
+            } else photoCells
             editorFor = { key ->
-                if (key == ZOOM_KEY) zoomRuler(zoom, zoomChain, setZoom)
+                if (key.startsWith("pano.")) panoEditor(key, panoSet)
+                else if (key == ZOOM_KEY) zoomRuler(zoom, zoomChain, setZoom)
                 else if (key == PHOTO_FOCUS_KEY) photoFocusEditor(state, dispatch, onMfTouch)
                 else if (key == "f" && fiftyMp && apertureRow(lensOptions) >= 0) X14uEditor.Message("f/2 while 50 MP is on")
                 else exposureEditor(key, state, dispatch, lensOptions, recordingLock, onQuickEvent, wbTint, { wbTint = !wbTint }, onMfTouch)
@@ -1045,7 +1053,7 @@ internal fun X14uCaptureLayout(
                 }
             }
             val rowModifier = Modifier.fillMaxWidth().offset(y = bottom + 6.dp * s).height(48.dp * s)
-            if (panel == null && simplePhoto) {
+            if (panel == null && simplePhoto && !pano) {
                 // A: what auto exposure picked, dim either side of EV; tapping one switches to S or I with its editor open.
                 val live = if (state.exposureControl.mode == ExposureMode.Auto) {
                     exposureCells(state, quick, lensOptions, fiftyMp).filter { it.key == "ss" || it.key == "iso" }
@@ -1073,8 +1081,7 @@ internal fun X14uCaptureLayout(
                 } else if (key != null) {
                     X14uEditorView(editorFor(key), orientation)
                 } else if (panel == null) {
-                    X14uIdleControlArea(state, dispatch, videoControls, showNumbers, enabled = !recordingLock,
-                        panoControls = if (!pano) null else ({ X14uPanoControls(panoSet, enabled = true) }))
+                    X14uIdleControlArea(state, dispatch, videoControls, showNumbers, enabled = !recordingLock && !panoLocked)
                 }
             }
             X14uShutterRow(
@@ -1827,6 +1834,37 @@ private fun exposureEditor(
     else -> focusRuler(state, dispatch, onMfTouch)
 }
 
+/**
+ * Pano's cells (Nov 16 mockup): SWEEP (Wide), OVERLAP, SHAPE, STOP AT (Wide); during a set FRAMES first and the
+ * settings dimmed (frame 1 locked them). Each opens its choices where the mode strip is.
+ */
+private fun panoCells(set: PanoSet): List<X14uCell> {
+    val wide = set.shape == PanoShape.Wide
+    val locked = set.inSet
+    return buildList {
+        if (locked) add(X14uCell("pano.frames", if (set.finite) "${set.frames}/${set.targets.size}" else "${set.frames}", "FRAMES"))
+        if (wide) add(X14uCell("pano.dir", set.screenDirection.arrow, "SWEEP", enabled = !locked))
+        if (!locked) add(X14uCell("pano.overlap", "${set.overlap}%", "OVERLAP"))
+        if (!locked) add(X14uCell("pano.shape", set.shape.label, "SHAPE"))
+        if (wide) add(X14uCell("pano.stop", if (set.stopAt == 0) "Free" else "${set.stopAt}°", "STOP AT", enabled = !locked))
+    }
+}
+
+private val PANO_STOPS = listOf(90, 180, 360, 0)
+
+private fun panoEditor(key: String, set: PanoSet): X14uEditor = when (key) {
+    "pano.dir" -> X14uEditor.Chips(PanoDirection.entries.map { set.onScreen(it).arrow }, set.direction.ordinal,
+        enabled = !set.inSet) { i -> set.direction = PanoDirection.entries[i] }
+    "pano.overlap" -> X14uEditor.Chips(listOf("20%", "30%", "40%"), listOf(20, 30, 40).indexOf(set.overlap).coerceAtLeast(0),
+        enabled = !set.inSet) { i -> set.overlap = listOf(20, 30, 40)[i] }
+    "pano.shape" -> X14uEditor.Chips(PanoShape.entries.map { it.label }, set.shape.ordinal, enabled = !set.inSet) { i ->
+        set.shape = PanoShape.entries[i]
+    }
+    "pano.stop" -> X14uEditor.Chips(PANO_STOPS.map { if (it == 0) "Free" else "$it°" },
+        PANO_STOPS.indexOf(set.stopAt).coerceAtLeast(0), enabled = !set.inSet) { i -> set.stopAt = PANO_STOPS[i] }
+    else -> X14uEditor.Message(if (set.finite) "${set.frames} of ${set.targets.size} frames" else "${set.frames} frames")
+}
+
 private fun exposureRuler(parameter: ExposureParameter, state: CaptureUiState, dispatch: CaptureDispatch): X14uEditor {
     if (parameter == ExposureParameter.Ev && CaptureTransitions.evAdjustsRenderExposure(state)) {
         // Full Manual: EV edits the render exposure, 0.1 EV steps.
@@ -2538,8 +2576,7 @@ private fun X14uIdleControlArea(
     dispatch: CaptureDispatch,
     video: VideoControlState,
     showNumbers: Boolean,
-    enabled: Boolean,
-    panoControls: (@Composable () -> Unit)? = null
+    enabled: Boolean
 ) {
     val haptics = LocalCaptureHaptics.current
     val extras = LocalCaptureExtras.current
@@ -2591,13 +2628,8 @@ private fun X14uIdleControlArea(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                if (panoControls != null) {
-                    panoControls()
-                    Spacer(Modifier.height(6.dp))
-                } else {
-                    Box(Modifier.size(20.dp, 3.dp).background(Color.White.copy(alpha = .3f), RoundedCornerShape(2.dp)))
-                    Spacer(Modifier.height(10.dp))
-                }
+                Box(Modifier.size(20.dp, 3.dp).background(Color.White.copy(alpha = .3f), RoundedCornerShape(2.dp)))
+                Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(30.dp), verticalAlignment = Alignment.CenterVertically) {
                     stripModes.forEach { mode ->
                         val isSelected = current == mode

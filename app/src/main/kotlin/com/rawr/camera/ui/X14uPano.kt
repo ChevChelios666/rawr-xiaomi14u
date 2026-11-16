@@ -86,12 +86,15 @@ internal class PanoSet {
      * to the right as held runs down the screen.
      */
     val screenDirection: PanoDirection
-        get() = if (!landscape) direction else when (direction) {
-            PanoDirection.Right -> PanoDirection.Down
-            PanoDirection.Left -> PanoDirection.Up
-            PanoDirection.Up -> PanoDirection.Right
-            PanoDirection.Down -> PanoDirection.Left
-        }
+        get() = onScreen(direction)
+
+    /** A sweep direction as held, shown on the screen (portrait axes); see [screenDirection]. */
+    fun onScreen(held: PanoDirection): PanoDirection = if (!landscape) held else when (held) {
+        PanoDirection.Right -> PanoDirection.Down
+        PanoDirection.Left -> PanoDirection.Up
+        PanoDirection.Up -> PanoDirection.Right
+        PanoDirection.Down -> PanoDirection.Left
+    }
     var overlap by mutableIntStateOf(30)
     var shape by mutableStateOf(PanoShape.Wide)
     /** Wide only: stop by itself after this many degrees (0 = until the stop button). */
@@ -541,76 +544,6 @@ private fun PanoBadge(text: String, color: Color, orientation: Orientation) {
             .background(Color.Black.copy(alpha = .55f), RoundedCornerShape(6.dp))
             .padding(horizontal = 7.dp, vertical = 3.dp)
     )
-}
-
-/**
- * Pano's row above the mode strip. Before a set: direction (Wide), overlap, shape, and the stop angle (Wide). During
- * one: the same, dimmed, and the frame count.
- */
-@Composable
-internal fun X14uPanoControls(set: PanoSet, enabled: Boolean) {
-    Row(
-        Modifier.height(30.dp).testTag("x14u_pano_controls"),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        val locked = set.inSet || !enabled
-        val wide = set.shape == PanoShape.Wide
-        // The chip stays unturned: in landscape it shows the arrow that points the held direction on screen.
-        if (wide) PanoChip(set.screenDirection.arrow, active = false, enabled = !locked) {
-            set.direction = PanoDirection.entries[(set.direction.ordinal + 1) % PanoDirection.entries.size]
-        }
-        PanoChip("${set.overlap}%", active = false, enabled = !locked) {
-            set.overlap = when (set.overlap) { 20 -> 30; 30 -> 40; else -> 20 }
-        }
-        PanoChip(set.shape.label, active = false, enabled = !locked) {
-            set.shape = if (wide) PanoShape.Grid else PanoShape.Wide
-        }
-        if (set.inSet) {
-            val total = if (set.finite) " / ${set.targets.size}" else ""
-            PanoChip("● ${set.frames}$total", active = true, enabled = true) {}
-        } else if (wide) {
-            PanoChip(if (set.stopAt == 0) "free" else "${set.stopAt}°", active = false, enabled = !locked) {
-                set.stopAt = when (set.stopAt) { 0 -> 90; 90 -> 180; 180 -> 360; else -> 0 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PanoChip(text: String, active: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    val haptics = LocalCaptureHaptics.current
-    // Fixed-height pill with the label centred both ways (no font padding).
-    Box(
-        Modifier
-            .height(30.dp)
-            .alpha(if (enabled || active) 1f else .45f)
-            .background(if (active) CaptureColors.Accent else Color.White.copy(alpha = .12f), RoundedCornerShape(15.dp))
-            .captureClickable(shape = RoundedCornerShape(15.dp), enabled = enabled && !active) {
-                haptics.selection()
-                onClick()
-            }
-            .semantics { contentDescription = text }
-            .padding(horizontal = 12.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text,
-            fontFamily = X14uFont,
-            fontSize = dpText(12.5f),
-            fontWeight = if (active) FontWeight.Medium else FontWeight.Normal,
-            color = if (active) Color(0xFF2B2000) else Color.White,
-            maxLines = 1,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            style = androidx.compose.ui.text.TextStyle(
-                platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
-                lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
-                    androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
-                    androidx.compose.ui.text.style.LineHeightStyle.Trim.Both
-                )
-            )
-        )
-    }
 }
 
 /** The shutter row in Pano: the shutter starts and stops a set (stop square while one runs); undo during a set. */
