@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Files Rawr lends to another app for one open (read-only content links): burst frames for Develop with. -->
+<paths>
+    <files-path name="burst" path="burst_frames/" />
+</paths>

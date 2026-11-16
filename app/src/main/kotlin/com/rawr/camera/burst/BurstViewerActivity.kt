@@ -3,7 +3,6 @@ package com.rawr.camera.burst
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.net.Uri
 import android.os.Bundle
 import android.util.LruCache
 import android.widget.Toast
@@ -459,9 +458,7 @@ private fun BurstViewer(folder: String, onBack: () -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ActionButton("Develop full quality", Modifier.weight(1f), accent = true, enabled = frame.dng != null) {
                     val dng = frame.dng ?: return@ActionButton
-                    context.startActivity(Intent(Intent.ACTION_VIEW)
-                        .setDataAndType(Uri.fromFile(dng), "image/x-adobe-dng")
-                        .setClass(context, com.rawr.camera.renderer.RendererActivity::class.java))
+                    if (!developWith(context, dng)) toast("Couldn't open the RAW")
                 }
                 ActionButton("Export", Modifier.weight(1f)) {
                     scope.launch {
@@ -474,8 +471,8 @@ private fun BurstViewer(folder: String, onBack: () -> Unit) {
             Text(
                 when {
                     frame.dng == null -> "No RAW for this frame"
-                    days != null -> "RAW kept for $days more ${if (days == 1) "day" else "days"} · Develop opens it in the renderer"
-                    else -> "Develop opens this frame's RAW in the renderer with your photo settings"
+                    days != null -> "RAW kept for $days more ${if (days == 1) "day" else "days"} · Develop opens it in Rawr or another editor"
+                    else -> "Develop opens this frame's RAW in Rawr's renderer or another editor (Lightroom, Snapseed…)"
                 },
                 color = Muted, fontSize = 11.sp, modifier = Modifier.padding(vertical = 8.dp)
             )
@@ -638,4 +635,25 @@ private fun LegendKey(color: Color, label: String, narrow: Boolean = false) {
         Spacer(Modifier.width(4.dp))
         Text(label, color = Muted, fontSize = 10.sp)
     }
+}
+
+/**
+ * Develop: a chooser with Rawr's renderer first, then every app that takes a DNG (Lightroom's "Add to Lightroom",
+ * Snapseed…). The frame lives in Rawr's private storage, so it's lent read-only through a content link
+ * (FileProvider, res/xml/shared_file_paths.xml). False when the file can't be shared.
+ */
+private fun developWith(context: Context, dng: java.io.File): Boolean {
+    val uri = runCatching {
+        androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.files", dng)
+    }.getOrNull() ?: return false
+    val mime = "image/x-adobe-dng"
+    val send = Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM, uri)
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    send.clipData = android.content.ClipData.newRawUri(dng.name, uri)
+    val rawr = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime)
+        .setClass(context, com.rawr.camera.renderer.RendererActivity::class.java)
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    val chooser = Intent.createChooser(send, "Develop with")
+        .putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf<android.os.Parcelable>(rawr))
+    return runCatching { context.startActivity(chooser) }.isSuccess
 }
