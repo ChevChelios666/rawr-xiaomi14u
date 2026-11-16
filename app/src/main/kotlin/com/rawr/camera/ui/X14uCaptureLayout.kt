@@ -643,6 +643,7 @@ internal fun X14uCaptureLayout(
             editorFor = { key ->
                 if (key == ZOOM_KEY) zoomRuler(zoom, zoomChain, setZoom)
                 else if (key == PHOTO_FOCUS_KEY) photoFocusEditor(state, dispatch, onMfTouch)
+                else if (key == "f" && fiftyMp && apertureRow(lensOptions) >= 0) X14uEditor.Message("f/2 while 50 MP is on")
                 else exposureEditor(key, state, dispatch, lensOptions, recordingLock, onQuickEvent, wbTint, { wbTint = !wbTint }, onMfTouch)
             }
         }
@@ -1538,8 +1539,9 @@ private fun exposureCells(
     val awb = state.autoWhiteBalanceTemperatureK?.let { "${(it / 10f).roundToInt() * 10}K" } ?: "AWB"
     return listOf(
         X14uCell("ev", ev, "EV", evManual),
-        // 50 MP on the main lens: f/2 takes the real 50 MP RAW, any other aperture the camera's own 50 MP (rawrHal).
-        X14uCell("f", aperture.replace("f/", "F"), "A", enabled = row >= 0),
+        // 50 MP on the main lens: the shot runs at f/2 (aperture at 50 MP doesn't work yet), so the cell shows F2, greyed.
+        if (fiftyMp && row >= 0) X14uCell("f", "F2", "A", enabled = false)
+        else X14uCell("f", aperture.replace("f/", "F"), "A", enabled = row >= 0),
         X14uCell("ss", ss, "S", ssManual, auto = !ssManual),
         X14uCell("iso", iso, "ISO", isoManual, auto = !isoManual),
         X14uCell("wb", if (wbManual) "${state.whiteBalanceTemperatureK}K" else awb,
