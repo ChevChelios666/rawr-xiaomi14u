@@ -53,7 +53,6 @@ std::optional<Pending> take(uint64_t timestampNs) {
 }
 
 namespace {
-inline uint16_t at(const std::vector<uint8_t>& v, size_t i) { return uint16_t(v[2 * i] | (v[2 * i + 1] << 8)); }
 
 // Mean R, G, B per cell of a GX x GY grid, and each cell's peak sample (clipping).
 struct Grid {
