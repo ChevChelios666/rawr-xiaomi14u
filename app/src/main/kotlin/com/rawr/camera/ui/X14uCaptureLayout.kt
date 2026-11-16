@@ -1169,7 +1169,13 @@ private fun RowScope.X14uOptionToggles(
     lensOptionSlots(quick.lensOptions).filter { it.second.toggle }.forEach { (name, _) ->
         val row = options?.options?.indexOfFirst { it.name.trim().equals(name, ignoreCase = true) } ?: -1
         val runsAsLens = row >= 0 && options!!.options[row].choices.any { !it.runAs.isNullOrBlank() }
-        val available = options != null && row >= 0 && row !in options.unavailable && !((burst || video) && runsAsLens)
+        // 50 MP runs at f/2 only: with another aperture chosen the chip is greyed (pick f/2 first).
+        val apertureRow = apertureRow(options)
+        val otherAperture = runsAsLens && apertureRow >= 0 &&
+            options!!.options[apertureRow].choices.getOrNull(options.picks.getOrElse(apertureRow) { 0 })
+                ?.label?.trim()?.equals("f/2", ignoreCase = true) == false
+        val available = options != null && row >= 0 && row !in options.unavailable && !((burst || video) && runsAsLens) &&
+            !otherAperture
         // Video, Burst and Pano shoot 12 MP frames: no 50 MP chip there.
         if ((video && !available) || (burst && runsAsLens)) return@forEach
         val on = available && options!!.picks.getOrElse(row) { 0 } == 1
