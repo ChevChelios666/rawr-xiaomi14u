@@ -564,9 +564,10 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
 
     /**
      * Closed-loop focus for the full-size shot: steps of max(0.12, 20 %) diopters at -2..+2 around the distance the
-     * table sent (one more step out when the sharpest sits at an end), each measured on the 4th full-size frame after
-     * the move (the request pipeline is ~3 frames deep), then a parabola through the best and its neighbours. A flat
-     * curve (< 3 %: no texture at the focus point) keeps the table's distance. Log SHOT50_FOCUS_SWEEP.
+     * table sent (one more step out when the sharpest sits at an end), each measured as the mean of the 5th and 6th
+     * full-size frames after the move (the request pipeline is ~3-4 frames deep; 4 frames read the old position on
+     * Nov 16 18:34), then a parabola through the best and its neighbours. A flat curve (< 10 %: noise, or no texture at
+     * the focus point) keeps the table's distance. Logs SHOT50_FOCUS_SWEEP (and SHOT50_FOCUS_PROBE per frame, native).
      */
     private suspend fun focusSweep(waitFor: suspend (Long, () -> Boolean) -> Boolean) {
         val estimate = previewCoordinator.sentFocus()
@@ -578,7 +579,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             measured[target]?.let { return it }
             previewCoordinator.setFocusSweep(target)
             val start = previewCoordinator.focusProbeCount()
-            if (!waitFor(2_500L) { previewCoordinator.focusProbeCount() >= start + 4 }) return null
+            if (!waitFor(2_500L) { previewCoordinator.focusProbeCount() >= start + 6 }) return null
             return previewCoordinator.focusSharpness().also { measured[target] = it }
         }
         val step = maxOf(0.12f, estimate * 0.2f)
@@ -611,7 +612,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             }
             val lo = measured.values.minOrNull() ?: 0f
             val hi = measured.values.maxOrNull() ?: 0f
-            if (!(lo > 0f && hi / lo >= 1.03f)) final = estimate
+            if (!(lo > 0f && hi / lo >= 1.10f)) final = estimate
             previewCoordinator.setFocusSweep(final)
             android.util.Log.i("RawrCamCapture", "SHOT50_FOCUS_SWEEP estimate=%.3f final=%.3f ratio=%.3f %s".format(
                 estimate, final, if (lo > 0f) hi / lo else 0f,

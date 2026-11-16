@@ -138,14 +138,21 @@ public:
     void setFocusProbe(bool on) {
         probeCount_.store(0, std::memory_order_relaxed);
         sharpness_.store(-1.0f, std::memory_order_relaxed);
+        previousSharpness_.store(-1.0f, std::memory_order_relaxed);
         probe_.store(on, std::memory_order_relaxed);
     }
     bool focusProbe() const { return probe_.load(std::memory_order_relaxed); }
     void noteSharpness(float value) {
+        previousSharpness_.store(sharpness_.load(std::memory_order_relaxed), std::memory_order_relaxed);
         sharpness_.store(value, std::memory_order_relaxed);
         probeCount_.fetch_add(1, std::memory_order_relaxed);
     }
-    float sharpness() const { return sharpness_.load(std::memory_order_relaxed); }
+    // The mean of the last two frames' sharpness (one frame's noise is a few %).
+    float sharpness() const {
+        const float last = sharpness_.load(std::memory_order_relaxed);
+        const float previous = previousSharpness_.load(std::memory_order_relaxed);
+        return previous >= 0.0f ? (last + previous) * 0.5f : last;
+    }
     int64_t probeCount() const { return probeCount_.load(std::memory_order_relaxed); }
 
 private:
@@ -156,6 +163,7 @@ private:
     std::atomic<bool> probe_{false};
     std::atomic<float> sharpness_{-1.0f};
     std::atomic<int64_t> probeCount_{0};
+    std::atomic<float> previousSharpness_{-1.0f};
     mutable std::mutex mutex_;
     std::optional<AppliedWhiteBalance> last_;
     std::optional<AppliedWhiteBalance> carried_;
