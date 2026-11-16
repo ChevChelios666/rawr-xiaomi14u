@@ -248,14 +248,14 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             l.streams.auxJpeg?.bufferUsage?.removePrefix("0x")?.toLongOrNull(16) ?: 0x100003L
         if (still == "rawrHal") {
             // X14U 50 MP through the camera's own pipeline, developed by Rawr (synthesized RGGB frame).
-            shootSynthesized(lens.camera.id, lens.camera.physical, usageOf(lens))
+            shootSynthesized(lens.camera.id, lens.camera.physical, usageOf(lens), aux = lens.streams.auxJpeg)
             return true
         }
         val lenses = latestSettings.effectiveLensProfiles(DeviceLensDefaults.lenses)
         val runAs = lens.runAsTarget()?.let { name -> lenses.firstOrNull { it.name.trim().equals(name.trim(), ignoreCase = true) } }
         if (runAs?.streams?.auxJpeg?.still == "rawrHal") {
             // The lens's "50 mp" runs as a rawrHal lens (3.2x / 5x): the same route on that lens's camera.
-            shootSynthesized(runAs.camera.id, runAs.camera.physical, usageOf(runAs))
+            shootSynthesized(runAs.camera.id, runAs.camera.physical, usageOf(runAs), aux = runAs.streams.auxJpeg)
             return true
         }
         if (runAs != null) {
@@ -382,7 +382,13 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
      * frame (HalRawSynth), viewfinder back, then a normal press that takes that frame instead of the viewfinder's
      * (native capture/single/SynthesizedStill): Rawr's JPEG and DNG with the usual names. Single frame (no merge).
      */
-    private fun shootSynthesized(cameraId: String, physicalId: String, usage: Long, aperture: Float? = null) {
+    private fun shootSynthesized(
+        cameraId: String,
+        physicalId: String,
+        usage: Long,
+        aperture: Float? = null,
+        aux: com.rawr.camera.settings.model.AuxJpegSettings? = null
+    ) {
         if (fullSizeJob?.isActive == true) return
         fullSizeBusyFlow.value = true
         fullSizeJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -443,7 +449,8 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 val ok = com.rawr.camera.x14u.HalJavaStill.shoot(getApplication(), cameraId, physicalId,
                     yuvStill = physicalId.isNotEmpty(), path = "/dev/null/$stamp", stillUsage = usage, plain = true,
                     deviceRotationDegrees = previewCoordinator.captureDeviceRotationDegrees, mosaic = mosaic, shotInfo = shot,
-                    exposureNs = rawrExposureNs, sensitivity = rawrIso, aperture = aperture)
+                    exposureNs = rawrExposureNs, sensitivity = rawrIso, aperture = aperture,
+                    keys = aux?.keys.orEmpty(), rawStream = aux?.rawStream == true)
                 mark("still")
                 previewCoordinator.start()
                 stopped = false

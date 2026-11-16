@@ -69,7 +69,11 @@ object HalJavaStill {
         exposureNs: Long = 0L,
         sensitivity: Int = 0,
         /** The 1x's variable aperture (f-number) on every request (Xiaomi's keys, as the lens's Aperture choices). */
-        aperture: Float? = null
+        aperture: Float? = null,
+        /** The lens's auxJpeg keys: session parameters, every request, or the still only. */
+        keys: List<com.rawr.camera.settings.model.VendorKey> = emptyList(),
+        /** Also configure a full-size RAW16 output (targeted by the still): makes the session pick a full-size mode? */
+        rawStream: Boolean = false
     ): Boolean {
         val started = System.nanoTime()
         fun ms() = "ms=%.0f".format((System.nanoTime() - started) / 1e6)
@@ -115,6 +119,16 @@ object HalJavaStill {
                     .getOrNull() ?: ImageReader.newInstance(8192, 6144, stillFormat, 2)
             } else ImageReader.newInstance(8192, 6144, stillFormat, 2)
             readers += listOf(preview, analysis, still)
+            // Sensor-mode test: a full-size RAW16 output in the same session (logged when a frame arrives, not used).
+            val raw = if (rawStream) runCatching {
+                ImageReader.newInstance(8192, 6144, ImageFormat.RAW_SENSOR, 2, 0x100003L)
+            }.onFailure { log("RAW_READER_FAILED ${it.message}") }.getOrNull() else null
+            raw?.let { r ->
+                readers += r
+                r.setOnImageAvailableListener({ reader ->
+                    reader.acquireNextImage()?.use { log("RAW_FRAME ${it.width}x${it.height} ${ms()}") }
+                }, handler)
+            }
             for (r in listOf(preview, analysis)) r.setOnImageAvailableListener({ it.acquireLatestImage()?.close() }, handler)
             val stillImage = AtomicReference<ByteArray?>()
             val stillSize = AtomicReference("none")
@@ -130,13 +144,19 @@ object HalJavaStill {
                 stillLatch.countDown()
             }, handler)
 
-            val outputs = listOf(preview, analysis, still).map { r ->
+            val outputs = listOfNotNull(preview, analysis, still, raw).map { r ->
                 OutputConfiguration(r.surface).also { if (physicalId.isNotEmpty()) it.setPhysicalCameraId(physicalId) }
             }
             val params = cam.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
                 runCatching { set(CLIENT, "com.android.camera") }
                 runCatching { set(MFNR, 0) }
+                keys.filter { it.enabled && it.scope == com.rawr.camera.settings.model.VendorKeyScope.Session }.forEach { setKey(it) }
             }.build()
+            if (keys.isNotEmpty() || raw != null) {
+                log("KEYS raw=${raw != null} " + keys.filter { it.enabled }.joinToString(" ") {
+                    "${it.scope.wireName}:${it.tag}=${it.values.joinToString(",")}"
+                })
+            }
             val configured = CountDownLatch(1)
             val config = SessionConfiguration(SessionConfiguration.SESSION_REGULAR, outputs, executor,
                 object : CameraCaptureSession.StateCallback() {
@@ -176,6 +196,7 @@ object HalJavaStill {
                 }
                 set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
                 set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+                keys.filter { it.enabled && it.scope == com.rawr.camera.settings.model.VendorKeyScope.Request }.forEach { setKey(it) }
             }
             val repeating = cam.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).common().apply {
                 addTarget(preview.surface)
@@ -210,6 +231,8 @@ object HalJavaStill {
             // runs its own ISO under AE OFF (logical camera 0: asked 317, got 1845 at f/1.63, 23:04 Nov 15).
             fun stillRequest(controlOff: Boolean) = cam.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).common().apply {
                 addTarget(still.surface)
+                raw?.let { addTarget(it.surface) }
+                keys.filter { it.enabled && it.scope == com.rawr.camera.settings.model.VendorKeyScope.Still }.forEach { setKey(it) }
                 set(CaptureRequest.CONTROL_ENABLE_ZSL, false)
                 set(CaptureRequest.CONTROL_AE_LOCK, true)
                 if (manual) {
@@ -336,6 +359,29 @@ object HalJavaStill {
             log("DONE written=${if (written) 1 else 0} ${ms()}")
         }
         return written
+    }
+
+    /** A lens vendor key on this request (one value as its boxed type, several as an array); refused keys are logged. */
+    private fun CaptureRequest.Builder.setKey(key: com.rawr.camera.settings.model.VendorKey) {
+        runCatching {
+            val v = key.values
+            when (key.type) {
+                com.rawr.camera.settings.model.VendorKeyType.Byte ->
+                    if (v.size == 1) set(CaptureRequest.Key(key.tag, java.lang.Byte::class.java), v[0].toInt().toByte())
+                    else set(CaptureRequest.Key(key.tag, ByteArray::class.java), ByteArray(v.size) { v[it].toInt().toByte() })
+                com.rawr.camera.settings.model.VendorKeyType.Int32 ->
+                    if (v.size == 1) set(CaptureRequest.Key(key.tag, Int::class.javaObjectType), v[0].toInt())
+                    else set(CaptureRequest.Key(key.tag, IntArray::class.java), IntArray(v.size) { v[it].toInt() })
+                com.rawr.camera.settings.model.VendorKeyType.Int64 ->
+                    if (v.size == 1) set(CaptureRequest.Key(key.tag, Long::class.javaObjectType), v[0].toLong())
+                    else set(CaptureRequest.Key(key.tag, LongArray::class.java), LongArray(v.size) { v[it].toLong() })
+                com.rawr.camera.settings.model.VendorKeyType.Float ->
+                    if (v.size == 1) set(CaptureRequest.Key(key.tag, Float::class.javaObjectType), v[0].toFloat())
+                    else set(CaptureRequest.Key(key.tag, FloatArray::class.java), FloatArray(v.size) { v[it].toFloat() })
+                com.rawr.camera.settings.model.VendorKeyType.Double ->
+                    set(CaptureRequest.Key(key.tag, Double::class.javaObjectType), v[0])
+            }
+        }.onFailure { log("KEY_REFUSED ${key.tag} ${it.message}") }
     }
 
     private fun jpegBytes(image: Image): ByteArray {

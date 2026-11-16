@@ -290,6 +290,14 @@ internal object LensProfileCodec {
                 choice(aux, "still", listOf("camera", "plain", "session", "sessionPlain", "gcam", "gcamYuv", "java", "javaYuv", "gcamYuvPlain", "gcamPlain", "javaRaw", "rawrHal"))
                 number(aux, "useCase", 0.0..Int.MAX_VALUE.toDouble(), true)
                 buffers(aux, count = false)
+                flags(aux, "rawStream")
+                if (aux.has("keys")) {
+                    val array = aux.getJSONArray("keys")
+                    for (i in 0 until array.length()) {
+                        val decoded = decodeKeys(JSONArray().put(array.getJSONObject(i))).single()
+                        require(decoded.tag.isNotBlank() && decoded.values.isNotEmpty() && validateVendorKey(decoded) == null)
+                    }
+                }
             }
         }
         objectField(o, "session")?.let { session ->
@@ -429,6 +437,8 @@ internal object LensProfileCodec {
                 aux.bufferUsage?.let { put("buffers", JSONObject().put("usage", it)) }
                 if (aux.useCase != 0) put("useCase", aux.useCase)
                 aux.still?.let { put("still", it) }
+                if (aux.keys.isNotEmpty()) put("keys", encodeKeys(aux.keys))
+                if (aux.rawStream) put("rawStream", true)
             })
         }
         val s = lens.session
@@ -572,7 +582,9 @@ internal object LensProfileCodec {
                 auxJpeg = streams?.optJSONObject("auxJpeg")?.let { aux ->
                     decodeSize(aux)?.let {
                         AuxJpegSettings(it, bufferUsage(aux), useCase(aux),
-                            aux.optString("still").takeIf { s -> s in listOf("camera", "plain", "session", "sessionPlain", "gcam", "gcamYuv", "java", "javaYuv", "gcamYuvPlain", "gcamPlain", "javaRaw", "rawrHal") })
+                            aux.optString("still").takeIf { s -> s in listOf("camera", "plain", "session", "sessionPlain", "gcam", "gcamYuv", "java", "javaYuv", "gcamYuvPlain", "gcamPlain", "javaRaw", "rawrHal") },
+                            keys = decodeKeys(aux.optJSONArray("keys")),
+                            rawStream = aux.optBoolean("rawStream", false))
                     }
                 }
             ),
