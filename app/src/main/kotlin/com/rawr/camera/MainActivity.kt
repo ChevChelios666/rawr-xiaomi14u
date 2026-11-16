@@ -277,6 +277,7 @@ class MainActivity : ComponentActivity() {
                     proUi = proUi,
                     tools = tools,
                     onSetPhotoAspect = captureViewModel::setPhotoAspect,
+                    onSetPanoProjection = captureViewModel::setPanoProjection,
                     onToggleLevel = captureViewModel::toggleLevel,
                     onSetHorizonMode = captureViewModel::setHorizonMode,
                     onSetStabilize = captureViewModel::setStabilize,

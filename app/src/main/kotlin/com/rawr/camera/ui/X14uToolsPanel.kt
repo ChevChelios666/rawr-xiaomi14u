@@ -116,6 +116,19 @@ internal fun lumaScopeMode(mode: WaveformMode): WaveformMode = when (mode) {
     else -> mode
 }
 
+private val PANO_OVERLAPS = listOf(20, 30, 40)
+
+private typealias PanoProjection = com.rawr.camera.settings.model.PanoProjection
+
+/** The Projection tile's big text. */
+private fun panoProjectionShort(p: PanoProjection): String = when (p) {
+    PanoProjection.Auto -> "Auto"
+    PanoProjection.Rectilinear -> "Rect."
+    PanoProjection.Cylindrical -> "Cyl."
+    PanoProjection.Panini -> "Panini"
+    PanoProjection.Spherical -> "Sph."
+}
+
 private class X14uTile(
     val key: String,
     val label: String,
@@ -147,7 +160,9 @@ internal fun X14uToolsPanel(
     tileHeight: androidx.compose.ui.unit.Dp = 86.dp,
     /** The lens's camera profiles (photo or video set, by mode) and picking one (null = the camera's own). */
     dcp: com.rawr.camera.model.DcpQuickState? = null,
-    onSelectDcp: (String?) -> Unit = {}
+    onSelectDcp: (String?) -> Unit = {},
+    /** Pano: its set (Overlap and Projection tiles first); null in the other modes. */
+    panoSet: PanoSet? = null
 ) {
     val extras = LocalCaptureExtras.current
     val tools = extras.tools
@@ -162,6 +177,12 @@ internal fun X14uToolsPanel(
     val toggleChoice: (String) -> Unit = { key -> onChoice(if (choice == key) null else key) }
     val wb = state.whiteBalanceMode
     val tiles = buildList {
+        // Pano: the settings that stay out of its row (Nov 16, option A).
+        if (panoSet != null) {
+            add(X14uTile("projection", "Projection", tools.panoProjection != PanoProjection.Auto,
+                text = panoProjectionShort(tools.panoProjection)) { toggleChoice("projection") })
+            add(X14uTile("overlap", "Overlap", panoSet.overlap != 30, text = "${panoSet.overlap}%") { toggleChoice("overlap") })
+        }
         add(X14uTile("grid", "Grid", state.grid != GridMode.Off, X14uIcons.Grid, value = gridLabel(state.grid)) { toggleChoice("grid") })
         if (!video) {
             add(X14uTile("aspect", "Aspect", tools.photoAspect != PhotoAspect.Native,
@@ -263,6 +284,12 @@ internal fun X14uToolsPanel(
                 "hist" -> Triple(HistogramChoice.entries.map { it.label }, state.histogramChoice().ordinal) { i: Int ->
                     val c = HistogramChoice.entries[i]
                     dispatch(SetSingleScope(c.scope, c.mode ?: state.waveformMode))
+                }
+                "projection" -> Triple(PanoProjection.entries.map { it.label }, tools.panoProjection.ordinal) { i: Int ->
+                    extras.onSetPanoProjection(PanoProjection.entries[i])
+                }
+                "overlap" -> Triple(PANO_OVERLAPS.map { "$it%" }, PANO_OVERLAPS.indexOf(panoSet?.overlap ?: 30)) { i: Int ->
+                    panoSet?.overlap = PANO_OVERLAPS[i]
                 }
                 "dcp" -> {
                     val files = listOf<String?>(null) + dcp?.profiles.orEmpty().map { it.file }

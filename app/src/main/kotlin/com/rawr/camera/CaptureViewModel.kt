@@ -596,7 +596,9 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         /** Photography Kit grip read over USB, and what its dial turns. */
         val gripUsb: Boolean = true,
         val gripDial: com.rawr.camera.settings.model.GripDial = com.rawr.camera.settings.model.GripDial.Ev,
-        val gripDialReverse: Boolean = false
+        val gripDialReverse: Boolean = false,
+        /** Pano: how the merge projects the set (the Projection tile in Pano). */
+        val panoProjection: com.rawr.camera.settings.model.PanoProjection = com.rawr.camera.settings.model.PanoProjection.Auto
     )
     val tools: StateFlow<ToolsState> = settingsEditor.state
         .map { v ->
@@ -613,7 +615,8 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 v.videoAudioMeter,
                 v.gripUsb,
                 v.gripDial,
-                v.gripDialReverse
+                v.gripDialReverse,
+                v.panoProjection
             )
         }
         .distinctUntilChanged()
@@ -630,6 +633,10 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
 
     fun setPhotoAspect(aspect: com.rawr.camera.settings.model.PhotoAspect) {
         settingsEditor.update { it.copy(photoAspect = aspect) }
+    }
+
+    fun setPanoProjection(projection: com.rawr.camera.settings.model.PanoProjection) {
+        settingsEditor.update { it.copy(panoProjection = projection) }
     }
     /** One-time "Swipe up for Photo+" hint: shows until Photo/Photo+ is switched once, at most twice. */
     val stillsHint: StateFlow<Boolean> = settingsEditor.state

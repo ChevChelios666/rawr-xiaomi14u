@@ -644,11 +644,19 @@ internal fun X14uCaptureLayout(
             } else all
             // Pano: its own settings in the row (sweep, overlap, shape, stop at), a divider, then the exposure cells
             // (EV in A) and F. The A·M·S·I pill and S / ISO stay out: frame 1 locks them for the set.
-            cells = if (pano) panoCells(panoSet) + photoCells.mapIndexed { i, cell ->
-                (if (i == 0) cell.copy(groupStart = true) else cell).let { if (panoLocked) it.copy(enabled = false) else it }
-            } else photoCells
+            // Option A (Nov 16): MODE (A·M·S·I) after the divider, then that mode's cells as in Photo (A: EV, S: S EV,
+            // I: ISO EV, M: S ISO) and F. Overlap and projection are tiles in the swipe-down panel.
+            cells = if (pano) panoCells(panoSet) +
+                (listOf(X14uCell(PANO_MODE_KEY, state.exposureControl.mode.shortLabel, "MODE", groupStart = true)) + photoCells)
+                    .map { if (panoLocked) it.copy(enabled = false) else it }
+            else photoCells
             editorFor = { key ->
-                if (key.startsWith("pano.")) panoEditor(key, panoSet)
+                if (key == PANO_MODE_KEY) {
+                    val modes = ExposureMode.entries.filter { it in state.capabilities.supportedExposureModes }
+                    X14uEditor.Chips(modes.map { it.shortLabel }, modes.indexOf(state.exposureControl.mode), enabled = !panoLocked) { i ->
+                        if (modes[i] != state.exposureControl.mode) dispatch(SetExposureMode(modes[i]))
+                    }
+                } else if (key.startsWith("pano.")) panoEditor(key, panoSet)
                 else if (key == ZOOM_KEY) zoomRuler(zoom, zoomChain, setZoom)
                 else if (key == PHOTO_FOCUS_KEY) photoFocusEditor(state, dispatch, onMfTouch)
                 else if (key == "f" && fiftyMp && apertureRow(lensOptions) >= 0) X14uEditor.Message("f/2 while 50 MP is on")
@@ -1117,7 +1125,8 @@ internal fun X14uCaptureLayout(
                         modifier = Modifier.fillMaxWidth(),
                         tileHeight = 86.dp * s,
                         dcp = quick.dcps.firstOrNull { it.lensId == state.selectedLensId },
-                        onSelectDcp = { file -> onQuickEvent(CaptureQuickEvent.SelectDcp(state.selectedLensId, file)) }
+                        onSelectDcp = { file -> onQuickEvent(CaptureQuickEvent.SelectDcp(state.selectedLensId, file)) },
+                        panoSet = if (pano) panoSet else null
                     )
                 }
             }
@@ -1834,9 +1843,11 @@ private fun exposureEditor(
     else -> focusRuler(state, dispatch, onMfTouch)
 }
 
+private const val PANO_MODE_KEY = "pano.mode"
+
 /**
- * Pano's cells (Nov 16 mockup): SWEEP (Wide), OVERLAP, SHAPE, STOP AT (Wide); during a set FRAMES first and the
- * settings dimmed (frame 1 locked them). Each opens its choices where the mode strip is.
+ * Pano's cells (Nov 16 mockup, option A): SWEEP (Wide), SHAPE, STOP AT (Wide); during a set FRAMES first and the
+ * settings dimmed (frame 1 locked them). Each opens its choices where the mode strip is. Overlap is a panel tile.
  */
 private fun panoCells(set: PanoSet): List<X14uCell> {
     val wide = set.shape == PanoShape.Wide
@@ -1844,7 +1855,6 @@ private fun panoCells(set: PanoSet): List<X14uCell> {
     return buildList {
         if (locked) add(X14uCell("pano.frames", if (set.finite) "${set.frames}/${set.targets.size}" else "${set.frames}", "FRAMES"))
         if (wide) add(X14uCell("pano.dir", set.screenDirection.arrow, "SWEEP", enabled = !locked))
-        if (!locked) add(X14uCell("pano.overlap", "${set.overlap}%", "OVERLAP"))
         if (!locked) add(X14uCell("pano.shape", set.shape.label, "SHAPE"))
         if (wide) add(X14uCell("pano.stop", if (set.stopAt == 0) "Free" else "${set.stopAt}°", "STOP AT", enabled = !locked))
     }

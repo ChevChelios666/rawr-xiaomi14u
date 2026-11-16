@@ -13,6 +13,8 @@ data class CaptureExtras(
     /** X14U tools panel (swipe down on the viewfinder). */
     val tools: com.rawr.camera.CaptureViewModel.ToolsState = com.rawr.camera.CaptureViewModel.ToolsState(),
     val onSetPhotoAspect: (com.rawr.camera.settings.model.PhotoAspect) -> Unit = {},
+    /** Pano: the merge's projection (the Projection tile). */
+    val onSetPanoProjection: (com.rawr.camera.settings.model.PanoProjection) -> Unit = {},
     val onToggleLevel: () -> Unit = {},
     /** Video horizon Lock / Follow (the Level tile); either shows the level too. */
     val onSetHorizonMode: (lock: Boolean, follow: Boolean) -> Unit = { _, _ -> },
