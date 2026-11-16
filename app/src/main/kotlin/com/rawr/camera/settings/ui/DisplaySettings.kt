@@ -36,15 +36,8 @@ internal fun DisplayControlsSettings(state: SettingsUiState, dispatch: SettingsD
                     dispatch.invoke(OpenSection(SettingsSection.Monitoring))
                 }
             )
-            SettingDivider()
-            SettingsRow(
-                "Control Style",
-                "Capture control surface appearance",
-                testTag = SettingsTestTags.row("DisplayControls", "control_style"),
-                onClick = {
-                    dispatch.invoke(OpenSection(SettingsSection.ControlStyle))
-                }
-            )
+            // X14U: no "Control Style" row: Frosted / Basic only skin upstream's previous capture screen, which this
+            // build never shows (ControlStyleSettings and the setting stay, for upstream merges).
         }
         SettingsGroup(
             title = "Xiaomi 14 Ultra grip",
