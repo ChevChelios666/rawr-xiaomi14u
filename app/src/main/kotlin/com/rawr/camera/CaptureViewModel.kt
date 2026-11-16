@@ -391,6 +391,10 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             var stopped = false
             var carried = false
             var held = false
+            // Where the shot's time goes (log SYNTH_TIMING, ms from the press).
+            val pressed = android.os.SystemClock.elapsedRealtime()
+            val marks = mutableListOf<String>()
+            fun mark(name: String) { marks += "$name=${android.os.SystemClock.elapsedRealtime() - pressed}" }
             try {
                 // The self-timer, shown like Rawr's own (big centred seconds; a tap calls the shot off).
                 val timerMs = controller.state.value.selfTimer.seconds * 1_000L
@@ -407,6 +411,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                         fullSizeCountdownFlow.value = null
                     }
                 }
+                mark("timer")
                 status("50 MP…")
                 // Rawr's own exposure for the still (the camera's AE ran ~2.4x brighter at ~6x the ISO, 21:05 Nov 15).
                 val viewfinder = runCatching {
@@ -434,6 +439,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                     yuvStill = physicalId.isNotEmpty(), path = "/dev/null/$stamp", stillUsage = usage, plain = true,
                     deviceRotationDegrees = previewCoordinator.captureDeviceRotationDegrees, mosaic = mosaic, shotInfo = shot,
                     exposureNs = rawrExposureNs, sensitivity = rawrIso, aperture = aperture)
+                mark("still")
                 previewCoordinator.start()
                 stopped = false
                 if (!ok || mosaic.buffer == null) {
@@ -443,13 +449,16 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                 }
                 // The viewfinder's own frames first (metadata and colour of this lens), then the press.
                 waitFor(6_000L) { previewCoordinator.heldNewFrames() >= 3 }
+                mark("viewfinder")
                 previewCoordinator.setSynthesizedStill(mosaic, shot.get())
                 status("50 MP · developing")
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     controller.dispatch(com.rawr.camera.architecture.TriggerCaptureNow)
                 }
                 waitFor(6_000L) { previewCoordinator.stillCaptureHoldsCamera() }
+                mark("claimed")
                 waitFor(20_000L) { !previewCoordinator.stillCaptureHoldsCamera() }
+                mark("released")
             } finally {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                     previewCoordinator.setSynthesizedStill(null, null)
@@ -457,6 +466,9 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                     if (held) waitFor(6_000L) { previewCoordinator.heldNewFrames() >= 2 }
                     if (carried) previewCoordinator.setCarryViewAcrossRestart(false)
                     previewCoordinator.setViewfinderHold(false)
+                    mark("live")
+                    android.util.Log.i("RawrCamCapture", "SYNTH_TIMING camera=$cameraId physical=${physicalId.ifEmpty { "none" }} " +
+                        marks.joinToString(" "))
                     status(null)
                     fullSizeBusyFlow.value = false
                 }
