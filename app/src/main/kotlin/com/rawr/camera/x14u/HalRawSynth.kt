@@ -90,12 +90,26 @@ object HalRawSynth {
         }
         override fun row(bytes: ByteArray) { buffer?.put(bytes) }
         override fun close() { buffer?.flip() }
+        /** Filled from native code: the whole buffer is written. */
+        fun filled() { buffer?.let { it.position(it.capacity()) } }
     }
 
     /** Lays [nv21] (full-range BT.601 camera RGB through [ShotInfo.curve]) out as the RGGB mosaic into [sink]. */
     fun writeDng(sink: MosaicOut, nv21: ByteArray, width: Int, height: Int, shot: ShotInfo) {
         // Curve decode at 1/16 code steps (the YUV->RGB conversion lands between 8-bit codes).
         val lut = IntArray(256 * 16 + 1) { i -> linearize(i / (255.0 * 16), shot.curve) }
+        // Native and on several threads into Rawr's develop buffer (the loop below took ~1.8 s at 50 MP).
+        if (sink is BufferOut) {
+            val done = runCatching {
+                sink.begin(width, height)
+                HalRawSynthNative.nv21Mosaic(nv21, width, height, sink.buffer!!, lut)
+            }.getOrDefault(false)
+            if (done) {
+                sink.filled()
+                sink.close()
+                return
+            }
+        }
         sink.use { out ->
             out.begin(width, height)
             val row = ByteArray(width * 2)
@@ -131,6 +145,24 @@ object HalRawSynth {
      * output; their JPEG works): decoded in bands of rows, sRGB-coded camera RGB per pixel.
      */
     fun writeDngFromJpeg(sink: MosaicOut, jpeg: ByteArray, shot: ShotInfo): Pair<Int, Int> {
+        // Native decode (libjpeg-turbo) and layout on several threads into Rawr's develop buffer (~3.8 s in Kotlin).
+        if (sink is BufferOut) {
+            val dims = runCatching { HalRawSynthNative.jpegSize(jpeg) }.getOrNull()
+            if (dims != null) {
+                val width = dims[0]
+                val height = dims[1] and 1.inv()
+                val lut = IntArray(256) { i -> linearize(i / 255.0, shot.curve) }
+                val done = runCatching {
+                    sink.begin(width, height)
+                    HalRawSynthNative.jpegMosaic(jpeg, sink.buffer!!, width, height, lut)
+                }.getOrDefault(false)
+                if (done) {
+                    sink.filled()
+                    sink.close()
+                    return width to height
+                }
+            }
+        }
         val decoder = android.graphics.BitmapRegionDecoder.newInstance(jpeg, 0, jpeg.size)
             ?: throw IllegalStateException("jpeg_decoder")
         try {

@@ -67,23 +67,68 @@ struct Grid {
 };
 // Channel (0 R, 1 G, 2 B) at (x & 1, y & 1) for Camera2's CFA codes RGGB / GRBG / GBRG / BGGR.
 constexpr int kCfaChannel[4][4] = {{0, 1, 1, 2}, {1, 0, 2, 1}, {1, 2, 0, 1}, {2, 1, 1, 0}};
-template <typename Black>
-Grid channels(const std::vector<uint8_t>& raw, uint32_t w, uint32_t h, uint32_t cfa, Black black) {
-    Grid g;
+// Runs [work](y0, y1) over row bands on up to 8 threads.
+template <typename Work>
+void parallelRows(uint32_t h, Work work) {
+    const uint32_t threads = std::clamp(std::thread::hardware_concurrency(), 1u, 8u);
+    std::vector<std::thread> pool;
+    for (uint32_t t = 1; t < threads; ++t) pool.emplace_back([=, &work] { work(t, h * t / threads, h * (t + 1) / threads); });
+    work(0u, 0u, h / threads);
+    for (auto& t : pool) t.join();
+}
+// [black]: per 2x2 site (row-major).
+Grid channels(const std::vector<uint8_t>& raw, uint32_t w, uint32_t h, uint32_t cfa, const double black[4]) {
     const int* map = kCfaChannel[cfa & 3u];
-    for (uint32_t y = 0; y < h; ++y) {
-        const int cy = int(uint64_t(y) * Grid::GY / h);
-        const size_t row = size_t(y) * w;
-        for (uint32_t x = 0; x < w; ++x) {
-            const int c = cy * Grid::GX + int(uint64_t(x) * Grid::GX / w);
-            const int ch = map[(y & 1u) * 2 + (x & 1u)];
-            const uint16_t v = at(raw, row + x);
-            g.sum[ch][c] += double(v) - black(x, y);
-            g.count[ch][c]++;
-            if (v > g.peak[c]) g.peak[c] = v;
+    const auto* data = reinterpret_cast<const uint16_t*>(raw.data());  // little-endian, as the device
+    std::vector<int> colCell(w);
+    for (uint32_t x = 0; x < w; ++x) colCell[x] = int(uint64_t(x) * Grid::GX / w);
+    const uint32_t threads = std::clamp(std::thread::hardware_concurrency(), 1u, 8u);
+    std::vector<Grid> parts(threads);
+    parallelRows(h, [&](uint32_t part, uint32_t y0, uint32_t y1) {
+        Grid& g = parts[part];
+        std::vector<uint64_t> sums[3] = {std::vector<uint64_t>(Grid::GX), std::vector<uint64_t>(Grid::GX),
+                                         std::vector<uint64_t>(Grid::GX)};
+        std::vector<uint32_t> counts[3] = {std::vector<uint32_t>(Grid::GX), std::vector<uint32_t>(Grid::GX),
+                                           std::vector<uint32_t>(Grid::GX)};
+        for (uint32_t y = y0; y < y1; ++y) {
+            const int cy = int(uint64_t(y) * Grid::GY / h);
+            const uint16_t* row = data + size_t(y) * w;
+            const int ch0 = map[(y & 1u) * 2], ch1 = map[(y & 1u) * 2 + 1];
+            uint16_t* peak = g.peak.data() + cy * Grid::GX;
+            for (int ch = 0; ch < 3; ++ch) {
+                std::fill(sums[ch].begin(), sums[ch].end(), 0);
+                std::fill(counts[ch].begin(), counts[ch].end(), 0);
+            }
+            for (uint32_t x = 0; x + 1 < w; x += 2) {
+                const int c0 = colCell[x], c1 = colCell[x + 1];
+                const uint16_t v0 = row[x], v1 = row[x + 1];
+                sums[ch0][c0] += v0; counts[ch0][c0]++;
+                sums[ch1][c1] += v1; counts[ch1][c1]++;
+                if (v0 > peak[c0]) peak[c0] = v0;
+                if (v1 > peak[c1]) peak[c1] = v1;
+            }
+            const double b0 = black[(y & 1u) * 2], b1 = black[(y & 1u) * 2 + 1];
+            for (int cx = 0; cx < Grid::GX; ++cx) {
+                for (int ch = 0; ch < 3; ++ch) {
+                    if (!counts[ch][cx]) continue;
+                    const double b = ch == ch0 && ch == ch1 ? (b0 + b1) / 2 : (ch == ch0 ? b0 : b1);
+                    g.sum[ch][cy * Grid::GX + cx] += double(sums[ch][cx]) - b * counts[ch][cx];
+                    g.count[ch][cy * Grid::GX + cx] += counts[ch][cx];
+                }
+            }
+        }
+    });
+    Grid out;
+    for (const Grid& g : parts) {
+        for (int c = 0; c < Grid::GX * Grid::GY; ++c) {
+            for (int ch = 0; ch < 3; ++ch) {
+                out.sum[ch][c] += g.sum[ch][c];
+                out.count[ch][c] += g.count[ch][c];
+            }
+            out.peak[c] = std::max(out.peak[c], g.peak[c]);
         }
     }
-    return g;
+    return out;
 }
 double median(std::vector<double> v) {
     if (v.empty()) return 1.0;
@@ -108,7 +153,8 @@ uint32_t removeHotPixels(Pending& p) {
             for (uint32_t x = 2; x + 2 < w; ++x) {
                 const uint16_t v = row[x];
                 if (v < 1024) continue;
-                // Same-colour neighbours of an RGGB site are two away.
+                // Same-colour neighbours of an RGGB site are two away; most sites fail on the first two.
+                if (uint32_t(v) <= uint32_t(row[x - 2]) + 512u || uint32_t(v) <= uint32_t(row[x + 2]) + 512u) continue;
                 n[0] = row[x - 2]; n[1] = row[x + 2];
                 n[2] = row[x - 2 * size_t(w)]; n[3] = row[x + 2 * size_t(w)];
                 n[4] = row[x - 2 * size_t(w) - 2]; n[5] = row[x - 2 * size_t(w) + 2];
@@ -148,14 +194,15 @@ std::string matchTone(const imaging::RawSnapshot& ref, Pending& p) {
     const auto& bl = m.blackLevelPhysicalRggb;
     const float blackMean = (bl[0] + bl[1] + bl[2] + bl[3]) / 4.0f;
     const double range = double(white) - blackMean;
-    const Grid r = channels(ref.raw16, ref.width, ref.height, cfa,
-                            [&](uint32_t x, uint32_t y) { return double(bl[(y & 1u) * 2 + (x & 1u)]); });
-    const Grid s = channels(p.raw16, p.width, p.height, 0u, [](uint32_t, uint32_t) { return 0.0; });
+    const double refBlack[4] = {bl[0], bl[1], bl[2], bl[3]}, noBlack[4] = {0, 0, 0, 0};
+    const Grid r = channels(ref.raw16, ref.width, ref.height, cfa, refBlack);
+    const Grid s = channels(p.raw16, p.width, p.height, 0u, noBlack);
     // The 12 MP RAW still carries lens shading; its map (R, G_even, G_odd, B per point) brings it level.
     const uint32_t mw = m.lensShadingMapWidth, mh = m.lensShadingMapHeight;
     const bool lsc = mw >= 2 && mh >= 2 && m.lensShadingMap.size() >= size_t(mw) * mh * 4;
     std::vector<std::pair<double, double>> pairs;  // green: (synth, ref in synth units)
-    std::vector<double> redRatio, blueRatio;        // per cell (synth R/G) / (ref R/G), same for B
+    std::vector<double> redRatio, blueRatio;        // per cell (synth R/G) / (ref R/G), same for B (bright cells)
+    std::vector<double> looseRed, looseBlue;        // the same down to near black (a dark scene's fallback)
     for (int cy = 0; cy < Grid::GY; ++cy) {
         for (int cx = 0; cx < Grid::GX; ++cx) {
             const int c = cy * Grid::GX + cx;
@@ -176,9 +223,16 @@ std::string matchTone(const imaging::RawSnapshot& ref, Pending& p) {
                 sv[ch] = s.mean(ch, c);
             }
             if (rv[1] > 40.0 && sv[1] > 40.0) pairs.emplace_back(sv[1], rv[1]);
+            // Colour only where R and B are well above black (~1%): in dim warm light the camera's 8-bit still clips
+            // blue's noise at zero, which biased the blue factor ~4% high indoors (00:22 Nov 16).
             if (rv[1] > 40.0 && sv[1] > 40.0 && rv[0] > 20.0 && sv[0] > 20.0 && rv[2] > 20.0 && sv[2] > 20.0) {
-                redRatio.push_back((sv[0] / sv[1]) / (rv[0] / rv[1]));
-                blueRatio.push_back((sv[2] / sv[1]) / (rv[2] / rv[1]));
+                const double qr = (sv[0] / sv[1]) / (rv[0] / rv[1]), qb = (sv[2] / sv[1]) / (rv[2] / rv[1]);
+                looseRed.push_back(qr);
+                looseBlue.push_back(qb);
+                if (rv[0] > 640.0 && sv[0] > 640.0 && rv[2] > 640.0 && sv[2] > 640.0) {
+                    redRatio.push_back(qr);
+                    blueRatio.push_back(qb);
+                }
             }
         }
     }
@@ -203,6 +257,10 @@ std::string matchTone(const imaging::RawSnapshot& ref, Pending& p) {
     // Colour: the 50 MP still's R/G and B/G against the 12 MP RAW's, cell by cell (the 3.2x / 5x plain stills
     // carry less blue than their sensor: 0.84x at 21:05, and Rawr's develop halved it in the JPEG at 23:41 Nov 15).
     double kR = 1.0, kB = 1.0;
+    if (redRatio.size() < 300 && looseRed.size() >= 300) {
+        redRatio.swap(looseRed);
+        blueRatio.swap(looseBlue);
+    }
     if (redRatio.size() >= 300) {
         kR = std::clamp(1.0 / median(redRatio), 0.5, 2.0);
         kB = std::clamp(1.0 / median(blueRatio), 0.5, 2.0);
@@ -257,7 +315,8 @@ std::string matchTone(const imaging::RawSnapshot& ref, Pending& p) {
     const float fR = float(kR), fB = float(kB);
     auto& raw = p.raw16;
     const uint32_t w = p.width, h = p.height & ~1u;
-    for (uint32_t y = 0; y < h; y += 2) {
+    parallelRows(h / 2, [&](uint32_t, uint32_t pair0, uint32_t pair1) {
+    for (uint32_t y = pair0 * 2; y < pair1 * 2; y += 2) {
         uint8_t* r0 = raw.data() + size_t(y) * w * 2;
         uint8_t* r1 = r0 + size_t(w) * 2;
         for (uint32_t x = 0; x + 1 < w; x += 2) {
@@ -274,6 +333,7 @@ std::string matchTone(const imaging::RawSnapshot& ref, Pending& p) {
             }
         }
     }
+    });
     int len = std::snprintf(line, sizeof line, "SYNTH_TONE applied cells=%zu corr=%.3f lsc=%d ref=%ux%u cfa=%u white=%u "
                             "colour=%zu kR=%.3f kB=%.3f gains=",
                             n, corr, lsc, ref.width, ref.height, cfa, outWhite, redRatio.size(), kR, kB);

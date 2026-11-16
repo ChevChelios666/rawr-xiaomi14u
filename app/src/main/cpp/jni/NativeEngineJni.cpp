@@ -1,3 +1,4 @@
+#include "camera/HalRawSynthNative.h"
 #include "geometry/HorizonLock.h"
 #include "geometry/Stabilizer.h"
 #include "camera/ShotHandover.h"
@@ -245,6 +246,51 @@ extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreview
 
 // X14U H route (rawrHal): the 12 MP view restarts after the Java 50 MP still; keep its white balance, exposure and
 // lens position across the restart (the claimed tone/colour frame comes right after it).
+// X14U 50 MP (camera's own pipeline): plain still -> linear RGGB mosaic (x14u/HalRawSynthNative.kt).
+extern "C" JNIEXPORT jintArray JNICALL Java_com_rawr_camera_x14u_HalRawSynthNative_jpegSize(JNIEnv* env, jclass,
+                                                                                            jbyteArray jpeg) {
+    const jsize n = env->GetArrayLength(jpeg);
+    jbyte* bytes = env->GetByteArrayElements(jpeg, nullptr);
+    int w = 0, h = 0;
+    const bool ok = rawrcam::camera::halsynth::jpegSize(reinterpret_cast<const uint8_t*>(bytes), size_t(n), w, h);
+    env->ReleaseByteArrayElements(jpeg, bytes, JNI_ABORT);
+    if (!ok) return nullptr;
+    jintArray result = env->NewIntArray(2);
+    const jint dims[2] = {w, h};
+    env->SetIntArrayRegion(result, 0, 2, dims);
+    return result;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL Java_com_rawr_camera_x14u_HalRawSynthNative_jpegMosaic(
+    JNIEnv* env, jclass, jbyteArray jpeg, jobject out, jint width, jint height, jintArray lut) {
+    auto* dst = static_cast<uint16_t*>(env->GetDirectBufferAddress(out));
+    if (!dst || env->GetDirectBufferCapacity(out) < jlong(width) * height * 2 || env->GetArrayLength(lut) < 256)
+        return JNI_FALSE;
+    const jsize n = env->GetArrayLength(jpeg);
+    jbyte* bytes = env->GetByteArrayElements(jpeg, nullptr);
+    jint* table = env->GetIntArrayElements(lut, nullptr);
+    const bool ok = rawrcam::camera::halsynth::jpegToMosaic(reinterpret_cast<const uint8_t*>(bytes), size_t(n), dst,
+                                                            width, height, table);
+    env->ReleaseIntArrayElements(lut, table, JNI_ABORT);
+    env->ReleaseByteArrayElements(jpeg, bytes, JNI_ABORT);
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL Java_com_rawr_camera_x14u_HalRawSynthNative_nv21Mosaic(
+    JNIEnv* env, jclass, jbyteArray nv21, jint width, jint height, jobject out, jintArray lut) {
+    auto* dst = static_cast<uint16_t*>(env->GetDirectBufferAddress(out));
+    if (!dst || env->GetDirectBufferCapacity(out) < jlong(width) * height * 2 ||
+        env->GetArrayLength(lut) < 255 * 16 + 1 || env->GetArrayLength(nv21) < jlong(width) * height * 3 / 2)
+        return JNI_FALSE;
+    jbyte* bytes = env->GetByteArrayElements(nv21, nullptr);
+    jint* table = env->GetIntArrayElements(lut, nullptr);
+    const bool ok = rawrcam::camera::halsynth::nv21ToMosaic(reinterpret_cast<const uint8_t*>(bytes), width, height,
+                                                            dst, table);
+    env->ReleaseIntArrayElements(lut, table, JNI_ABORT);
+    env->ReleaseByteArrayElements(nv21, bytes, JNI_ABORT);
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
 extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setCarryViewAcrossRestart(
     JNIEnv*, jobject, jboolean on) {
     rawrcam::camera::shotHandover().setCarry(on == JNI_TRUE, /*sameMode=*/true);
