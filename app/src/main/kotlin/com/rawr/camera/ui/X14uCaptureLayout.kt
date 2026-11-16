@@ -1161,14 +1161,14 @@ private fun RowScope.X14uOptionToggles(
     enabled: Boolean,
     orientation: Orientation,
     onQuickEvent: (CaptureQuickEvent) -> Unit,
-    /** Burst shoots 12 MP frames: a row that runs the shot as another lens (50 MP) is greyed there. */
+    /** Burst shoots 12 MP frames: a row that runs the shot as another lens (50 MP) is greyed there (hidden in video). */
     burst: Boolean = false
 ) {
     val haptics = LocalCaptureHaptics.current
     lensOptionSlots(quick.lensOptions).filter { it.second.toggle }.forEach { (name, _) ->
         val row = options?.options?.indexOfFirst { it.name.trim().equals(name, ignoreCase = true) } ?: -1
         val runsAsLens = row >= 0 && options!!.options[row].choices.any { !it.runAs.isNullOrBlank() }
-        val available = options != null && row >= 0 && row !in options.unavailable && !(burst && runsAsLens)
+        val available = options != null && row >= 0 && row !in options.unavailable && !((burst || video) && runsAsLens)
         if (video && !available) return@forEach
         val on = available && options!!.picks.getOrElse(row) { 0 } == 1
         TopBarSlot {
