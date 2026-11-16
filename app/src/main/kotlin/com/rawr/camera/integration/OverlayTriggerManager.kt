@@ -41,15 +41,11 @@ internal class OverlayTriggerManager(
     private val lock = Any()
     private var armed: Set<OverlayMode> = emptySet()
     private var falseColor = false
-    private var shadowPulse = false
-    private var rawPulse = false
     private var peakManualPulse = false
     private var afPeaking = false
     private var afInFlight = false
     private var lastMask = -1
 
-    private var hideShadow: Job? = null
-    private var hideRaw: Job? = null
     private var hidePeakManual: Job? = null
     private var afDwell: Job? = null
     private var afFailsafe: Job? = null
@@ -64,25 +60,11 @@ internal class OverlayTriggerManager(
         emitLocked()
     }
 
-    /** Shadow/Blacks tone scrub event. Visible during the scrub, hides on release. */
-    fun pulseShadow() = synchronized(lock) {
-        shadowPulse = true
-        hideShadow = relaunchLocked(hideShadow, INACTIVITY_MS) {
-            shadowPulse = false
-            emitLocked()
-        }
-        emitLocked()
-    }
+    /** Shadow/Blacks tone scrub (X14U: the shadow overlay shows whenever it is armed, so nothing to do). */
+    fun pulseShadow() = Unit
 
-    /** SS/ISO/EV candidate step. Visible during the scrub, hides on release. */
-    fun pulseRawHighlight() = synchronized(lock) {
-        rawPulse = true
-        hideRaw = relaunchLocked(hideRaw, INACTIVITY_MS) {
-            rawPulse = false
-            emitLocked()
-        }
-        emitLocked()
-    }
+    /** SS/ISO/EV candidate step (X14U: the RAW highlight overlay shows whenever it is armed). */
+    fun pulseRawHighlight() = Unit
 
     /** MF rail interaction. Visible during the drag, hides on release. */
     fun pulsePeakManual() = synchronized(lock) {
@@ -153,8 +135,10 @@ internal class OverlayTriggerManager(
     private fun emitLocked() {
         var mask = 0
         if (OverlayMode.Peaking in armed && (peakManualPulse || afPeaking)) mask = mask or BIT_PEAK
-        if (OverlayMode.RawHighlights in armed && rawPulse) mask = mask or BIT_RAW
-        if (OverlayMode.TonemapShadows in armed && shadowPulse) mask = mask or BIT_SHADOW
+        // X14U: RAW highlights and tonemap shadows show whenever their tile is on, like a camera's zebras (Nov 16:
+        // shown only while a ruler / slider moved, they read as broken and missed EV changes from other controls).
+        if (OverlayMode.RawHighlights in armed) mask = mask or BIT_RAW
+        if (OverlayMode.TonemapShadows in armed) mask = mask or BIT_SHADOW
         if (falseColor) mask = mask or BIT_FALSE
         if (mask != lastMask) {
             lastMask = mask

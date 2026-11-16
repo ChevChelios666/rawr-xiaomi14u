@@ -15,22 +15,28 @@ class OverlayTriggerManagerTest {
     private fun manager(
         scope: TestScope,
         masks: MutableList<Int>,
-        armed: Set<OverlayMode> =
-            setOf(OverlayMode.Peaking, OverlayMode.RawHighlights, OverlayMode.TonemapShadows)
+        // Peaking only: RAW highlights / tonemap shadows would show the whole time they are armed (X14U).
+        armed: Set<OverlayMode> = setOf(OverlayMode.Peaking)
     ) = OverlayTriggerManager(scope, masks::add).also {
         it.setArmed(armed)
         masks.clear()
     }
 
     @Test
-    fun shadowPulseShowsThenHidesOnRelease() = runTest {
+    fun highlightAndShadowShowWhileArmed() = runTest {
+        // X14U: like a camera's zebras, on whenever armed (no scrub needed), off when disarmed.
         val masks = mutableListOf<Int>()
-        val manager = manager(this, masks)
-        manager.pulseShadow()
-        assertEquals(listOf(OverlayTriggerManager.BIT_SHADOW), masks)
-        advanceTimeBy(OverlayTriggerManager.INACTIVITY_MS + 50)
+        val manager = OverlayTriggerManager(this, masks::add)
+        manager.setArmed(setOf(OverlayMode.RawHighlights, OverlayMode.TonemapShadows))
+        advanceTimeBy(1000)
         runCurrent()
-        assertEquals(listOf(OverlayTriggerManager.BIT_SHADOW, 0), masks)
+        assertEquals(listOf(OverlayTriggerManager.BIT_RAW or OverlayTriggerManager.BIT_SHADOW), masks)
+        manager.setArmed(setOf(OverlayMode.TonemapShadows))
+        manager.setArmed(emptySet())
+        assertEquals(
+            listOf(OverlayTriggerManager.BIT_RAW or OverlayTriggerManager.BIT_SHADOW, OverlayTriggerManager.BIT_SHADOW, 0),
+            masks
+        )
     }
 
     @Test
@@ -42,31 +48,6 @@ class OverlayTriggerManagerTest {
         advanceTimeBy(1000)
         runCurrent()
         assertEquals(emptyList(), masks)
-    }
-
-    @Test
-    fun exposurePulseReleasesIndependently() = runTest {
-        val masks = mutableListOf<Int>()
-        val manager = manager(this, masks)
-        manager.pulseRawHighlight()
-        manager.pulseShadow()
-        assertEquals(
-            listOf(OverlayTriggerManager.BIT_RAW, OverlayTriggerManager.BIT_RAW or OverlayTriggerManager.BIT_SHADOW),
-            masks
-        )
-        advanceTimeBy(OverlayTriggerManager.INACTIVITY_MS + 50)
-        runCurrent()
-        // Both inactivity timers were scheduled together; each layer clears
-        // independently as its job runs.
-        assertEquals(
-            listOf(
-                OverlayTriggerManager.BIT_RAW,
-                OverlayTriggerManager.BIT_RAW or OverlayTriggerManager.BIT_SHADOW,
-                OverlayTriggerManager.BIT_SHADOW,
-                0
-            ),
-            masks
-        )
     }
 
     @Test
