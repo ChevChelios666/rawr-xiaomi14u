@@ -1,6 +1,7 @@
 #pragma once
 #include <android/hardware_buffer.h>
 #include <media/NdkImage.h>
+#include <poll.h>
 #include <sys/resource.h>
 #include <unistd.h>
 
@@ -183,6 +184,30 @@ class PrecaptureRing final {
             }
             auto& frame = *job.snapshot.frame;
             bool ok = false;
+            // Nov 17: on some lenses (17, 50, 75 mm) the ring stopped filling until a lens switch. The copy locks the
+            // buffer behind the camera's acquire fence, which waits for good if that fence never signals, and this one
+            // worker then holds every later frame too. Wait at most 400 ms here; a frame whose fence hasn't signalled
+            // by then is skipped and the ring goes on.
+            const int acquireFence = job.lease.get().acquireFenceFd;
+            if (acquireFence >= 0) {
+                pollfd pfd{acquireFence, POLLIN, 0};
+                const auto waitStart = std::chrono::steady_clock::now();
+                const int ready = ::poll(&pfd, 1, 400);
+                if (ready <= 0) {
+                    ++fenceTimeouts_;
+                    emit("PRECAPTURE_FENCE_TIMEOUT ts=" + std::to_string(frame.timestampNs) +
+                         " count=" + std::to_string(fenceTimeouts_));
+                    job.lease = imaging::RawFrameLease({});
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    --copying_;
+                    giveBack(job.snapshot);
+                    changed_.notify_all();
+                    continue;
+                }
+                const auto waitedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - waitStart).count();
+                if (waitedMs > 100) emit("PRECAPTURE_FENCE_SLOW ms=" + std::to_string(waitedMs));
+            }
             try {
                 frame.raw16 = RawBufferPool::take(std::size_t(frame.width) * frame.height * 2);
                 const auto& camera = job.lease.get();
@@ -246,6 +271,7 @@ class PrecaptureRing final {
     uint64_t nextDueNs_ = 0;
     uint64_t generation_ = 0;
     uint32_t copying_ = 0;
+    uint32_t fenceTimeouts_ = 0;
     bool frozenActive_ = false;
     bool draining_ = false;
     std::map<uint64_t, SingleFrameSnapshot> pending_;
