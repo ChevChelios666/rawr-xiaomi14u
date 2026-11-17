@@ -1,6 +1,8 @@
 package com.rawr.camera.settings.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import com.rawr.camera.settings.architecture.SetVideoEncoder
 import com.rawr.camera.settings.architecture.SettingsDispatch
@@ -24,6 +26,7 @@ internal fun VideoEncoderSettings(state: SettingsUiState, dispatch: SettingsDisp
     val unprocessedSupported = remember { com.rawr.camera.video.VideoAudioInput.supportsUnprocessed(context) }
     val bFramesProduced = remember { com.rawr.camera.video.EncoderObservations.bFramesProduced(context) }
     SettingsPageContainer(testTag = SettingsTestTags.sectionRoot("VideoEncoder")) {
+        VideoHoldToLockGroup()
         SettingsGroup(
             title = "Recording",
             description = "The recording timer always shows a health dot (green: keeping up, amber: near the frame " +
@@ -228,6 +231,38 @@ internal fun VideoEncoderSettings(state: SettingsUiState, dispatch: SettingsDisp
                     set(encoder.copy(audioBitrateKbps = it))
                 }
             }
+        }
+    }
+}
+
+/** X14U: hold the record button to record with these settings locked (released when recording stops). */
+@Composable
+private fun VideoHoldToLockGroup() {
+    val v by com.rawr.camera.video.VideoLockSettings.values.collectAsState()
+    val set: (com.rawr.camera.video.VideoLockSettings.Values) -> Unit = { com.rawr.camera.video.VideoLockSettings.update(it) }
+    SettingsGroup(
+        title = "Hold Shutter to Lock",
+        description = "In video, a tap records as usual. Hold the record button to record with the settings below " +
+            "locked from that moment; they are released when recording stops."
+    ) {
+        SettingsSwitchRow(title = "Hold to record locked", checked = v.enabled) { set(v.copy(enabled = it)) }
+        SettingDivider()
+        DropdownChoiceRow(
+            title = "Hold time",
+            selected = v.holdMs,
+            values = com.rawr.camera.video.VideoLockSettings.HOLD_TIMES,
+            label = { "%.1f s".format(java.util.Locale.US, it / 1000f) },
+            enabled = v.enabled
+        ) { set(v.copy(holdMs = it)) }
+        SettingDivider()
+        SettingsSwitchRow(title = "Lock shutter speed", checked = v.shutter, enabled = v.enabled) { set(v.copy(shutter = it)) }
+        SettingDivider()
+        SettingsSwitchRow(title = "Lock ISO", checked = v.iso, enabled = v.enabled) { set(v.copy(iso = it)) }
+        SettingDivider()
+        SettingsSwitchRow(title = "Lock focus", checked = v.focus, enabled = v.enabled) { set(v.copy(focus = it)) }
+        SettingDivider()
+        SettingsSwitchRow(title = "Lock white balance", checked = v.whiteBalance, enabled = v.enabled) {
+            set(v.copy(whiteBalance = it))
         }
     }
 }

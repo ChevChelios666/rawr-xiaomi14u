@@ -893,6 +893,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         com.rawr.camera.burst.BurstSettings.init(application)
+        com.rawr.camera.video.VideoLockSettings.init(application)
         refreshLatestGalleryImage()
         viewModelScope.launch { recordingBackend.recoverInterrupted() }
         viewModelScope.launch {

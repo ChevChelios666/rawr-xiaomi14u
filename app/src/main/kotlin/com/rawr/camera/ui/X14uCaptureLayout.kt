@@ -267,6 +267,19 @@ internal fun X14uCaptureLayout(
 ) {
     val isVideo = state.captureMode == CaptureMode.Video
     val videoLocked = videoControls.busy || videoControls.recording
+    // Hold-to-lock video (Nov 17): holding the record button records with the chosen settings locked from that moment
+    // (S and ISO through the exposure mode, focus through AF lock, WB at its current value), given back at the stop.
+    val videoLockSettings by com.rawr.camera.video.VideoLockSettings.values.collectAsState()
+    val videoLock = remember { X14uVideoLock() }
+    var videoHolding by remember { mutableStateOf(false) }
+    val latestState by androidx.compose.runtime.rememberUpdatedState(state)
+    LaunchedEffect(videoControls.recording) {
+        if (!videoControls.recording && videoLock.active) videoLock.release(latestState, dispatch)
+    }
+    val onVideoHoldLock: () -> Unit = {
+        videoLock.lock(state, dispatch, videoLockSettings)
+        onToggleVideoRecording()
+    }
     // Video recording, or a 50 MP shot running (its camera switch must not meet a lens change).
     // A burst run too (a lens or mode change mid-run would mix cameras).
     val recordingLock = (isVideo && videoLocked) || LocalCaptureExtras.current.fullSizeBusy || state.burst.running
@@ -938,6 +951,32 @@ internal fun X14uCaptureLayout(
                             .padding(horizontal = 16.dp, vertical = 8.dp)
                     )
                 }
+                if (isVideo && videoHolding && !videoControls.recording) {
+                    Text(
+                        "Keep holding to record locked",
+                        fontFamily = X14uFont, fontSize = dpText(13f), color = Color.White,
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 64.dp)
+                            .uprightLayoutInLandscape(orientation)
+                            .background(Color.Black.copy(alpha = .55f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    )
+                }
+                if (isVideo && videoControls.recording && videoLock.active && videoLock.chips.isNotEmpty()) {
+                    Row(
+                        (if (orientation == Orientation.Landscape) Modifier.align(Alignment.BottomEnd).padding(end = 10.dp, bottom = 64.dp)
+                            else Modifier.align(Alignment.TopEnd).padding(top = 10.dp, end = 10.dp))
+                            .uprightLayoutInLandscape(orientation),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        videoLock.chips.forEach { chip ->
+                            Text(
+                                "🔒 $chip", fontFamily = X14uFont, fontSize = dpText(11f), color = Color.White,
+                                modifier = Modifier.background(Color.Black.copy(alpha = .55f), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
                 if (isVideo && videoControls.recording) {
                     X14uRecordTimer(
                         video = videoControls,
@@ -1107,7 +1146,8 @@ internal fun X14uCaptureLayout(
                 enabled = !recordingLock,
                 modifier = Modifier.fillMaxWidth().offset(y = shutterCenter - 46.dp).height(92.dp),
                 pano = if (!pano) null else PanoShutter(panoShoot, if (panoSet.frames > 0) panoUndo else null, panoLocked),
-                burst = burst
+                burst = burst,
+                videoHold = if (videoLockSettings.enabled) VideoHold(videoLockSettings.holdMs, onVideoHoldLock) { videoHolding = it } else null
             )
             // Tools panel, stock size and place: full width less 10 dp a side, its bottom 67 dp above the shutter's
             // centre (over the exposure row and mode strip, within thumb reach). Above everything else.
@@ -2811,7 +2851,9 @@ private fun X14uShutterRow(
     modifier: Modifier,
     pano: PanoShutter? = null,
     /** Burst mode: the hold-to-shoot shutter and Burst's own focus and format buttons. */
-    burst: Boolean = false
+    burst: Boolean = false,
+    /** Video: hold the record button to record with settings locked (null: tap only). */
+    videoHold: VideoHold? = null
 ) {
     val isVideo = state.captureMode == CaptureMode.Video
     val extras = LocalCaptureExtras.current
@@ -2873,7 +2915,10 @@ private fun X14uShutterRow(
                 state = videoControls,
                 orientation = orientation,
                 onClick = onToggleVideoRecording,
-                countingDown = state.selfTimerRemainingMs != null
+                countingDown = state.selfTimerRemainingMs != null,
+                holdMs = videoHold?.holdMs ?: 0,
+                onHoldLock = videoHold?.onLock,
+                onHolding = { videoHold?.onHolding?.invoke(it) }
             )
         } else if (burst) {
             X14uBurstShutter(
@@ -2965,4 +3010,60 @@ private class PanelMemory(private val prefs: android.content.SharedPreferences) 
 private fun rememberPanelMemory(): PanelMemory {
     val context = androidx.compose.ui.platform.LocalContext.current
     return remember { PanelMemory(context.getSharedPreferences("x14u_panels", android.content.Context.MODE_PRIVATE)) }
+}
+
+internal class VideoHold(val holdMs: Int, val onLock: () -> Unit, val onHolding: (Boolean) -> Unit)
+
+/**
+ * Hold-to-lock video: what a locked recording took over (exposure mode, focus mode, WB mode), given back when it
+ * stops. Shutter and ISO: M; shutter only: S; ISO only: I (each keeps the live value it switches at).
+ */
+internal class X14uVideoLock {
+    private var saved: Triple<ExposureMode, FocusMode, WhiteBalanceMode>? = null
+    var active by mutableStateOf(false)
+        private set
+    var chips by mutableStateOf(emptyList<String>())
+        private set
+
+    fun lock(state: CaptureUiState, dispatch: CaptureDispatch, settings: com.rawr.camera.video.VideoLockSettings.Values) {
+        saved = Triple(state.exposureControl.mode, state.focus.mode, state.whiteBalanceMode)
+        val modes = state.capabilities.supportedExposureModes
+        val target = when {
+            settings.shutter && settings.iso -> ExposureMode.Manual
+            settings.shutter -> ExposureMode.ShutterPriority
+            settings.iso -> ExposureMode.IsoPriority
+            else -> null
+        }
+        val list = mutableListOf<String>()
+        if (target != null && target in modes) {
+            if (state.exposureControl.mode != target) dispatch(SetExposureMode(target))
+            if (settings.shutter) list += "S"
+            if (settings.iso) list += "ISO"
+        }
+        if (settings.focus && state.focus.mode == FocusMode.Af) {
+            dispatch(SetFocusMode(FocusMode.AfLock))
+            list += "AF"
+        } else if (settings.focus && state.focus.mode != FocusMode.Af) list += "AF"
+        if (settings.whiteBalance) {
+            if (state.whiteBalanceMode != WhiteBalanceMode.ManualTempTint && state.capabilities.manualWhiteBalanceSupported) {
+                dispatch(LockWhiteBalance(state.whiteBalanceTemperatureK, state.whiteBalanceTint))
+            }
+            list += "WB"
+        }
+        chips = list
+        active = true
+    }
+
+    fun release(state: CaptureUiState, dispatch: CaptureDispatch) {
+        saved?.let { (exposure, focus, wb) ->
+            if (exposure != state.exposureControl.mode && exposure in state.capabilities.supportedExposureModes) {
+                dispatch(SetExposureMode(exposure))
+            }
+            if (focus != state.focus.mode) dispatch(SetFocusMode(focus))
+            if (wb != WhiteBalanceMode.ManualTempTint && wb != state.whiteBalanceMode) dispatch(SetWhiteBalanceMode(wb))
+        }
+        saved = null
+        chips = emptyList()
+        active = false
+    }
 }

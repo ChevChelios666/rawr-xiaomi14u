@@ -22,6 +22,12 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.launch
 import com.rawr.camera.model.Orientation
 
 typealias VideoControlState = com.rawr.camera.model.VideoControlState
@@ -39,23 +45,68 @@ internal fun VideoRecordButton(
     orientation: Orientation,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    countingDown: Boolean = false
+    countingDown: Boolean = false,
+    /**
+     * X14U hold-to-lock: holding the idle button this long fills an accent ring, then [onHoldLock] starts a locked
+     * recording (a shorter press is a tap: [onClick]). Null or 0: tap only, as before.
+     */
+    holdMs: Int = 0,
+    onHoldLock: (() -> Unit)? = null,
+    /** True while the finger is down on the idle button (the viewfinder shows a hint). */
+    onHolding: (Boolean) -> Unit = {}
 ) {
     val haptics = LocalCaptureHaptics.current
     val ring = if (state.busy) CaptureColors.Muted else CaptureColors.Danger
+    val holdable = onHoldLock != null && holdMs > 0 && !state.recording && !state.busy && !countingDown
+    val fill = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(0f) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val latestClick by androidx.compose.runtime.rememberUpdatedState(onClick)
+    val latestHold by androidx.compose.runtime.rememberUpdatedState(onHoldLock)
+    val latestHolding by androidx.compose.runtime.rememberUpdatedState(onHolding)
+    val press = if (holdable) {
+        Modifier.pointerInput(holdMs) {
+            awaitEachGesture {
+                awaitFirstDown()
+                latestHolding(true)
+                val job = scope.launch {
+                    fill.snapTo(0f)
+                    fill.animateTo(1f, androidx.compose.animation.core.tween(holdMs, easing = androidx.compose.animation.core.LinearEasing))
+                }
+                var held = false
+                val released = withTimeoutOrNull(holdMs.toLong()) { waitForUpOrCancellation() }
+                if (released == null) {
+                    held = true
+                    haptics.capture()
+                    latestHolding(false)
+                    latestHold?.invoke()
+                    waitForUpOrCancellation()
+                }
+                job.cancel()
+                scope.launch { fill.snapTo(0f) }
+                latestHolding(false)
+                if (!held && released != null) {
+                    haptics.capture()
+                    latestClick()
+                }
+            }
+        }
+    } else {
+        Modifier.captureClickable(shape = CircleShape, enabled = !state.busy, onClick = {
+            haptics.capture()
+            onClick()
+        })
+    }
     Box(
         modifier
             .size(CaptureDimens.ShutterOuter)
             .testTag(CaptureTestTags.VIDEO_RECORD)
-            .captureClickable(shape = CircleShape, enabled = !state.busy, onClick = {
-                haptics.capture()
-                onClick()
-            })
+            .then(press)
             .semantics {
                 role = Role.Button
                 contentDescription = when {
                     countingDown -> "Cancel self timer"
                     state.recording -> "Stop video recording"
+                    holdable -> "Start video recording. Hold to record with settings locked"
                     else -> "Start video recording"
                 }
             },
@@ -73,6 +124,17 @@ internal fun VideoRecordButton(
             } else {
                 Box(
                     Modifier.size(CaptureDimens.ShutterInner).background(ring, CircleShape)
+                )
+            }
+        }
+        if (fill.value > 0f) {
+            androidx.compose.foundation.Canvas(Modifier.size(CaptureDimens.ShutterOuter)) {
+                val stroke = 3.dp.toPx()
+                drawArc(
+                    CaptureColors.Accent, -90f, 360f * fill.value, useCenter = false,
+                    topLeft = androidx.compose.ui.geometry.Offset(stroke / 2, stroke / 2),
+                    size = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(stroke)
                 )
             }
         }
