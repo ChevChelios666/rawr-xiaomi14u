@@ -646,8 +646,12 @@ internal fun X14uCaptureLayout(
             // (EV in A) and F. The A·M·S·I pill and S / ISO stay out: frame 1 locks them for the set.
             // Option A (Nov 16): MODE (A·M·S·I) after the divider, then that mode's cells as in Photo (A: EV, S: S EV,
             // I: ISO EV, M: S ISO) and F. Overlap and projection are tiles in the swipe-down panel.
+            // F only on a lens with an aperture choice (1x): elsewhere its fixed f-number just took room (Nov 17), so
+            // those lenses' rows keep the normal text size.
+            val hasAperture = apertureRow(lensOptions) >= 0
             cells = if (pano) panoCells(panoSet) +
-                (listOf(X14uCell(PANO_MODE_KEY, state.exposureControl.mode.shortLabel, "MODE", groupStart = true)) + photoCells)
+                (listOf(X14uCell(PANO_MODE_KEY, state.exposureControl.mode.shortLabel, "MODE", groupStart = true)) +
+                    photoCells.filter { hasAperture || it.key != "f" })
                     .map { if (panoLocked) it.copy(enabled = false) else it }
             else photoCells
             editorFor = { key ->
