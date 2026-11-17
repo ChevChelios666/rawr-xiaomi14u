@@ -330,10 +330,13 @@ internal fun X14uCaptureLayout(
     // Pinch / ruler: switches up a lens at its zoom, back down a little below it (no flicker at the boundary).
     // When pinch / the ruler last moved the zoom: a lens they land on is left as it is (no snap off a hidden lens).
     val zoomGestureAt = remember { longArrayOf(0L) }
+    // The widest zoom on the pill (its widest visible lens or digital focal length), set below: pinch and the ruler
+    // stop there, so a hidden lens wider than it (12 mm hidden, 17 mm on the pill) isn't reached (Nov 17).
+    val zoomFloor = remember { floatArrayOf(0f) }
     val setZoom: (Float) -> Unit = setZoom@{ target ->
         if (zoomChain.isEmpty()) return@setZoom
         zoomGestureAt[0] = android.os.SystemClock.uptimeMillis()
-        val z = target.coerceIn(zoomChain.first().second, com.rawr.camera.settings.model.ZoomChain.MAX_ZOOM)
+        val z = target.coerceIn(maxOf(zoomChain.first().second, zoomFloor[0]), com.rawr.camera.settings.model.ZoomChain.MAX_ZOOM)
         val current = chainLens
         val lens = when {
             current != null && z >= current.second * .97f &&
@@ -468,6 +471,8 @@ internal fun X14uCaptureLayout(
     val memoryKey = if (isVideo) "video" else "photo"
     val pillStops = if (pano || chainLens == null) emptyList() else lensSet.digital.filter { it.on }
         .mapNotNull { com.rawr.camera.settings.model.resolveDigitalStop(it.mm, zoomChain) }
+    zoomFloor[0] = (zoomChain.filter { it.first !in lensSet.hidden }.map { it.second } + pillStops.map { it.zoom })
+        .minOrNull() ?: 0f
     val atOwnFocal = if (isVideo) state.videoCrop.digitalZoom <= 1.001f else !zoomOn || zoomCrop <= 1.005f
     val pillStopNow = pillStops.firstOrNull { stop ->
         if (isVideo) stop.lens == state.selectedLensId && kotlin.math.abs(state.videoCrop.digitalZoom - stop.crop) <= stop.crop * .01f
@@ -1321,15 +1326,31 @@ private fun X14uLensRow(
     val lenses = state.capabilities.lenses.filterNot { isFrontLens(it.id, it.displayName) }
         .filter { it.id !in buttons.hidden || (it.id == state.selectedLensId && activeStop == null) }
     val lensMm: (String) -> Int? = { id -> com.rawr.camera.settings.model.ZoomChain.factorOf(id)?.let { com.rawr.camera.settings.model.LensButtons.mmOf(it) } }
-    // Lenses in their order, each digital stop before the first lens longer than it.
+    // Lenses in their order, each digital stop before the first lens longer than it. A hidden lens in use (pinch on
+    // it) goes where its live focal length falls, not at its own: zooming 17 → 22 mm on a hidden 12 mm showed its
+    // chip left of "17", so the pill jumped (Nov 17).
+    val liveHidden = lenses.firstOrNull { it.id in buttons.hidden }
+    val liveMm: Float? = liveHidden?.let { lens ->
+        val own = lensMm(lens.id)?.toFloat()
+        val factor = zoomChain.firstOrNull { it.first == lens.id }?.second
+        if (own != null && factor != null && totalZoom != null) own * totalZoom / factor else own
+    }
     val items: List<Any> = buildList {
         val pending = stops.sortedBy { it.mm }.toMutableList()
-        lenses.forEach { lens ->
+        lenses.filter { it !== liveHidden }.forEach { lens ->
             val mm = lensMm(lens.id)
             if (mm != null) while (pending.isNotEmpty() && pending.first().mm < mm) add(pending.removeAt(0))
             add(lens)
         }
         addAll(pending)
+        if (liveHidden != null) {
+            val at = indexOfFirst { item ->
+                val mm = (item as? com.rawr.camera.model.LensCapability)?.let { lensMm(it.id)?.toFloat() }
+                    ?: (item as? com.rawr.camera.settings.model.ResolvedStop)?.mm?.toFloat()
+                mm != null && liveMm != null && mm > liveMm
+            }
+            add(if (at < 0) size else at, liveHidden)
+        }
     }
     // Grip zoom lever: the next focal length up or down the pill (lenses and digital ones), as a tap would.
     val itemMm: (Any) -> Int? = { item ->
@@ -1344,7 +1365,8 @@ private fun X14uLensRow(
             ?: if (totalZoom != null && ownMm != null && ownFactor != null) ownMm * totalZoom / ownFactor
             else ownMm ?: totalZoom?.let { it * com.rawr.camera.settings.model.LensButtons.MAIN_MM }
         if (enabled && currentMm != null) {
-            val candidates = items.mapNotNull { item -> itemMm(item)?.let { item to it } }
+            // A hidden lens in use isn't a lever stop (its own focal length is off the pill).
+            val candidates = items.filter { it !== liveHidden }.mapNotNull { item -> itemMm(item)?.let { item to it } }
             val next = if (direction > 0) candidates.filter { it.second > currentMm + .5f }.minByOrNull { it.second }
                 else candidates.filter { it.second < currentMm - .5f }.maxByOrNull { it.second }
             when (val item = next?.first) {
