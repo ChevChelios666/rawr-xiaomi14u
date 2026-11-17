@@ -533,6 +533,8 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
             },
             inSensorZoomLensesOffOnce = p[Keys.inSensorZoomOff] ?: d.inSensorZoomLensesOffOnce,
             dcpDefaultsOnce = p[Keys.dcpDefaultsOnce] ?: d.dcpDefaultsOnce,
+            capturePresets = com.rawr.camera.settings.model.CapturePreset.decodeList(p[Keys.capturePresets]),
+            activePresetId = p[Keys.activePresetId] ?: d.activePresetId,
             focusLoupe = FocusLoupeSettings(
                 zoom = (p[Keys.loupeZoom] ?: d.focusLoupe.zoom).takeIf { it in FocusLoupeSettings.ZOOMS } ?: d.focusLoupe.zoom,
                 onManualFocus = p[Keys.loupeOnMf] ?: d.focusLoupe.onManualFocus,
@@ -771,6 +773,9 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
         p[Keys.zoomMerge] = v.zoomMergeAlgorithm?.name ?: "same"
         p[Keys.inSensorZoomOff] = v.inSensorZoomLensesOffOnce
         p[Keys.dcpDefaultsOnce] = v.dcpDefaultsOnce
+        if (v.capturePresets.isEmpty()) p.remove(Keys.capturePresets)
+        else p[Keys.capturePresets] = com.rawr.camera.settings.model.CapturePreset.encodeList(v.capturePresets)
+        p[Keys.activePresetId] = v.activePresetId
         p[Keys.loupeOnMf] = v.focusLoupe.onManualFocus
         p[Keys.loupeDoubleTap] = v.focusLoupe.doubleTap
         p[Keys.loupeMeter] = v.focusLoupe.meter
@@ -1079,6 +1084,8 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
         val gripDialReverse = booleanPreferencesKey("x14u_grip_dial_reverse")
         val inSensorZoomOff = booleanPreferencesKey("x14u_in_sensor_zoom_off_once")
         val dcpDefaultsOnce = booleanPreferencesKey("x14u_dcp_defaults_once")
+        val capturePresets = stringPreferencesKey("x14u_presets")
+        val activePresetId = stringPreferencesKey("x14u_active_preset")
         val loupeOnMf = booleanPreferencesKey("x14u_loupe_on_mf")
         val loupeDoubleTap = booleanPreferencesKey("x14u_loupe_double_tap")
         val loupeMeter = booleanPreferencesKey("x14u_loupe_meter")

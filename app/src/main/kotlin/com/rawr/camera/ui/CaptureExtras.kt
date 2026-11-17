@@ -50,7 +50,10 @@ data class CaptureExtras(
     val fullSizeCountdownMs: Long? = null,
     val onCancelFullSizeCountdown: () -> Unit = {},
     /** The shutter press: true when it was taken as a 50 MP shot, false for a normal shot. */
-    val onFullSizeShot: () -> Boolean = { false }
+    val onFullSizeShot: () -> Boolean = { false },
+    /** X14U presets (P0 baseline, P1…): the badge above Look and the preset strip. */
+    val presets: PresetsUi = PresetsUi(),
+    val presetActions: PresetActions = PresetActions.None
 )
 
 val LocalCaptureExtras = staticCompositionLocalOf { CaptureExtras() }

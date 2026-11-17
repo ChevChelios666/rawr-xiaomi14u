@@ -218,6 +218,7 @@ class MainActivity : ComponentActivity() {
             val fullSizeBusy by captureViewModel.fullSizeBusy.collectAsStateWithLifecycle()
             val fullSizeCountdownMs by captureViewModel.fullSizeCountdownMs.collectAsStateWithLifecycle()
             val tools by captureViewModel.tools.collectAsStateWithLifecycle()
+            val presets by captureViewModel.presets.collectAsStateWithLifecycle()
             val stillsHint by captureViewModel.stillsHint.collectAsStateWithLifecycle()
             androidx.compose.runtime.LaunchedEffect(Unit) {
                 captureViewModel.recording.errors.collect { message ->
@@ -301,6 +302,8 @@ class MainActivity : ComponentActivity() {
                     fullSizeCountdownMs = fullSizeCountdownMs,
                     onCancelFullSizeCountdown = captureViewModel::cancelFullSizeCountdown,
                     onFullSizeShot = captureViewModel::tryShootFullSize,
+                    presets = presets,
+                    presetActions = captureViewModel.presetActions,
                     onToggleAudioMuted = captureViewModel::toggleAudioMuted,
                     onOpenVideoSettings = {
                         startActivity(

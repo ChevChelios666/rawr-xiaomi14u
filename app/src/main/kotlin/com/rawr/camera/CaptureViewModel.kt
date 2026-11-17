@@ -55,11 +55,19 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.rawr.camera.settings.model.withModeLookSwitch
+import com.rawr.camera.settings.model.withBaseline
+import com.rawr.camera.settings.model.withPresetGroups
+import com.rawr.camera.settings.model.presetSummary
+import com.rawr.camera.model.ExposureMode
+import com.rawr.camera.ui.PresetActions
+import com.rawr.camera.ui.PresetItem
+import com.rawr.camera.ui.PresetsUi
 
 /**
  * Application lifetime owner.
@@ -650,6 +658,166 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     fun setPanoProjection(projection: com.rawr.camera.settings.model.PanoProjection) {
         settingsEditor.update { it.copy(panoProjection = projection) }
     }
+
+    // X14U presets (Nov 17): P0 is the baseline (made from the settings in use the first time), P1… follow.
+    private val presetCodec by lazy {
+        com.rawr.camera.settings.preferences.PresetSettingsCodec(getApplication(), settingsDefaults)
+    }
+    /** Decoded preset settings by their saved text (decoding runs through the settings migrations). */
+    private val presetSnaps = object : LinkedHashMap<String, SettingsValues>(16, .75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, SettingsValues>?) = size > 24
+    }
+
+    private fun presetSnap(preset: com.rawr.camera.settings.model.CapturePreset, current: SettingsValues): SettingsValues? =
+        synchronized(presetSnaps) { presetSnaps[preset.settings] }
+            ?: presetCodec.decode(preset.settings, current)?.also { synchronized(presetSnaps) { presetSnaps[preset.settings] = it } }
+
+    private fun newBaseline(v: SettingsValues) = com.rawr.camera.settings.model.CapturePreset(
+        id = com.rawr.camera.settings.model.CapturePreset.BASELINE_ID,
+        name = "Default",
+        groups = com.rawr.camera.settings.model.PresetGroup.entries.toSet(),
+        settings = presetCodec.encode(v)
+    )
+
+    private fun SettingsValues.presetList() = capturePresets.withBaseline { newBaseline(this) }
+
+    val presets: StateFlow<PresetsUi> = settingsEditor.state
+        .map { v ->
+            val list = v.presetList()
+            val active = list.firstOrNull { it.id == v.activePresetId } ?: list.first()
+            val changed = presetSnap(active, v)?.let { snap -> v.withPresetGroups(snap, active.groups) != v } ?: false
+            PresetsUi(
+                items = list.mapIndexed { i, p ->
+                    PresetItem(
+                        id = p.id, label = "P$i", name = p.name, groups = p.groups, camera = p.camera,
+                        summary = presetSnap(p, v)?.let { snap ->
+                            p.groups.associateWith { snap.presetSummary(it) }.filterValues { it.isNotEmpty() }
+                        }.orEmpty()
+                    )
+                },
+                activeId = active.id,
+                settingsChanged = changed,
+                current = com.rawr.camera.settings.model.PresetGroup.entries
+                    .associateWith { v.presetSummary(it) }.filterValues { it.isNotEmpty() }
+            )
+        }
+        .flowOn(Dispatchers.Default)
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, PresetsUi())
+
+    private fun editPresets(edit: (SettingsValues, MutableList<com.rawr.camera.settings.model.CapturePreset>) -> String?) {
+        settingsEditor.update { v ->
+            val list = v.presetList().toMutableList()
+            val active = edit(v, list) ?: v.activePresetId
+            v.copy(capturePresets = list, activePresetId = active.takeIf { id -> list.any { it.id == id } }
+                ?: com.rawr.camera.settings.model.CapturePreset.BASELINE_ID)
+        }
+    }
+
+    /**
+     * [v] saved for a preset, and [v] as that saved form reads back: the live settings take the read-back values of
+     * the preset's groups, so a just-saved preset never shows as changed over a rounding.
+     */
+    private fun encodeForPreset(v: SettingsValues, groups: Set<com.rawr.camera.settings.model.PresetGroup>): Pair<String, SettingsValues> {
+        val saved = presetCodec.encode(v)
+        val back = presetCodec.decode(saved, v)?.let { v.withPresetGroups(it, groups) } ?: v
+        return saved to back
+    }
+
+    val presetActions: PresetActions = object : PresetActions {
+        override fun apply(id: String) {
+            settingsEditor.update { v ->
+                val preset = v.presetList().firstOrNull { it.id == id } ?: return@update v
+                val snap = presetSnap(preset, v) ?: return@update v
+                v.withPresetGroups(snap, preset.groups).copy(capturePresets = v.presetList(), activePresetId = id)
+            }
+        }
+
+        override fun save(name: String, groups: Set<com.rawr.camera.settings.model.PresetGroup>,
+            camera: com.rawr.camera.settings.model.PresetCamera) {
+            if (groups.isEmpty()) return
+            settingsEditor.update { v ->
+                val list = v.presetList()
+                if (list.size >= com.rawr.camera.settings.model.CapturePreset.MAX_PRESETS) return@update v
+                val id = "p" + java.util.UUID.randomUUID().toString().take(8)
+                val (saved, back) = encodeForPreset(v, groups)
+                back.copy(
+                    capturePresets = list + com.rawr.camera.settings.model.CapturePreset(
+                        id, name.trim().take(com.rawr.camera.settings.model.CapturePreset.MAX_NAME).ifEmpty { "P${list.size}" },
+                        groups, saved, camera.only(groups)
+                    ),
+                    activePresetId = id
+                )
+            }
+        }
+
+        override fun update(id: String, camera: com.rawr.camera.settings.model.PresetCamera) {
+            settingsEditor.update { v ->
+                val list = v.presetList().toMutableList()
+                val i = list.indexOfFirst { it.id == id }
+                if (i < 0) return@update v
+                val (saved, back) = encodeForPreset(v, list[i].groups)
+                list[i] = list[i].copy(settings = saved, camera = camera.only(list[i].groups))
+                back.copy(capturePresets = list, activePresetId = id)
+            }
+        }
+
+        override fun rename(id: String, name: String) = editPresets { _, list ->
+            val i = list.indexOfFirst { it.id == id }
+            val trimmed = name.trim().take(com.rawr.camera.settings.model.CapturePreset.MAX_NAME)
+            if (i >= 0 && trimmed.isNotEmpty()) list[i] = list[i].copy(name = trimmed)
+            null
+        }
+
+        override fun duplicate(id: String) = editPresets { _, list ->
+            val i = list.indexOfFirst { it.id == id }
+            if (i < 0 || list.size >= com.rawr.camera.settings.model.CapturePreset.MAX_PRESETS) return@editPresets null
+            val copy = list[i].copy(
+                id = "p" + java.util.UUID.randomUUID().toString().take(8),
+                name = (list[i].name.take(com.rawr.camera.settings.model.CapturePreset.MAX_NAME - 5) + " copy")
+            )
+            list.add(i + 1, copy)
+            null
+        }
+
+        override fun delete(id: String) = editPresets { v, list ->
+            if (id == com.rawr.camera.settings.model.CapturePreset.BASELINE_ID) return@editPresets null
+            list.removeAll { it.id == id }
+            if (v.activePresetId == id) com.rawr.camera.settings.model.CapturePreset.BASELINE_ID else null
+        }
+
+        override fun move(from: Int, to: Int) = editPresets { _, list ->
+            if (from in 1 until list.size && to in 1 until list.size && from != to) list.add(to, list.removeAt(from))
+            null
+        }
+
+        override fun restoreBaseline() = editPresets { _, list ->
+            list[0] = list[0].copy(
+                settings = presetCodec.encode(settingsDefaults),
+                groups = com.rawr.camera.settings.model.PresetGroup.entries.toSet(),
+                camera = com.rawr.camera.settings.model.PresetCamera(
+                    exposure = com.rawr.camera.settings.model.PresetExposure(ExposureMode.Auto.name, "", "", ""),
+                    whiteBalance = com.rawr.camera.settings.model.PresetWhiteBalance(
+                        com.rawr.camera.model.WhiteBalanceMode.Auto.name, com.rawr.camera.model.WhiteBalanceMode.TEMP_DEFAULT_K, 0)
+                )
+            )
+            null
+        }
+
+        override fun resetToBaseline(groups: Set<com.rawr.camera.settings.model.PresetGroup>) {
+            settingsEditor.update { v ->
+                val baseline = v.presetList().first()
+                val snap = presetSnap(baseline, v) ?: return@update v
+                v.withPresetGroups(snap, groups intersect baseline.groups).copy(capturePresets = v.presetList())
+            }
+        }
+    }
+
+    private fun com.rawr.camera.settings.model.PresetCamera.only(groups: Set<com.rawr.camera.settings.model.PresetGroup>) = copy(
+        exposure = exposure.takeIf { com.rawr.camera.settings.model.PresetGroup.Exposure in groups },
+        whiteBalance = whiteBalance.takeIf { com.rawr.camera.settings.model.PresetGroup.WhiteBalance in groups },
+        lens = lens.takeIf { com.rawr.camera.settings.model.PresetGroup.Lens in groups }
+    )
     /** One-time "Swipe up for Photo+" hint: shows until Photo/Photo+ is switched once, at most twice. */
     val stillsHint: StateFlow<Boolean> = settingsEditor.state
         .map { !it.stillsSwitched && it.stillsHintCount < 2 }
@@ -920,6 +1088,15 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             settingsEditor.values.map { it.zoomUpscale }.distinctUntilChanged().collect {
                 previewCoordinator.setDigitalZoom(digitalZoomCrop, it)
+            }
+        }
+        // Presets: P0 (the baseline) is the settings in use when presets first appear, kept from then on.
+        viewModelScope.launch {
+            settingsEditor.values.first().let { v ->
+                if (v.capturePresets.none { it.isBaseline }) settingsEditor.update { s ->
+                    val (saved, back) = encodeForPreset(s, com.rawr.camera.settings.model.PresetGroup.entries.toSet())
+                    back.copy(capturePresets = listOf(newBaseline(s).copy(settings = saved)) + s.capturePresets.filterNot { it.isBaseline })
+                }
             }
         }
         // Once: each lens's photo DCP defaults to an imported Main profile (Tele on the 3.2x / 5x) when it has none,

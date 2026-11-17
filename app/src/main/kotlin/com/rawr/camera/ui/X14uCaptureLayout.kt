@@ -238,6 +238,9 @@ private sealed interface X14uEditor {
     data class Stacked(val top: Chips, val below: X14uEditor?) : X14uEditor
 }
 
+/** The preset sheet that saves a new preset (otherwise the sheet holds a preset's id). */
+private const val PRESET_SAVE = "+save"
+
 private object X14uGeometry {
     /** Stock content height (status and navigation bars excluded) the dp values below were measured at. */
     val reference = 841.dp
@@ -427,13 +430,18 @@ internal fun X14uCaptureLayout(
     }
     LaunchedEffect(selected) { if (selected != "wb") wbTint = false }
     val lensOptions = quick.lensOptions.firstOrNull { it.lensId == state.selectedLensId }
+    // Presets: the strip (in the mode names' place) and its sheet: "save" or the id of the preset whose details show.
+    var presetsOpen by remember { mutableStateOf(false) }
+    var presetSheet by remember { mutableStateOf<String?>(null) }
     val closeAll: () -> Boolean = {
-        val open = selected != null || panel != null || toolsOpen || cropOpen
+        val open = selected != null || panel != null || toolsOpen || cropOpen || presetsOpen || presetSheet != null
         selected = null
         panel = null
         toolsOpen = false
         cropOpen = false
         toolsChoice = null
+        presetsOpen = false
+        presetSheet = null
         open
     }
     val openTools: (Boolean) -> Unit = { open ->
@@ -441,6 +449,8 @@ internal fun X14uCaptureLayout(
             selected = null
             panel = null
             cropOpen = false
+            presetsOpen = false
+            presetSheet = null
         }
         toolsOpen = open
         toolsChoice = null
@@ -629,6 +639,148 @@ internal fun X14uCaptureLayout(
         if (free && target in option.choices.indices && target != option.selected && !recordingLock) {
             onQuickEvent(CaptureQuickEvent.SelectLensOption(options.lensId, apertureRowIndex, target))
         }
+    }
+    // Presets (Nov 17): the badge above Look opens the strip where the mode names are. Applying one puts its settings
+    // in (view model) and its camera part here: lens (and zoom, crop, aperture) first, then, once the lens is
+    // running, exposure and white balance. What doesn't fit (a lens or mode this mode lacks) is skipped.
+    val presetsUi = LocalCaptureExtras.current.presets
+    val presetActions = LocalCaptureExtras.current.presetActions
+    var pendingPreset by remember { mutableStateOf<com.rawr.camera.settings.model.PresetCamera?>(null) }
+    val apertureLabelNow = lensOptions?.options?.getOrNull(apertureRowIndex)?.let { it.choices.getOrNull(it.selected)?.label?.trim() }
+    val presetCameraNow: () -> com.rawr.camera.settings.model.PresetCamera = {
+        val ec = state.exposureControl
+        val caps = state.capabilities
+        val owners = state.exposureOwners()
+        val label = buildList {
+            add(ec.mode.shortLabel)
+            if (ExposureParameter.Shutter in owners) caps.shutter.candidate(ec.requestedShutterId)?.let { add(it.displayLabel) }
+            if (ExposureParameter.Iso in owners) caps.iso.candidate(ec.requestedIsoId)?.let {
+                add(if (it.displayLabel.all(Char::isDigit)) "ISO ${it.displayLabel}" else it.displayLabel)
+            }
+            if (ExposureParameter.Ev in owners) caps.ev.candidate(ec.requestedEvId)?.let { add("EV ${it.displayLabel}") }
+        }.joinToString(" · ")
+        com.rawr.camera.settings.model.PresetCamera(
+            exposure = com.rawr.camera.settings.model.PresetExposure(
+                ec.mode.name, ec.requestedShutterId, ec.requestedIsoId, ec.requestedEvId, label),
+            whiteBalance = com.rawr.camera.settings.model.PresetWhiteBalance(
+                state.whiteBalanceMode.name, state.whiteBalanceTemperatureK, state.whiteBalanceTint),
+            lens = com.rawr.camera.settings.model.PresetLens(
+                state.selectedLensId,
+                if (zoomOn) zoom else 0f,
+                if (isVideo) state.videoCrop.digitalZoom else 1f,
+                apertureLabelNow
+            )
+        )
+    }
+    // Owners of S / ISO / EV in a mode (A: EV · M: SS, ISO · S: SS, EV · I: ISO, EV).
+    fun ownersOf(mode: ExposureMode): Set<ExposureParameter> = when (mode) {
+        ExposureMode.Auto -> setOf(ExposureParameter.Ev)
+        ExposureMode.Manual -> setOf(ExposureParameter.Shutter, ExposureParameter.Iso)
+        ExposureMode.ShutterPriority -> setOf(ExposureParameter.Shutter, ExposureParameter.Ev)
+        ExposureMode.IsoPriority -> setOf(ExposureParameter.Iso, ExposureParameter.Ev)
+    }
+    // The camera part matches what is set now (anything this mode can't take counts as matching).
+    val presetCameraMatches: (com.rawr.camera.settings.model.PresetCamera) -> Boolean = match@{ c ->
+        c.exposure?.let { e ->
+            val mode = ExposureMode.entries.firstOrNull { it.name == e.mode }
+            if (mode != null && mode in state.capabilities.supportedExposureModes) {
+                val ec = state.exposureControl
+                if (mode != ec.mode) return@match false
+                val owners = ownersOf(mode)
+                if (ExposureParameter.Shutter in owners && e.shutterId.isNotEmpty() && e.shutterId != ec.requestedShutterId &&
+                    state.capabilities.shutter.candidate(e.shutterId) != null) return@match false
+                if (ExposureParameter.Iso in owners && e.isoId.isNotEmpty() && e.isoId != ec.requestedIsoId &&
+                    state.capabilities.iso.candidate(e.isoId) != null) return@match false
+                if (ExposureParameter.Ev in owners && e.evId.isNotEmpty() && e.evId != ec.requestedEvId &&
+                    state.capabilities.ev.candidate(e.evId) != null) return@match false
+            }
+        }
+        c.whiteBalance?.let { w ->
+            if (w.mode != state.whiteBalanceMode.name) return@match false
+            if (w.mode == WhiteBalanceMode.ManualTempTint.name &&
+                (w.kelvin != state.whiteBalanceTemperatureK || w.tint != state.whiteBalanceTint)) return@match false
+        }
+        c.lens?.let { l ->
+            if (state.capabilities.lenses.none { it.id == l.lensId }) return@let
+            if (l.lensId != state.selectedLensId) return@match false
+            if (zoomOn && l.zoom > 0f && abs(zoom - l.zoom) > l.zoom * .01f) return@match false
+            if (isVideo && abs(state.videoCrop.digitalZoom - l.videoCrop) > .01f) return@match false
+            if (l.aperture != null && apertureLabelNow != null && !l.aperture.equals(apertureLabelNow, ignoreCase = true)) return@match false
+        }
+        true
+    }
+    val activePreset = presetsUi.active
+    // P0 marks only settings changes (its exposure, WB and lens are where a reset goes, not a look to keep).
+    val presetChanged = activePreset != null && pendingPreset == null &&
+        (presetsUi.settingsChanged || (!activePreset.isBaseline && !presetCameraMatches(activePreset.camera)))
+    LaunchedEffect(pendingPreset) {
+        if (pendingPreset != null) {
+            kotlinx.coroutines.delay(5_000L)
+            pendingPreset = null
+        }
+    }
+    LaunchedEffect(pendingPreset, state.selectedLensId, state.cameraContextGeneration, state.exposureApplied.shutter == null, lensOptions) {
+        val c = pendingPreset ?: return@LaunchedEffect
+        if (recordingLock) { pendingPreset = null; return@LaunchedEffect }
+        c.lens?.let { l ->
+            if (state.capabilities.lenses.none { it.id == l.lensId }) return@let
+            if (l.lensId != state.selectedLensId) {
+                val own = zoomChain.firstOrNull { it.first == l.lensId }?.second
+                if (!isVideo && !pano && own != null) {
+                    setZoom(if (l.zoom > 0f) l.zoom else own)
+                } else {
+                    dispatch(SelectLens(l.lensId))
+                }
+                // The rest once that lens runs.
+                return@LaunchedEffect
+            }
+            if (zoomOn && l.zoom > 0f && abs(zoom - l.zoom) > l.zoom * .01f) setZoom(l.zoom)
+            if (isVideo && abs(state.videoCrop.digitalZoom - l.videoCrop) > .01f) {
+                dispatch(SetVideoCrop(state.videoCrop.copy(digitalZoom = l.videoCrop)))
+            }
+            val options = lensOptions
+            val option = options?.options?.getOrNull(apertureRowIndex)
+            if (l.aperture != null && options != null && option != null &&
+                apertureRowIndex !in options.locked && apertureRowIndex !in options.unavailable) {
+                val target = option.choices.indexOfFirst { it.label.trim().equals(l.aperture, ignoreCase = true) }
+                if (target >= 0 && target != option.selected) {
+                    onQuickEvent(CaptureQuickEvent.SelectLensOption(options.lensId, apertureRowIndex, target))
+                }
+            }
+        }
+        // Exposure values are the running camera's: wait for its first result after a lens switch.
+        if (state.exposureApplied.shutter == null) return@LaunchedEffect
+        c.exposure?.let { e ->
+            val mode = ExposureMode.entries.firstOrNull { it.name == e.mode } ?: return@let
+            if (mode !in state.capabilities.supportedExposureModes) return@let
+            if (mode != state.exposureControl.mode) dispatch(SetExposureMode(mode))
+            val owners = ownersOf(mode)
+            val caps = state.capabilities
+            if (ExposureParameter.Shutter in owners && caps.shutter.candidate(e.shutterId) != null)
+                dispatch(SetExposureCandidate(ExposureParameter.Shutter, e.shutterId))
+            if (ExposureParameter.Iso in owners && caps.iso.candidate(e.isoId) != null)
+                dispatch(SetExposureCandidate(ExposureParameter.Iso, e.isoId))
+            if (ExposureParameter.Ev in owners && caps.ev.candidate(e.evId) != null)
+                dispatch(SetExposureCandidate(ExposureParameter.Ev, e.evId))
+        }
+        c.whiteBalance?.let { w ->
+            val wbMode = WhiteBalanceMode.entries.firstOrNull { it.name == w.mode } ?: return@let
+            val locked = CaptureTransitions.isWhiteBalanceLocked(state)
+            when {
+                wbMode == WhiteBalanceMode.ManualTempTint && !state.capabilities.manualWhiteBalanceSupported -> Unit
+                wbMode == WhiteBalanceMode.ManualTempTint && !locked -> dispatch(LockWhiteBalance(w.kelvin, w.tint))
+                wbMode == WhiteBalanceMode.ManualTempTint ->
+                    if (w.kelvin != state.whiteBalanceTemperatureK || w.tint != state.whiteBalanceTint)
+                        dispatch(SetWhiteBalanceTempTint(w.kelvin, w.tint))
+                wbMode != state.whiteBalanceMode -> dispatch(SetWhiteBalanceMode(wbMode))
+            }
+        }
+        pendingPreset = null
+    }
+    val applyPreset: (PresetItem) -> Unit = { item ->
+        presetActions.apply(item.id)
+        val c = item.camera
+        pendingPreset = if (c.exposure == null && c.whiteBalance == null && c.lens == null) null else c
     }
     // Long-press on the AF target: Photo opens AF · AF-L · MF below the exposure row, Pro opens its focus cell.
     LaunchedEffect(state.focus.selectorOpen) {
@@ -1002,6 +1154,8 @@ internal fun X14uCaptureLayout(
                     enabled = !recordingLock && !panoLocked,
                     onTogglePanel = { target ->
                         selected = null
+                        presetsOpen = false
+                        presetSheet = null
                         panel = if (panel == target) null else target
                         panelKey = when (panel) {
                             X14uPanel.Look -> panelMemory.keyFor("look.$lookTab")
@@ -1025,24 +1179,13 @@ internal fun X14uCaptureLayout(
                         when (target) {
                             // Exposure: the Rawr AE options (metering, night look, balance, slowest shutter, gain,
                             // speed) back to their defaults; Rawr / Device AE stays as chosen.
-                            X14uPanel.Exposure -> onQuickEvent(CaptureQuickEvent.SetRawrAeOption {
-                                com.rawr.camera.settings.model.RawrAeSettings(enabled = it.enabled)
-                            })
-                            // Look: tone (or AgX) and render exposure, highlights, and the film preset's own values;
-                            // the chosen profile and film preset stay.
+                            // Presets (Nov 17): RESET goes back to P0, the baseline. Exposure: P0's Rawr AE options.
+                            X14uPanel.Exposure -> presetActions.resetToBaseline(
+                                setOf(com.rawr.camera.settings.model.PresetGroup.Exposure))
+                            // Look: P0's profile, tone (or AgX), highlights and tone mapping; a film recipe's own values
+                            // go back to the recipe (film on / off and the chosen recipe stay).
                             X14uPanel.Look -> {
-                                val agx = renderProfiles.agx
-                                if (agx != null) {
-                                    agxStripState(agx, state.renderExposureTenths, "").params.keys.forEach { key ->
-                                        dispatchAgx(dispatch, key, null)
-                                    }
-                                } else {
-                                    val tone = toneActions(state, dispatch)
-                                    TonemapCatalog.all.forEach { tone.reset(it.jsonKey) }
-                                }
-                                onQuickEvent(CaptureQuickEvent.SetHighlightMode(
-                                    if (isVideo) HighlightQuickMode.Off else HighlightQuickMode.Opposed))
-                                onQuickEvent(CaptureQuickEvent.SetHighlightCompression(quick.highlight.compressionDefault))
+                                presetActions.resetToBaseline(setOf(com.rawr.camera.settings.model.PresetGroup.Look))
                                 filmQuick?.takeIf { film && it.modified }?.let { q ->
                                     q.selectedPresetId?.let { onFilmEvent(CaptureFilmEvent.SelectPreset(it)) }
                                 }
@@ -1060,6 +1203,22 @@ internal fun X14uCaptureLayout(
                     modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                         .padding(bottom = (31.dp * s - 18.dp).coerceAtLeast(4.dp), start = 7.dp, end = 7.dp)
                 )
+                // Preset badge just above the Look button: text only, grey P0, accent P1…, "*" once changed.
+                if (activePreset != null) {
+                    X14uPresetBadge(
+                        label = activePreset.label + if (presetChanged) "*" else "",
+                        accent = !activePreset.isBaseline,
+                        enabled = !recordingLock && !panoLocked,
+                        orientation = orientation,
+                        onTap = {
+                            val open = !presetsOpen
+                            closeAll()
+                            presetsOpen = open
+                        },
+                        modifier = Modifier.align(Alignment.BottomStart)
+                            .padding(start = 7.dp, bottom = (31.dp * s - 18.dp).coerceAtLeast(4.dp) + 42.dp)
+                    )
+                }
             }
             CaptureTopBar(
                 state, dispatch, onOpenSettings, videoLocked = recordingLock, showLog = false,
@@ -1100,7 +1259,48 @@ internal fun X14uCaptureLayout(
                     else Modifier.zIndex(30f).align(Alignment.TopCenter).offset(y = top + 6.dp).padding(horizontal = 12.dp).fillMaxWidth()
                 )
             }
+            presetSheet?.let { sheet ->
+                // Like the video crop panel: landscape turns the whole sheet, centred on the screen.
+                val sheetModifier = if (orientation == Orientation.Landscape) Modifier.zIndex(30f).align(Alignment.Center)
+                    .uprightLayoutInLandscape(orientation).width(minOf(fullHeight - top * 2, 560.dp))
+                else Modifier.zIndex(30f).align(Alignment.TopCenter).offset(y = top + 6.dp).padding(horizontal = 12.dp).fillMaxWidth()
+                if (sheet == PRESET_SAVE) {
+                    X14uPresetSaveSheet(
+                        label = "P${presetsUi.items.size}",
+                        current = presetCameraNow(),
+                        summary = presetsUi.current,
+                        onSave = { name, groups ->
+                            presetActions.save(name, groups, presetCameraNow())
+                            presetSheet = null
+                        },
+                        onClose = { presetSheet = null },
+                        modifier = sheetModifier
+                    )
+                } else {
+                    val item = presetsUi.items.firstOrNull { it.id == sheet }
+                    if (item == null) presetSheet = null
+                    else X14uPresetDetailsSheet(
+                        item = item,
+                        full = presetsUi.full,
+                        onUpdate = {
+                            presetActions.update(item.id, presetCameraNow())
+                            presetSheet = null
+                        },
+                        onRename = { presetActions.rename(item.id, it) },
+                        onDuplicate = { presetActions.duplicate(item.id) },
+                        onDelete = {
+                            presetActions.delete(item.id)
+                            presetSheet = null
+                        },
+                        onRestoreDefaults = { presetActions.restoreBaseline() },
+                        onClose = { presetSheet = null },
+                        modifier = sheetModifier
+                    )
+                }
+            }
             val onCellTap: (String) -> Unit = { key ->
+                presetsOpen = false
+                presetSheet = null
                 if (panoLocked) Unit
                 else if (panel == null) selected = if (selected == key) null else key
                 else {
@@ -1134,6 +1334,18 @@ internal fun X14uCaptureLayout(
                 if (burst && state.burst.running) {
                     // Burst: the count and speed above the finger (the shutter is under it).
                     X14uBurstCounter(state.burst, orientation)
+                } else if (presetsOpen && !recordingLock && !panoLocked) {
+                    X14uPresetStrip(
+                        presets = presetsUi,
+                        changed = presetChanged,
+                        enabled = true,
+                        onApply = applyPreset,
+                        onDetails = { presetSheet = it.id },
+                        onSaveNew = { presetSheet = PRESET_SAVE },
+                        onUpdate = { activePreset?.let { presetActions.update(it.id, presetCameraNow()) } },
+                        onRevert = { activePreset?.let(applyPreset) },
+                        onMove = presetActions::move
+                    )
                 } else if (key != null) {
                     X14uEditorView(editorFor(key), orientation)
                 } else if (panel == null) {

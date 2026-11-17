@@ -800,7 +800,11 @@ data class SettingsValues(
     /** X14U: the in-sensor-zoom lenses (2x) were turned off once, so zoom crops the main camera; they can be re-enabled. */
     val inSensorZoomLensesOffOnce: Boolean = false,
     /** X14U, once: photo DCP defaults (Main / Tele by lens) and video back on the camera's colour. */
-    val dcpDefaultsOnce: Boolean = false
+    val dcpDefaultsOnce: Boolean = false,
+    /** X14U presets: P0 (the baseline) first, then P1, P2… in strip order; empty until first use. */
+    val capturePresets: List<CapturePreset> = emptyList(),
+    /** The preset last applied or saved (P0 when none). */
+    val activePresetId: String = CapturePreset.BASELINE_ID
 ) {
     val isVideo: Boolean get() = captureModeId == "video"
     val isLogActive: Boolean get() = isVideo && videoLogEnabled
