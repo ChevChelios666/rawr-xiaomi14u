@@ -1,6 +1,9 @@
 package com.rawr.camera.settings.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
@@ -111,6 +114,53 @@ internal fun MonitoringSettings(state: SettingsUiState, dispatch: SettingsDispat
                 checked = loupe.meter,
                 supportingText = "Sharpness bar with a peak-hold mark: sweep through focus, return to the mark"
             ) { set(loupe.copy(meter = it)) }
+        }
+        // X14U (Nov 17): what each overlay shows; tap ⓘ. They're turned on from the swipe-down panel.
+        SettingsGroup(title = "Overlays", description = "Turned on from the swipe-down panel on the camera screen. None of them changes the photo.") {
+            SettingsRow(
+                title = "Focus peaking",
+                supportingText = "Edges in focus glow in the accent colour while you focus: during manual focus and for a moment after a tap to focus. Sensitivity is above."
+            )
+            SettingDivider()
+            SettingsRow(
+                title = "RAW highlights",
+                supportingText = "Marks where the sensor itself clips. Those highlights are lost even in the DNG: lower EV until the marks shrink to what should clip, like lamps or the sun."
+            )
+            SettingDivider()
+            SettingsRow(
+                title = "Tonemap shadows",
+                supportingText = "Marks shadows your look crushes to black. The RAW still holds them: lift Shadows in the Look panel, or pick a flatter profile, to keep them in the JPEG."
+            )
+            SettingDivider()
+            SettingsRow(
+                title = "False colour",
+                supportingText = "Paints the viewfinder by brightness, as the photo will look after your look (not the RAW). Put the subject in the zone you want, for example a face in green or yellow, and keep red off anything that should hold detail. IRE: 0 is black, 100 is white.",
+                infoExtra = { FalseColourLegend() }
+            )
+        }
+    }
+}
+
+/** The false colour zones (native/monitoring_overlays defaults: IRE bounds and colours). */
+@Composable
+private fun FalseColourLegend() {
+    val zones = listOf(
+        Triple(androidx.compose.ui.graphics.Color(0xFF2A1440), "0–3", "crushed black"),
+        Triple(androidx.compose.ui.graphics.Color(0xFF1D3AA6), "3–10", "deep shadow"),
+        Triple(androidx.compose.ui.graphics.Color(0xFF1FA0C8), "10–40", "shadows"),
+        Triple(androidx.compose.ui.graphics.Color(0xFF2FB34D), "40–60", "mid-tones, grey card"),
+        Triple(androidx.compose.ui.graphics.Color(0xFFF2C81A), "60–80", "bright: skin, sky"),
+        Triple(androidx.compose.ui.graphics.Color(0xFFFF6A0D), "80–95", "near white"),
+        Triple(androidx.compose.ui.graphics.Color(0xFFFF1A1A), "95–100", "clipped")
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        zones.forEach { (color, range, meaning) ->
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Box(Modifier.size(22.dp, 12.dp).background(color, androidx.compose.foundation.shape.RoundedCornerShape(3.dp)))
+                Spacer(Modifier.width(10.dp))
+                Text(range, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.width(56.dp))
+                Text(meaning)
+            }
         }
     }
 }

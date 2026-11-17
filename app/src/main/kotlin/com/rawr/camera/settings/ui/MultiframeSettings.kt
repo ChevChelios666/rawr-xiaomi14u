@@ -24,6 +24,7 @@ internal fun MultiframeSettings(state: SettingsUiState, dispatch: SettingsDispat
             SettingsSwitchRow(
                 title = "Save Base DNG",
                 checked = state.values.saveBaseDng,
+                supportingText = "Also saves the merge's base frame (the sharpest one, unmerged) as its own DNG next to the merged one: a fallback if the merge ghosts on movement, and a plain single-shot RAW to compare. Needs DNG on.",
                 enabled = enabled && state.values.dngEnabled
             ) { dispatch.invoke(SetSaveBaseDng(it)) }
         }
@@ -45,7 +46,7 @@ internal fun MultiframeSettings(state: SettingsUiState, dispatch: SettingsDispat
         }
         SettingsGroup(
             title = "Merge When Zoomed",
-            description = "Shots zoomed past a lens (digital zoom) use this merge. Same as normal: the merge above."
+            description = "Shots zoomed past a lens (digital zoom, e.g. 70 mm on the 3.2x) use this merge. A crop has fewer pixels to merge, so you can pick a different merge for it. Same as normal: the merge above."
         ) {
             val options = listOf<MultiframeMergeAlgorithm?>(null) + MultiframeMergeAlgorithm.entries
             options.forEachIndexed { index, candidate ->

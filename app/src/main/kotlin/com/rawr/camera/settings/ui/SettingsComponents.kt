@@ -186,6 +186,8 @@ internal fun SettingsRow(
     testTag: String? = null,
     onClick: (() -> Unit)? = null,
     leadingIcon: ImageVector? = null,
+    /** More in the ⓘ dialog under [supportingText] (a legend). */
+    infoExtra: (@Composable () -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null
 ) {
     val tag = controlTag("row", title, testTag)
@@ -223,7 +225,7 @@ internal fun SettingsRow(
                         },
                     modifier = Modifier.weight(1f, fill = false)
                 )
-                if (supportingText != null) SettingsInfoButton(title, supportingText)
+                if (supportingText != null) SettingsInfoButton(title, supportingText, infoExtra)
             }
             if (value != null) {
                 Text(
@@ -612,7 +614,7 @@ internal fun SelectedCheck(selected: Boolean, enabled: Boolean = true) {
 
 /** Small ⓘ that shows a row's help text in a dialog instead of inline. */
 @Composable
-internal fun SettingsInfoButton(title: String, text: String) {
+internal fun SettingsInfoButton(title: String, text: String, extra: (@Composable () -> Unit)? = null) {
     var open by remember { mutableStateOf(false) }
     val tag = LocalSettingsControlTag.current ?: controlTag("row", title)
     Text(
@@ -628,7 +630,10 @@ internal fun SettingsInfoButton(title: String, text: String) {
         AlertDialog(
             onDismissRequest = { open = false },
             title = { Text(title) },
-            text = { Text(text) },
+            text = {
+                if (extra == null) Text(text)
+                else Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { Text(text); extra() }
+            },
             confirmButton = { TextButton(onClick = { open = false }) { Text("OK") } }
         )
     }

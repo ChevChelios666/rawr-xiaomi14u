@@ -242,8 +242,8 @@ private fun VideoHoldToLockGroup() {
     val set: (com.rawr.camera.video.VideoLockSettings.Values) -> Unit = { com.rawr.camera.video.VideoLockSettings.update(it) }
     SettingsGroup(
         title = "Hold Shutter to Lock",
-        description = "In video, a tap records as usual. Hold the record button to record with the settings below " +
-            "locked from that moment; they are released when recording stops."
+        description = "In video, a tap records as usual. Hold the record button (or the grip's red button) for the hold time " +
+            "and it starts recording with the settings below locked; let go and it keeps recording. A tap stops it and releases them."
     ) {
         SettingsSwitchRow(title = "Hold to record locked", checked = v.enabled) { set(v.copy(enabled = it)) }
         SettingDivider()

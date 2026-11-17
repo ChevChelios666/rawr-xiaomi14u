@@ -193,7 +193,8 @@ internal fun ExposureSettings(state: SettingsUiState, dispatch: SettingsDispatch
                     "Brightening past the sensor's highest real ISO, applied after RAW; DNGs carry it as BaselineExposure. " +
                         "Maximum has no limit and gets noisy in the dark"
                 ) { setAe(ae.copy(digitalGain = it)) }
-                RawrAeChoice("Adaptation Speed", RawrAeSpeed.entries, ae.speed, { it.label }, null) {
+                RawrAeChoice("Adaptation Speed", RawrAeSpeed.entries, ae.speed, { it.label },
+                    "How fast exposure follows a change in light. Slower: smoother in video, no pumping when something bright passes; faster: ready sooner after you point somewhere new") {
                     setAe(ae.copy(speed = it))
                 }
             }

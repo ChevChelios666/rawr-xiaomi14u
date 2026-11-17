@@ -19,7 +19,8 @@ internal fun HighlightReconstructionSettings(state: SettingsUiState, dispatch: S
 @Composable
 internal fun HighlightReconstructionGroup(state: SettingsUiState, dispatch: SettingsDispatch) {
     val v = state.values
-    SettingsGroup(description = "Captured stills use the Photo method. Video recordings use the Video method. Live preview uses color propagation.") {
+    SettingsGroup(description = "Where one colour channel clips, the others often still hold detail: reconstruction rebuilds the missing colour, so blown areas keep detail or turn neutral white instead of magenta or cyan patches. " +
+        "Captured stills use the Photo method, video recordings the Video method; the live preview uses colour propagation.") {
         PhotoVideoTargetSelector(
             photoOn = v.photoHighlightEnabled,
             videoOn = v.videoHighlightEnabled,
@@ -72,6 +73,7 @@ private fun HighlightMethodOptions(
 ) {
     SettingsSelectionRow(
         title = "Color propagation",
+        supportingText = "Fills clipped areas with colour spread in from the unclipped edges around them. Fast and smooth; used by the live preview.",
         selected = selectedMethod == 0,
         enabled = selectionEnabled,
         onClick = { onMethod(0) }
@@ -79,6 +81,7 @@ private fun HighlightMethodOptions(
     SettingDivider()
     SettingsSelectionRow(
         title = "Inpaint Opposed (Coloropp)",
+        supportingText = "RawTherapee's method: rebuilds each clipped channel from the opposite colours nearby. The most natural on skies, lamps and bright skin; slower.",
         selected = selectedMethod == 1,
         enabled = selectionEnabled,
         onClick = { onMethod(1) }
@@ -88,7 +91,7 @@ private fun HighlightMethodOptions(
         StandaloneNumericSliderRow(
             identity = "${thresholdIdentity}",
             label = "Highlight threshold",
-            supportingText = "RawTherapee Hlth; higher values reconstruct more pixels",
+            supportingText = "How close to clipping a pixel must be to get rebuilt (RawTherapee's Hlth). Higher: more pixels are rebuilt, catching soft clipping; too high can grey out bright colours.",
             minimum = 0.5f, maximum = 2f, step = 0.05f, decimals = 2,
             value = threshold, defaultValue = 1f, enabled = strengthEnabled
         ) { onThreshold(it) }
@@ -96,7 +99,7 @@ private fun HighlightMethodOptions(
         StandaloneNumericSliderRow(
             identity = "${thresholdIdentity}_compression",
             label = "Highlight compression",
-            supportingText = "SDR shoulder strength; UltraHDR color stays uncompressed",
+            supportingText = "How gently rebuilt highlights roll off to white in the JPEG (the shoulder). Higher: softer roll-off and more highlight detail, slightly flatter brights. The HDR part of an Ultra HDR photo keeps them uncompressed.",
             minimum = 0f, maximum = 300f, step = 1f, decimals = 0,
             value = compression, defaultValue = compressionDefault, enabled = strengthEnabled
         ) { onCompression(it) }
@@ -175,7 +178,8 @@ internal fun DynamicRangeSettings(state: SettingsUiState, dispatch: SettingsDisp
                         value = (tuning.coarsestMip - 5).toFloat(), defaultValue = 1f
                     ) { dispatch.invoke(SetLocalTone(tuning = tuning.copy(coarsestMip = it.toInt() + 5))) }
                     SettingDivider()
-                    SettingsSwitchRow(title = "Local contrast boost", checked = tuning.boostLocalContrast) {
+                    SettingsSwitchRow(title = "Local contrast boost", checked = tuning.boostLocalContrast,
+                        supportingText = "Brings back the mid-tone local contrast that balancing shadows and highlights flattens, so the photo doesn't look dull. Can look crunchy on faces and edges.") {
                         dispatch.invoke(SetLocalTone(tuning = tuning.copy(boostLocalContrast = it)))
                     }
                     ChoiceSummary("Conservative ranges. Strong combinations can still exaggerate edges; leave contrast boost off for a softer look.")
@@ -342,34 +346,40 @@ internal fun DemosaicSettings(state: SettingsUiState, dispatch: SettingsDispatch
 internal fun DemosaicGroup(state: SettingsUiState, dispatch: SettingsDispatch) {
     SettingsGroup(
         title = "Demosaic · Photo",
-        description = "Still-capture demosaic only. The live RAW preview pipeline is unchanged."
+        description = "Demosaicing turns the sensor's colour mosaic (each pixel sees red, green or blue) into full-colour pixels; " +
+            "it sets how fine detail, edges and noise look. Still captures only; the live preview is unchanged. Tap ⓘ on each for when to use it."
     ) {
         SettingsSelectionRow(
             title = "AMaZE",
+            supportingText = "The most fine detail and the cleanest edges, and the slowest. Best for well-lit, textured shots. In noisy flat areas (sky, walls) it can leave faint maze-like patterns.",
             selected = state.values.demosaicAlgorithm == DemosaicAlgorithm.Amaze,
             onClick = { dispatch.invoke(SetDemosaicAlgorithm(DemosaicAlgorithm.Amaze)) }
         )
         SettingDivider()
         SettingsSelectionRow(
             title = "AMaZE + VNG4",
+            supportingText = "AMaZE on detail, VNG4 on flat areas, where AMaZE's maze patterns show in noise. The contrast threshold sets where one hands over to the other.",
             selected = state.values.demosaicAlgorithm == DemosaicAlgorithm.DualAmazeVng4,
             onClick = { dispatch.invoke(SetDemosaicAlgorithm(DemosaicAlgorithm.DualAmazeVng4)) }
         )
         SettingDivider()
         SettingsSelectionRow(
             title = "RCD",
+            supportingText = "Close to AMaZE's detail, fewer artefacts on round edges and small bright points (stars, lights), and faster. A good everyday choice.",
             selected = state.values.demosaicAlgorithm == DemosaicAlgorithm.Rcd,
             onClick = { dispatch.invoke(SetDemosaicAlgorithm(DemosaicAlgorithm.Rcd)) }
         )
         SettingDivider()
         SettingsSelectionRow(
             title = "VNG4",
+            supportingText = "Softer, but no maze patterns and fewer colour artefacts: for noisy, low-light shots where fine detail is gone anyway.",
             selected = state.values.demosaicAlgorithm == DemosaicAlgorithm.Vng4,
             onClick = { dispatch.invoke(SetDemosaicAlgorithm(DemosaicAlgorithm.Vng4)) }
         )
         SettingDivider()
         SettingsSelectionRow(
             title = "RCD + VNG4",
+            supportingText = "RCD on detail, VNG4 on flat areas: RCD's detail with smoother skies and walls in noisy shots.",
             selected = state.values.demosaicAlgorithm == DemosaicAlgorithm.DualRcdVng4,
             onClick = { dispatch.invoke(SetDemosaicAlgorithm(DemosaicAlgorithm.DualRcdVng4)) }
         )
@@ -379,7 +389,8 @@ internal fun DemosaicGroup(state: SettingsUiState, dispatch: SettingsDispatch) {
             SettingDivider()
             SettingsSwitchRow(
                 title = "Auto threshold",
-                checked = state.values.dualAutoContrast
+                checked = state.values.dualAutoContrast,
+                supportingText = "Picks the contrast threshold per photo: below it (flat areas) VNG4 is used, above it the detailed method. Off: set it yourself below; higher sends more of the image to VNG4."
             ) { dispatch.invoke(SetDualAutoContrast(it)) }
             SettingDivider()
             StandaloneNumericSliderRow(
@@ -397,7 +408,8 @@ internal fun DemosaicGroup(state: SettingsUiState, dispatch: SettingsDispatch) {
         StandaloneNumericSliderRow(
             identity = "fcc_steps_photo",
             label = "False color correction steps",
-            supportingText = "Still captures",
+            supportingText = "Still captures. Removes false colour left by demosaicing: coloured specks and moiré on fine detail and edges (fabric, hair, foliage), by smoothing the colour only. " +
+                "More steps: cleaner colour, but fine colourful detail can turn greyer. Not the False colour overlay (Display & Controls > Monitoring).",
             minimum = 1f,
             maximum = 8f,
             step = 1f,
@@ -407,7 +419,7 @@ internal fun DemosaicGroup(state: SettingsUiState, dispatch: SettingsDispatch) {
     }
     SettingsGroup(
         title = "False color correction · Video",
-        description = "Runs one correction step in new video recordings when enabled."
+        description = "One false colour correction step in new video recordings: fewer coloured specks on fine detail (fabric, foliage). Not the False colour overlay."
     ) {
         SettingsSwitchRow(
             title = "Video false color correction",
