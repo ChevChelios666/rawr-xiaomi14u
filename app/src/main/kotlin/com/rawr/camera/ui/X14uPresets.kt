@@ -141,8 +141,9 @@ internal fun X14uPresetStrip(
             horizontalArrangement = Arrangement.spacedBy(gap)
         ) {
             order.forEach { id ->
-                key(id) {
-                    val item = presets.items.firstOrNull { it.id == id } ?: return@key
+                // No early return inside key {}: D8 can't take the class the compiler makes for it.
+                val item = presets.items.firstOrNull { it.id == id }
+                if (item != null) key(id) {
                     val selected = id == presets.activeId
                     val dragging = id == dragId
                     Box(
