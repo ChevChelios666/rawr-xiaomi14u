@@ -40,6 +40,7 @@
 #include "develop/demosaic/DualStillProcessor.h"
 #include "develop/demosaic/RcdStillProcessor.h"
 #include "develop/highlight/LensShadingMapSnapshot.h"
+#include "develop/render/DenoiseProfile.h"
 #include "develop/render/StillImageRenderer.h"
 #include "diagnostics/logging/RuntimeTraceRecorder.h"
 #include "encoding/dng/DngCaptureWriter.h"
@@ -627,6 +628,19 @@ void MfsrCaptureJob::runStages(Published& published) {
                 .25f * (n.offsetBySite[0] + n.offsetBySite[1] + n.offsetBySite[2] + n.offsetBySite[3]),
                 double(mergeResult->physicalImageBytes) / (1024.0 * 1024.0),
                 double(mergeResult->physicalBufferBytes) / (1024.0 * 1024.0));
+            // X14U (Nov 17): the camera's noise profile (what single-frame and video denoise use) against the noise
+            // measured from this burst, green sites, same units. ratio 1 = the profile is right for this ISO.
+            if (mergeResult->noiseEstimated) {
+                float camA = 0.0f, camB = 0.0f;
+                const bool camKnown = rawrcam::develop::rendered::resolveDenoiseNoise(job->referenceMetadata, camA, camB);
+                const float fitA = .5f * (n.slopeBySite[1] + n.slopeBySite[2]);
+                const float fitB = .5f * (n.offsetBySite[1] + n.offsetBySite[2]);
+                LOGI("NOISE_PROFILE_CHECK iso=%d exposureNs=%lld lens=%s fitA=%g fitB=%g camA=%g camB=%g ratioA=%.2f ratioB=%.2f",
+                     int(job->referenceMetadata.sensitivity), (long long)job->referenceMetadata.exposureTimeNs,
+                     job->referenceMetadata.cameraContext ? job->referenceMetadata.cameraContext->lensId.c_str() : "?",
+                     fitA, fitB, camKnown ? camA : 0.0f, camKnown ? camB : 0.0f,
+                     camKnown && camA > 0.0f ? fitA / camA : 0.0f, camKnown && camB > 0.0f ? fitB / camB : 0.0f);
+            }
             // Wall time versus the GPU-timestamp stages above: chunks = submissions, gpu = summed GPU intervals, wait =
             // host blocked on the fence (GPU work plus queue latency), rec/sub = host recording and queue submit,
             // between = host time outside any submission.
