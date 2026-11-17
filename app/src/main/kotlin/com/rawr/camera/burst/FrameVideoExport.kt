@@ -322,7 +322,7 @@ private class GifPalette(samples: IntArray) {
 
     init {
         val boxes = ArrayList<IntArray>()
-        boxes += samples.ifEmpty { intArrayOf(0) }
+        boxes += if (samples.isEmpty()) intArrayOf(0) else samples
         while (boxes.size < 256) {
             // Split the box with the widest channel range.
             var best = -1
