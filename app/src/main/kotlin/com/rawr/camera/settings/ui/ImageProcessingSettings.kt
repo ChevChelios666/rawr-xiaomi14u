@@ -19,8 +19,7 @@ internal fun HighlightReconstructionSettings(state: SettingsUiState, dispatch: S
 @Composable
 internal fun HighlightReconstructionGroup(state: SettingsUiState, dispatch: SettingsDispatch) {
     val v = state.values
-    SettingsGroup(description = "Rebuilds clipped colour from the channels that didn't clip, so blown areas stay detailed or white, not magenta. " +
-        "Photos use the Photo method, video the Video method, the viewfinder colour propagation.") {
+    SettingsGroup(description = "Rebuilds clipped colour so blown areas stay detailed or white, not magenta. Photo and Video each use their own method.") {
         PhotoVideoTargetSelector(
             photoOn = v.photoHighlightEnabled,
             videoOn = v.videoHighlightEnabled,
@@ -123,7 +122,7 @@ internal fun DynamicRangeSettings(state: SettingsUiState, dispatch: SettingsDisp
     SettingsPageContainer(testTag = SettingsTestTags.sectionRoot("DynamicRange")) {
         SettingsGroup(
             title = "Photo",
-            description = "Fits a high-contrast scene into the picture by brightening shadows; highlights keep their brightness. Runs before Tone Mapping. JPEG and viewfinder only; not applied to LOG."
+            description = "Lifts shadows to fit high-contrast scenes; highlights stay. JPEG and viewfinder only."
         ) {
             val method = v.photoDynamicRange()
             CompactChoiceRow(visibleDynamicRangeMethods, method, { it.label }) {
@@ -146,7 +145,7 @@ internal fun DynamicRangeSettings(state: SettingsUiState, dispatch: SettingsDisp
                     StandaloneNumericSliderRow(
                         identity = "local_tone_shadows",
                         label = "Strength",
-                        supportingText = "How far dark regions may be brightened. Lowered automatically when the frame is too noisy for it. Lower: closer to the plain capture. Higher: brighter shadows, flatter overall.",
+                        supportingText = "How much shadows may be lifted. Lowered automatically in noisy frames.",
                         minimum = LocalToneLimits.MIN_SHADOWS_EV,
                         maximum = LocalToneLimits.MAX_SHADOWS_EV,
                         step = .1f,
@@ -455,8 +454,7 @@ internal fun DistortionSettings(state: SettingsUiState, dispatch: SettingsDispat
     val v = state.values
     SettingsPageContainer(testTag = SettingsTestTags.sectionRoot("Distortion")) {
         SettingsGroup(
-            description = "Straightens lens distortion on lenses with a calibration. Photo covers the viewfinder, " +
-                "stills and the DNG lens correction; Video covers recordings and the video viewfinder."
+            description = "Straightens lens distortion where calibrated. Photo: viewfinder, stills and DNG. Video: recordings."
         ) {
             PhotoVideoTargetSelector(
                 photoOn = v.distortionCorrectionEnabled,
@@ -472,7 +470,7 @@ internal fun DistortionSettings(state: SettingsUiState, dispatch: SettingsDispat
 internal fun DefringeGroup(state: SettingsUiState, dispatch: SettingsDispatch) {
     val v = state.values
     SettingsGroup(
-        description = "Reduces purple and blue halos around bright edges by repairing nearby color while preserving brightness. Fringe detection and bright-edge protection are automatic; Strength controls how much correction is applied."
+        description = "Removes purple and blue fringes along bright edges. Strength: how much."
     ) {
         PhotoVideoTargetSelector(
             photoOn = v.photoDefringeEnabled,

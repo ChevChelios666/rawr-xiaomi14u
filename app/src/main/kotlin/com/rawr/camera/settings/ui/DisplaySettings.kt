@@ -44,10 +44,7 @@ internal fun DisplayControlsSettings(state: SettingsUiState, dispatch: SettingsD
         }
         SettingsGroup(
             title = "Xiaomi 14 Ultra grip",
-            description = "For the 14 Ultra Photography Kit grip, whose dial Android can't read: Rawr reads the grip " +
-                "over USB while it's open (asks for USB permission): shutter half and " +
-                "full press, the record button, the zoom lever (lens steps) and the dial. Off: only the shutter and " +
-                "the lever work, through Android."
+            description = "Reads the 14 Ultra grip over USB (asks permission) so the dial and record button work too. Off: only the shutter and zoom lever."
         ) {
             SettingsSwitchRow(
                 title = "Read the grip over USB",

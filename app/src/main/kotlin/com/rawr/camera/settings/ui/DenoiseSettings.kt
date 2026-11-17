@@ -26,7 +26,7 @@ internal fun DenoiseGroup(state: SettingsUiState, dispatch: SettingsDispatch) {
 private fun DenoiseTargetSelector(state: SettingsUiState, dispatch: SettingsDispatch) {
     val v = state.values
     SettingsGroup(
-        description = "Photo denoise runs on single-frame stills only; multiframe merges denoise themselves. Video denoise is wavelets only, with its own strength."
+        description = "Photo: single-frame shots only (merges denoise themselves). Video: its own strength."
     ) {
         PhotoVideoTargetSelector(
             photoOn = v.photoDenoise is DenoiseConfig.Wavelet,

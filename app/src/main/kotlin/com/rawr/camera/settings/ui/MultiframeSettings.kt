@@ -13,7 +13,7 @@ internal fun MultiframeSettings(state: SettingsUiState, dispatch: SettingsDispat
     val rexture = tuning.mergeAlgorithm == MultiframeMergeAlgorithm.Rexture
     SettingsPageContainer {
         SettingsGroup(
-            description = "Multiframe still pipeline. Off leaves the existing single-frame capture path untouched."
+            description = "Merges several frames into each photo (HDR+ / Rexture). Off: one frame per photo."
         ) {
             SettingsSwitchRow(
                 title = "Multiframe",
@@ -30,10 +30,7 @@ internal fun MultiframeSettings(state: SettingsUiState, dispatch: SettingsDispat
         }
         SettingsGroup(
             title = "Merge Algorithm",
-            description = "Both merges use the sharpest frame of the last quarter second before the shutter as the base. " +
-                "HDR+ Quality: per-frequency merge, cleaner with mild sharpening; a frame is left out of the tiles where it moved, so moving subjects stay sharp. " +
-                "Rexture: kernel-regression merge of the whole burst at native resolution, aligned and weighted per pixel. Equal-exposure bursts. Up to about 56 MP it merges the whole frame (JPEG and DNG); above that it merges in strips and saves DNG only. " +
-                "(Native resolution only.)"
+            description = "Both merge the burst onto its sharpest frame. HDR+ Quality: cleaner, moving subjects stay sharp. Rexture: more detail on still scenes; above ~56 MP, DNG only."
         ) {
             MultiframeMergeAlgorithm.entries.forEachIndexed { index, candidate ->
                 if (index > 0) SettingDivider()
@@ -67,7 +64,7 @@ internal fun MultiframeSettings(state: SettingsUiState, dispatch: SettingsDispat
                 title = "Chroma Denoise",
                 checked = state.values.multiframeChromaDenoise,
                 supportingText =
-                    "JPEG only. Removes leftover colour blotches from the merged image (chroma only, luma untouched) using the noise measured from the burst. Separate from Image > Denoise, which applies to single frames.",
+                    "JPEG only. Cleans leftover colour blotches after the merge, using the burst's measured noise.",
                 enabled = enabled
             ) { dispatch.invoke(SetMultiframeChromaDenoise(it)) }
             SettingDivider()
@@ -75,7 +72,7 @@ internal fun MultiframeSettings(state: SettingsUiState, dispatch: SettingsDispat
                 SettingsSwitchRow(
                     title = "Rexture Native RGB",
                     checked = state.values.multiframeRextureNativeRgb,
-                    supportingText = "JPEG only. Renders the JPEG from Rexture's own merged colour instead of re-mosaicking it and running the Demosaic setting. The DNG is unaffected.",
+                    supportingText = "JPEG only. Uses Rexture's own merged colour instead of the Demosaic setting. DNG unchanged.",
                     enabled = enabled
                 ) { dispatch.invoke(SetMultiframeRextureNativeRgb(it)) }
             }

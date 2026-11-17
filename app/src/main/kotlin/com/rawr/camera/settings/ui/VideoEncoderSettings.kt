@@ -29,8 +29,7 @@ internal fun VideoEncoderSettings(state: SettingsUiState, dispatch: SettingsDisp
         VideoHoldToLockGroup()
         SettingsGroup(
             title = "Recording",
-            description = "The recording timer always shows a health dot (green: keeping up, amber: near the frame " +
-                "budget, red: frames dropped) and a summary after a take that had problems."
+            description = "The timer's dot: green fine, amber near the limit, red frames dropped. A summary follows a take with problems."
         ) {
             SettingsSwitchRow(
                 title = "Show diagnostics",
@@ -47,10 +46,7 @@ internal fun VideoEncoderSettings(state: SettingsUiState, dispatch: SettingsDisp
         }
         SettingsGroup(
             title = "Horizon Lock",
-            description = "Lock keeps the saved video level while you move (Level tile → Lock, Video only); the " +
-                "viewfinder behaves like a stock camera. The picture is zoomed in by a fixed " +
-                "amount so the turned frame stays full: the wider the range, the more it crops. Past the range the " +
-                "horizon follows the phone. ±15° is the default."
+            description = "Keeps the video level as you tilt (Level tile → Lock). Crops in to fill the turned frame: a wider range crops more. Default ±15°."
         ) {
             val shownRange = state.values.horizonLockRange.resolved(1f)
             com.rawr.camera.settings.model.HorizonLockRange.entries
@@ -74,9 +70,7 @@ internal fun VideoEncoderSettings(state: SettingsUiState, dispatch: SettingsDisp
         }
         SettingsGroup(
             title = "Shutter display",
-            description = "How the video shutter reads: as a time (1/60) or as a shutter angle (180° = half the " +
-                "frame time). The camera is set by angle either way, so a choice keeps its look when the frame rate " +
-                "changes."
+            description = "Shows the video shutter as a time (1/60) or an angle (180° = half a frame). An angle keeps its look when the fps changes."
         ) {
             listOf(false to "Time · 1/60", true to "Angle · 180°").forEachIndexed { index, (angle, title) ->
                 if (index > 0) SettingDivider()
@@ -89,9 +83,7 @@ internal fun VideoEncoderSettings(state: SettingsUiState, dispatch: SettingsDisp
         }
         SettingsGroup(
             title = "Stabilise",
-            description = "Takes the shake out of the video using the gyroscope (Stabilise tile, Video, back lenses), " +
-                "inside a fixed crop: Standard about 1.15x, Strong about 1.3x for walking. The viewfinder shows it " +
-                "while recording. With Horizon Lock on Full it uses the crop that's already there."
+            description = "Gyro stabilisation for video, inside a fixed crop: Standard ~1.15x, Strong ~1.3x for walking."
         ) {
             com.rawr.camera.settings.model.VideoStabilize.entries.forEachIndexed { index, mode ->
                 if (index > 0) SettingDivider()
@@ -105,9 +97,7 @@ internal fun VideoEncoderSettings(state: SettingsUiState, dispatch: SettingsDisp
         }
         SettingsGroup(
             title = "Horizon Follow",
-            description = "Follow (Level tile → Follow): the video follows your tilt slowly, like a gimbal's roll, so " +
-                "shake goes and deliberate turns come through as smooth rolls. The viewfinder shows the recorded " +
-                "frame. Crops about 1.4x."
+            description = "The video follows your tilt slowly, like a gimbal: shake goes, intended turns stay smooth. Crops ~1.4x."
         ) {
             com.rawr.camera.settings.model.HorizonSmoothing.entries.forEachIndexed { index, smoothing ->
                 if (index > 0) SettingDivider()
@@ -180,9 +170,7 @@ internal fun VideoEncoderSettings(state: SettingsUiState, dispatch: SettingsDisp
         }
         SettingsGroup(
             title = "Audio",
-            description = "48 kHz. PCM records uncompressed audio in a .mov; AAC records a smaller .mp4. " +
-                "Stereo falls back to mono if the microphone can't do stereo. " +
-                "Gain is digital: Android has no analog mic gain. Watch the MIC meter; the lamp turns red on clipping."
+            description = "48 kHz. PCM: uncompressed, in a .mov. AAC: smaller, in an .mp4. Gain is digital; the MIC lamp turns red when clipping."
         ) {
             SettingsRow("Codec", value = encoder.audioCodec.label)
             CompactChoiceRow(VideoAudioCodec.entries, encoder.audioCodec, { it.label }) {

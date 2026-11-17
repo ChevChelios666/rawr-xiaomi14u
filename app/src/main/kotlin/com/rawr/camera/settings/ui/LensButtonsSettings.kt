@@ -53,8 +53,7 @@ internal fun LensButtonsGroup(state: SettingsUiState, dispatch: SettingsDispatch
 
     SettingsGroup(
         title = "Lens buttons",
-        description = "The lens pill on the capture screen. Photo, Video and Pano each keep their own set (Pano: " +
-            "lenses only). A digital focal length is a crop of the next wider lens, saved at the crop's own resolution."
+        description = "The lens pill. Photo, Video and Pano each keep their own. A digital focal length is a crop of the next wider lens."
     ) {
         Column(Modifier.padding(horizontal = SettingsRowHorizontalPadding, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
