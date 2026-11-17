@@ -1820,7 +1820,7 @@ private fun X14uLensRow(
                     }
                     val name = lens?.displayName ?: "${stop!!.mm} mm"
                     // The anchor away from its own focal length shows the live one.
-                    val live = if (item === anchor && liveMm != null && kotlin.math.abs(liveMm - (itemMm(item) ?: 0)) > .5f) liveMm else null
+                    val live = liveMm?.takeIf { item === anchor && kotlin.math.abs(it - (itemMm(item) ?: 0)) > .5f }
                     // Label: the zoom factor ("1x", "2.2x") or the focal length over "mm".
                     val mm: Int? = when {
                         live != null -> live.roundToInt()
