@@ -32,16 +32,20 @@ enum class BackupSection(val id: String, val label: String, val defaultOn: Boole
     Settings("settings", "Settings", true),
     LensProfiles("lens_profiles", "Lens profiles", true),
     /** The .cube files plus each profile's gamut/transfer/tone parameters and the selected LUTs. */
-    Luts("luts", "LUT profiles", false);
+    Luts("luts", "LUT profiles", false),
+    /** X14U: the capture presets (P0, P1…) and which one is active, restorable apart from the other settings. */
+    Presets("presets", "Capture presets", true);
 
     companion object {
         private val lensKeys = setOf("lens_profiles")
         private val lutKeys = setOf("user_lut_profiles", "selected_user_lut_profile_id", "video_user_lut_profile_id")
+        private val presetKeys = setOf("x14u_presets", "x14u_active_preset")
 
         internal fun sectionOf(key: String): BackupSection =
             when (key) {
                 in lensKeys -> LensProfiles
                 in lutKeys -> Luts
+                in presetKeys -> Presets
                 else -> Settings
             }
 
@@ -58,7 +62,7 @@ class BackupContents internal constructor(
 )
 
 /**
- * Backs up global settings, lens profiles and (opt-in) LUT profiles as a plain zip:
+ * Backs up global settings, lens profiles, (opt-in) LUT profiles and capture presets as a plain zip:
  *
  *   manifest.json   app version, device identity (no serials), creation time, included sections
  *   settings.json   each persisted key of the included sections as {"type": ..., "value": ...}
@@ -194,9 +198,11 @@ class SettingsBackupStore(
                     }
                 }
             }
-            val found = requireNotNull(sections) { "Not a Rawr backup" }
-            require(found.isNotEmpty()) { "Backup is empty" }
+            val listed = requireNotNull(sections) { "Not a Rawr backup" }
+            require(listed.isNotEmpty()) { "Backup is empty" }
             val json = requireNotNull(settingsJson) { "Backup has no settings" }
+            // Backups from before the presets section carried them with the settings.
+            val found = if (BackupSection.Settings in listed && json.has("x14u_presets")) listed + BackupSection.Presets else listed
             require(json.has(SCHEMA_KEY)) { "Backup has no settings schema" }
             require(json.getJSONObject(SCHEMA_KEY).getInt("value") >= 0) { "Invalid settings schema" }
             if (BackupSection.Settings in found) {
@@ -384,9 +390,15 @@ class PreparedBackup internal constructor(
                 saveLocationId = current.saveLocationId,
                 lastLensId = current.lastLensId,
                 customGpuDriverEnabled = current.customGpuDriverEnabled,
-                customGpuDriverName = current.customGpuDriverName
+                customGpuDriverName = current.customGpuDriverName,
+                capturePresets = current.capturePresets,
+                activePresetId = current.activePresetId
             )
         } else current
+        if (BackupSection.Presets in chosen) next = next.copy(
+            capturePresets = backup.capturePresets,
+            activePresetId = backup.activePresetId
+        )
         if (BackupSection.LensProfiles in chosen) next = next.copy(lensProfiles = backup.lensProfiles)
         if (BackupSection.Luts in chosen) next = next.copy(
             userLutProfiles = backup.userLutProfiles,

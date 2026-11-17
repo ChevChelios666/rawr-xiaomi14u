@@ -92,6 +92,22 @@ class SettingsBackupStoreTest {
         }
     }
 
+    @Test fun presetsRestoreApartFromTheOtherSettings() {
+        val presets = listOf(CapturePreset("p0", "P0", emptySet(), "{}"),
+            CapturePreset("p1", "Street", setOf(PresetGroup.Exposure), "{}"))
+        val source = defaults.copy(locationTagging = true, capturePresets = presets, activePresetId = "p1")
+        val current = defaults.copy(capturePresets = listOf(presets[0]), activePresetId = "p0")
+        val both = setOf(BackupSection.Settings, BackupSection.Presets)
+        val settingsOnly = store.prepare(store.read(export(source, both)), setOf(BackupSection.Settings)).merge(current)
+        assertTrue(settingsOnly.locationTagging)
+        assertEquals(current.capturePresets, settingsOnly.capturePresets)
+        assertEquals("p0", settingsOnly.activePresetId)
+        val presetsOnly = store.prepare(store.read(export(source, both)), setOf(BackupSection.Presets)).merge(current)
+        assertEquals(presets, presetsOnly.capturePresets)
+        assertEquals("p1", presetsOnly.activePresetId)
+        assertEquals(current.locationTagging, presetsOnly.locationTagging)
+    }
+
     @Test fun lensOnlyRestoreLeavesEvenInvalidLutSelectionUntouched() {
         val current = defaults.copy(selectedUserLutProfileId = "missing",
             videoUserLutProfileId = "missing", colorRenderProfile = ColorRenderProfile.UserLut,
