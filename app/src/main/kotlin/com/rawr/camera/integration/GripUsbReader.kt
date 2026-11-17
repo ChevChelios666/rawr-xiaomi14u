@@ -159,6 +159,7 @@ object GripUsbReader {
                     419 -> GripEvents.lensSteps.tryEmit(-1)
                     232 -> GripEvents.actions.tryEmit(GripEvents.Action.Record)
                 }
+                if (act && 232 in heldKeys2 && 232 !in keys) GripEvents.actions.tryEmit(GripEvents.Action.RecordRelease)
                 heldKeys2 = keys
             }
             4 -> {

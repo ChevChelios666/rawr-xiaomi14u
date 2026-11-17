@@ -92,9 +92,15 @@ class MainActivity : ComponentActivity() {
                         com.rawr.camera.integration.GripEvents.Action.ShutterRelease -> shutterReleased()
                         com.rawr.camera.integration.GripEvents.Action.Focus ->
                             captureViewModel.controller.dispatch(com.rawr.camera.architecture.Refocus)
+                        // In Video with hold-to-lock on, the capture screen takes the press and the release (tap:
+                        // record on release; hold: record locked); otherwise a press records at once.
                         com.rawr.camera.integration.GripEvents.Action.Record ->
-                            if (captureViewModel.controller.state.value.captureMode == CaptureMode.Video) toggleVideoRecording()
-                            else captureViewModel.controller.dispatch(com.rawr.camera.architecture.SetCaptureMode(CaptureMode.Video))
+                            if (captureViewModel.controller.state.value.captureMode != CaptureMode.Video) {
+                                captureViewModel.controller.dispatch(com.rawr.camera.architecture.SetCaptureMode(CaptureMode.Video))
+                            } else if (!com.rawr.camera.video.VideoLockSettings.values.value.enabled) {
+                                toggleVideoRecording()
+                            }
+                        com.rawr.camera.integration.GripEvents.Action.RecordRelease -> Unit
                     }
                 }
             }

@@ -15,8 +15,8 @@ object GripEvents {
     val lensSteps = kotlinx.coroutines.flow.MutableSharedFlow<Int>(extraBufferCapacity = 4)
     /** Dial: clicks (+ / -) for the control chosen in Settings. */
     val dialSteps = kotlinx.coroutines.flow.MutableSharedFlow<Int>(extraBufferCapacity = 16)
-    /** ShutterRelease: the full press let go (ends a burst). */
-    enum class Action { Focus, Shutter, ShutterRelease, Record }
+    /** ShutterRelease: the full press let go (ends a burst). RecordRelease: the red button let go (hold-to-lock). */
+    enum class Action { Focus, Shutter, ShutterRelease, Record, RecordRelease }
     val actions = kotlinx.coroutines.flow.MutableSharedFlow<Action>(extraBufferCapacity = 4)
 }
 

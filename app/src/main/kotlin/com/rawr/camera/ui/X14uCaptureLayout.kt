@@ -283,6 +283,45 @@ internal fun X14uCaptureLayout(
         videoLock.lock(state, dispatch, videoLockSettings)
         onToggleVideoRecording()
     }
+    // The grip's red button works the same way in Video (Nov 17): let go before the hold time and it records as
+    // usual, keep holding and it records locked; a press while recording stops. (Off: a press records at once,
+    // handled by the activity.)
+    val gripHold = remember { arrayOfNulls<kotlinx.coroutines.Job>(1) }
+    val gripScope = androidx.compose.runtime.rememberCoroutineScope()
+    val gripVideo by rememberUpdatedState(videoControls)
+    val gripLockSettings by rememberUpdatedState(videoLockSettings)
+    val gripInVideo by rememberUpdatedState(isVideo)
+    val gripToggle by rememberUpdatedState(onToggleVideoRecording)
+    val gripLock by rememberUpdatedState(onVideoHoldLock)
+    LaunchedEffect(Unit) {
+        com.rawr.camera.integration.GripEvents.actions.collect { action ->
+            if (!gripInVideo || !gripLockSettings.enabled) return@collect
+            when (action) {
+                com.rawr.camera.integration.GripEvents.Action.Record -> {
+                    if (gripVideo.recording) {
+                        gripToggle()
+                    } else if (!gripVideo.busy) {
+                        gripHold[0]?.cancel()
+                        videoHolding = true
+                        gripHold[0] = gripScope.launch {
+                            kotlinx.coroutines.delay(gripLockSettings.holdMs.toLong())
+                            gripHold[0] = null
+                            videoHolding = false
+                            gripLock()
+                        }
+                    }
+                }
+                com.rawr.camera.integration.GripEvents.Action.RecordRelease -> {
+                    val pending = gripHold[0] ?: return@collect
+                    pending.cancel()
+                    gripHold[0] = null
+                    videoHolding = false
+                    gripToggle()
+                }
+                else -> Unit
+            }
+        }
+    }
     // Video recording, or a 50 MP shot running (its camera switch must not meet a lens change).
     // A burst run too (a lens or mode change mid-run would mix cameras).
     val recordingLock = (isVideo && videoLocked) || LocalCaptureExtras.current.fullSizeBusy || state.burst.running
