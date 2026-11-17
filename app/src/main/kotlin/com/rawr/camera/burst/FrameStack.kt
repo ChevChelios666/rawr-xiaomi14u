@@ -74,6 +74,7 @@ object FrameStack {
         }
     }
 
+    @Suppress("DEPRECATION") // TAG_ISO_SPEED_RATINGS: the framework ExifInterface has no newer name for 0x8827.
     private fun copyExif(context: Context, from: File, to: Uri, description: String) {
         runCatching {
             val source = ExifInterface(from.path)

@@ -112,8 +112,7 @@ internal class TimedRun {
 
     /**
      * The run's photos go to Rawr's own storage like a burst (files/burst_frames/TIMED_<date>_<time>/…_001), so the
-     * burst viewer plays them as a time lapse, makes the video and stacks them; [context] writes its manifest at
-     * the end.
+     * burst viewer plays them as a time lapse, makes the video and stacks them; [context] writes its manifest.
      */
     fun start(state: CaptureUiState, dispatch: CaptureDispatch, settings: TimedBurstSettings.Values, context: android.content.Context) {
         saved = Saved(state.exposureControl.mode, state.focus.mode, state.whiteBalanceMode)
@@ -125,6 +124,8 @@ internal class TimedRun {
         // Single frames when merging is off or the interval is too short for a merge (Auto).
         TimedBurstSettings.runSingleFrame = !settings.merges
         intervalS = settings.intervalS
+        // Written now too, so a run cut short (the app closed) still opens as a timed run.
+        com.rawr.camera.burst.BurstStore.writeTimedManifest(context.applicationContext, folder, startedAt, intervalS, 0)
         total = settings.photos
         intervalMs = settings.intervalS * 1_000L
         shots = 0
@@ -170,7 +171,8 @@ internal class TimedRun {
         running = false
         locks = emptyList()
         TimedBurstSettings.runSingleFrame = false
-        CaptureFileNames.endBurst()
+        // Photos already on their way still go to the run's folder.
+        CaptureFileNames.endBurstAfterQueued()
         context?.let { com.rawr.camera.burst.BurstStore.writeTimedManifest(it, folder, startedAt, intervalS, shots) }
         context = null
     }

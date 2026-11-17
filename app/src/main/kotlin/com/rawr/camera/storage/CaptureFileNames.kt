@@ -26,11 +26,16 @@ internal object CaptureFileNames {
      * manifest records which number is the press frame / cover).
      */
     fun takeStill(): StillName {
-        burstTag?.let {
+        // A timed run that ended and whose last numbers went untaken past the grace: later photos get plain names.
+        val endAt = burstEndAt
+        if (endAt != 0L && System.nanoTime() > endAt) endBurst()
+        if (burstTag != null) {
             val number = burstNumbers.pollFirst()
             if (number != null) {
-                val folder = burstFolder ?: "BURST"
-                return StillName(folder = burstFolder, wholeName = "%s_%03d".format(Locale.US, folder, number))
+                val folder = burstFolder
+                // An ended timed run: its last queued photo closes it.
+                if (burstEndAt != 0L && burstNumbers.isEmpty()) endBurst()
+                return StillName(folder = folder, wholeName = "%s_%03d".format(Locale.US, folder ?: "BURST", number))
             }
         }
         val (suffix, at) = pendingSuffix.getAndSet(null) ?: return StillName()
@@ -41,6 +46,8 @@ internal object CaptureFileNames {
     @Volatile var burstFolder: String? = null
         private set
     @Volatile private var burstCover = 0
+    /** Set by [endBurstAfterQueued]: System.nanoTime() after which the ended run takes no more photos (0 = none). */
+    @Volatile private var burstEndAt = 0L
     private val burstNumbers = java.util.concurrent.LinkedBlockingDeque<Int>()
     private val nextLive = java.util.concurrent.atomic.AtomicInteger(1)
     /** Burst tags whose RAW job files are kept privately (JPEG-only bursts) for full-quality develop later. */
@@ -51,6 +58,7 @@ internal object CaptureFileNames {
      * [firstLive] (frames from before the press take 1…firstLive-1 later), and the first live frame is the cover.
      */
     fun startBurst(tag: String, folder: String?, firstLive: Int = 1, retainRaw: Boolean = false) {
+        burstEndAt = 0L
         burstNumbers.clear()
         nextLive.set(firstLive)
         burstCover = firstLive
@@ -79,8 +87,17 @@ internal object CaptureFileNames {
         return retainedTags.entries.firstOrNull { jobName.contains(it.key) }?.value
     }
 
+    /**
+     * A timed run ended: photos already on their way (queued before the end, named when their capture starts) still
+     * go to its folder; after [graceMs] a number nobody took is dropped and later photos get plain names.
+     */
+    fun endBurstAfterQueued(graceMs: Long = 5_000L) {
+        if (burstNumbers.isEmpty()) endBurst() else burstEndAt = System.nanoTime() + graceMs * 1_000_000L
+    }
+
     /** Leaving Burst: later photos get plain names. */
     fun endBurst() {
+        burstEndAt = 0L
         burstTag = null
         burstFolder = null
         burstNumbers.clear()

@@ -606,7 +606,8 @@ internal fun X14uCaptureLayout(
             timedNow = now
             // Saves still going from earlier photos: wait a little rather than pile them up.
             if (now >= timedRun.nextAt && timedState.pendingCaptures.count { !it.terminal } < 4) {
-                timedRun.shoot { if (!timedExtras.onFullSizeShot()) dispatch(TriggerCapture) }
+                // Straight to the shutter: a self-timer would delay every photo (and the next press cancel its countdown).
+                timedRun.shoot { if (!timedExtras.onFullSizeShot()) dispatch(com.rawr.camera.architecture.TriggerCaptureNow) }
                 if (timedRun.finished) {
                     kotlinx.coroutines.delay(600L)
                     timedRun.end(timedState, dispatch)

@@ -142,7 +142,8 @@ object FrameVideoExport {
         try {
             codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
             codec.start()
-            muxer = MediaMuxer(temp.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            val mux = MediaMuxer(temp.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            muxer = mux
             val info2 = MediaCodec.BufferInfo()
             val frameUs = 1_000_000L / options.fps
             var queued = 0
@@ -174,15 +175,15 @@ object FrameVideoExport {
                 val out = codec.dequeueOutputBuffer(info2, 10_000)
                 when {
                     out == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                        track = muxer.addTrack(codec.outputFormat)
-                        muxer.start()
+                        track = mux.addTrack(codec.outputFormat)
+                        mux.start()
                     }
                     out >= 0 -> {
                         val buffer = codec.getOutputBuffer(out)
                         if (buffer != null && info2.size > 0 && info2.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0 && track >= 0) {
                             buffer.position(info2.offset)
                             buffer.limit(info2.offset + info2.size)
-                            muxer.writeSampleData(track, buffer, info2)
+                            mux.writeSampleData(track, buffer, info2)
                             written++
                         }
                         codec.releaseOutputBuffer(out, false)
@@ -205,7 +206,7 @@ object FrameVideoExport {
         val uri = publish(context, info, temp, "video/mp4", MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
             "RAWR_${info.folder}_${if (info.isTimed) "TIMELAPSE" else "BURST"}.mp4")
         temp.delete()
-        return Result(uri, if (uri != null) "Saved %.1f s video (%s)".format(seconds, label) else "Can't save the video")
+        return Result(uri, if (uri != null) "Saved %.1f s video (%s)".format(java.util.Locale.US, seconds, label) else "Can't save the video")
     }
 
     /** ARGB → the encoder's YUV 4:2:0 (BT.601 limited range), any plane layout. */
