@@ -16,8 +16,12 @@ object TimedBurstSettings {
         val enabled: Boolean = false,
         val photos: Int = 300,
         val intervalS: Int = 2,
-        val lockExposure: Boolean = true
+        val lockExposure: Boolean = true,
+        /** Merge each shot (HDR+ / Rexture) when on: Auto merges only at intervals of [MERGE_MIN_INTERVAL_S] and up. */
+        val mergeAuto: Boolean = true
     ) {
+        /** Whether this run's shots are merged (when merging is on in the camera). */
+        val merges: Boolean get() = mergeAuto && intervalS >= MERGE_MIN_INTERVAL_S
         /** About how long a run takes (null: until stopped). */
         val durationS: Int? get() = if (photos > 0) (photos - 1) * intervalS else null
     }
@@ -25,6 +29,11 @@ object TimedBurstSettings {
     /** 0 = until stopped (∞). */
     val PHOTOS = listOf(10, 30, 60, 120, 300, 600, 0)
     val INTERVALS = listOf(1, 2, 5, 10, 30, 60)
+    /** A merge takes a few seconds: shorter intervals shoot single frames under Auto. */
+    const val MERGE_MIN_INTERVAL_S = 5
+
+    /** Set while a run goes that shoots single frames (the capture settings turn the merge off for it). */
+    @Volatile var runSingleFrame = false
 
     private var prefs: SharedPreferences? = null
     private val flow = MutableStateFlow(Values())
@@ -38,7 +47,8 @@ object TimedBurstSettings {
             enabled = p.getBoolean("enabled", false),
             photos = p.getInt("photos", 300).takeIf { it in PHOTOS } ?: 300,
             intervalS = p.getInt("intervalS", 2).takeIf { it in INTERVALS } ?: 2,
-            lockExposure = p.getBoolean("lockExposure", true)
+            lockExposure = p.getBoolean("lockExposure", true),
+            mergeAuto = p.getBoolean("mergeAuto", true)
         )
     }
 
@@ -49,6 +59,7 @@ object TimedBurstSettings {
             ?.putInt("photos", next.photos)
             ?.putInt("intervalS", next.intervalS)
             ?.putBoolean("lockExposure", next.lockExposure)
+            ?.putBoolean("mergeAuto", next.mergeAuto)
             ?.apply()
     }
 }

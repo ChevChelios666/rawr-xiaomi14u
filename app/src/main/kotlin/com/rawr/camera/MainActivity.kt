@@ -206,6 +206,8 @@ class MainActivity : ComponentActivity() {
             val viewfinderQuick by captureViewModel.viewfinderQuick.collectAsStateWithLifecycle()
             val latestGalleryImage by captureViewModel.latestGalleryImage.collectAsStateWithLifecycle()
             val latestBurst by captureViewModel.latestBurst.collectAsStateWithLifecycle()
+            // Timed burst on (Photo / Photo+): the thumbnail is the last run, opened in the burst viewer.
+            val timedSettings by com.rawr.camera.burst.TimedBurstSettings.values.collectAsStateWithLifecycle()
             val videoSelection = androidx.compose.runtime.remember(captureViewModel) {
                 captureViewModel.controller.state.map { it.videoCrop to it.videoFps }.distinctUntilChanged()
             }
@@ -219,6 +221,10 @@ class MainActivity : ComponentActivity() {
             val proUi by captureViewModel.proUi.collectAsStateWithLifecycle()
             val pano by captureViewModel.pano.collectAsStateWithLifecycle()
             val burst by captureViewModel.burst.collectAsStateWithLifecycle()
+            val captureModeNow by androidx.compose.runtime.remember { captureViewModel.controller.state.map { it.captureMode } }
+                .collectAsStateWithLifecycle(CaptureMode.Photo)
+            val timedThumb = timedSettings.enabled && captureModeNow != CaptureMode.Video && !pano && !burst
+            androidx.compose.runtime.LaunchedEffect(timedThumb) { if (timedThumb) captureViewModel.refreshLatestGalleryImage() }
             val panoStatus by captureViewModel.panoStatus.collectAsStateWithLifecycle()
             val fullSizeShot by captureViewModel.fullSizeShot.collectAsStateWithLifecycle()
             val fullSizeBusy by captureViewModel.fullSizeBusy.collectAsStateWithLifecycle()
@@ -258,9 +264,9 @@ class MainActivity : ComponentActivity() {
                         )
                     },
                     // Burst: the last burst (its cover) and the burst viewer; other modes the last photo.
-                    latestImageUri = if (burst) latestBurst else latestGalleryImage,
+                    latestImageUri = if (burst || timedThumb) latestBurst else latestGalleryImage,
                     onOpenLatestImage = {
-                        if (burst) startActivity(com.rawr.camera.burst.BurstViewerActivity.intent(this@MainActivity,
+                        if (burst || timedThumb) startActivity(com.rawr.camera.burst.BurstViewerActivity.intent(this@MainActivity,
                             captureViewModel.latestBurstFolder))
                         else latestGalleryImage?.let(::openGalleryImage)
                     },

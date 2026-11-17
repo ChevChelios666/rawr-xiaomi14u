@@ -64,6 +64,9 @@ internal fun X14uTimedBurstPanel(
         X14uSheetLabel("Exposure")
         X14uSegments(listOf("Locked", "Follows the light"), if (values.lockExposure) 0 else 1,
             { onChange(values.copy(lockExposure = it == 0, enabled = true)) })
+        X14uSheetLabel("Merge each shot (HDR+ / Rexture)")
+        X14uSegments(listOf("Auto", "Off"), if (values.mergeAuto) 0 else 1,
+            { onChange(values.copy(mergeAuto = it == 0, enabled = true)) })
         X14uSheetDivider()
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -72,14 +75,17 @@ internal fun X14uTimedBurstPanel(
                 color = Color.White.copy(alpha = .7f), fontFamily = X14uFont, fontSize = dpText(12f),
                 modifier = Modifier.weight(1f)
             )
-            Text("Focus, WB lock at photo 1", color = Color.White.copy(alpha = .5f), fontFamily = X14uFont, fontSize = dpText(12f))
+            Text(
+                if (values.merges) "Shots merged" else if (values.mergeAuto) "Single frames (under 5 s)" else "Single frames",
+                color = Color.White.copy(alpha = .5f), fontFamily = X14uFont, fontSize = dpText(12f)
+            )
         }
     }
 }
 
 /**
  * A timed burst run: locks focus and white balance (and exposure when asked) from what the camera is doing at the
- * press, takes a photo every interval (named …_TL<HHmm>_001, 002…) and gives the locks back at the end.
+ * press, takes a photo every interval and gives the locks back at the end.
  */
 internal class TimedRun {
     private data class Saved(val exposure: ExposureMode, val focus: FocusMode, val wb: WhiteBalanceMode)
@@ -99,11 +105,26 @@ internal class TimedRun {
     var locks by mutableStateOf(emptyList<String>())
         private set
     private var saved: Saved? = null
-    private var tag = ""
+    private var folder = ""
+    private var startedAt = 0L
+    private var intervalS = 1
+    private var context: android.content.Context? = null
 
-    fun start(state: CaptureUiState, dispatch: CaptureDispatch, settings: TimedBurstSettings.Values) {
+    /**
+     * The run's photos go to Rawr's own storage like a burst (files/burst_frames/TIMED_<date>_<time>/…_001), so the
+     * burst viewer plays them as a time lapse, makes the video and stacks them; [context] writes its manifest at
+     * the end.
+     */
+    fun start(state: CaptureUiState, dispatch: CaptureDispatch, settings: TimedBurstSettings.Values, context: android.content.Context) {
         saved = Saved(state.exposureControl.mode, state.focus.mode, state.whiteBalanceMode)
-        tag = java.text.SimpleDateFormat("HHmm", java.util.Locale.US).format(java.util.Date())
+        this.context = context.applicationContext
+        startedAt = System.currentTimeMillis()
+        val stamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date(startedAt))
+        folder = "TIMED_$stamp"
+        CaptureFileNames.startBurst("_TIMED${stamp.substringAfter('_')}", folder, firstLive = 1)
+        // Single frames when merging is off or the interval is too short for a merge (Auto).
+        TimedBurstSettings.runSingleFrame = !settings.merges
+        intervalS = settings.intervalS
         total = settings.photos
         intervalMs = settings.intervalS * 1_000L
         shots = 0
@@ -127,7 +148,7 @@ internal class TimedRun {
     /** Names and takes the next photo through [shoot]; ends the run after the last. */
     fun shoot(shoot: () -> Unit) {
         shots += 1
-        CaptureFileNames.setNextStillSuffix("_TL${tag}_%03d".format(shots))
+        CaptureFileNames.burstFrameQueued()
         shoot()
         nextAt += intervalMs
         // Running late (a slow save): the next one waits a full interval from now, not a burst to catch up.
@@ -148,7 +169,10 @@ internal class TimedRun {
         saved = null
         running = false
         locks = emptyList()
-        CaptureFileNames.setNextStillSuffix("")
+        TimedBurstSettings.runSingleFrame = false
+        CaptureFileNames.endBurst()
+        context?.let { com.rawr.camera.burst.BurstStore.writeTimedManifest(it, folder, startedAt, intervalS, shots) }
+        context = null
     }
 }
 

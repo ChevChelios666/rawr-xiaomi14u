@@ -176,13 +176,13 @@ private fun BurstLibrary(bursts: List<BurstInfo>, onOpen: (String) -> Unit, onDe
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("←  Back", color = Color.White, fontSize = 16.sp, modifier = Modifier.clickable(onClick = onExit))
             Spacer(Modifier.weight(1f))
-            Text("Bursts", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Medium)
+            Text("Bursts and timed runs", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Medium)
             Spacer(Modifier.weight(1f))
             Spacer(Modifier.width(56.dp))
         }
         if (bursts.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("No bursts yet. Hold the shutter in Burst mode.", color = Muted)
+                Text("Nothing yet. Hold the shutter in Burst mode, or turn on Timed burst.", color = Muted)
             }
             return@Column
         }
@@ -207,8 +207,12 @@ private fun BurstLibrary(bursts: List<BurstInfo>, onOpen: (String) -> Unit, onDe
                     Column(Modifier.weight(1f)) {
                         Text(SimpleDateFormat("d MMM · HH:mm:ss", Locale.getDefault()).format(Date(info.startedAt)),
                             color = Color.White, fontSize = 15.sp)
-                        Text("%.1f s · %d fps".format(Locale.US, info.lengthSeconds, info.fps), color = Muted, fontSize = 12.sp)
-                        if (info.preFrames > 0) Text("${info.preFrames} before the press", color = Muted, fontSize = 12.sp)
+                        if (info.isTimed) {
+                            Text("Timed · ${info.frames.size} × ${info.intervalS} s", color = Muted, fontSize = 12.sp)
+                        } else {
+                            Text("%.1f s · %d fps".format(Locale.US, info.lengthSeconds, info.fps), color = Muted, fontSize = 12.sp)
+                            if (info.preFrames > 0) Text("${info.preFrames} before the press", color = Muted, fontSize = 12.sp)
+                        }
                         val days = info.rawDaysLeft()
                         Text(
                             when {
@@ -306,19 +310,61 @@ private fun BurstViewer(folder: String, onBack: () -> Unit) {
         }
     }
     fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+    // Export video / Stack: the open sheet, and a job running (its progress over the frame, Stop cancels it).
+    var sheet by remember { mutableStateOf<String?>(null) }
+    var job by remember { mutableStateOf<Pair<String, Float>?>(null) }
+    var jobCancel by remember { mutableStateOf(false) }
+    val clock = SimpleDateFormat("HH:mm", Locale.getDefault())
+    val clockSeconds = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+    fun frameTime(i: Int): String = if (burst.isTimed) clockSeconds.format(Date(burst.startedAt + i * burst.intervalS * 1000L))
+        else "%+.2f s".format(Locale.US, (burst.frames[i].number - burst.pressNumber) / burst.fps.coerceAtLeast(1).toFloat())
+    fun runJob(title: String, work: (progress: (Int, Int) -> Boolean) -> String) {
+        sheet = null
+        jobCancel = false
+        job = title to 0f
+        scope.launch {
+            val message = withContext(Dispatchers.Default) {
+                work { done, total ->
+                    scope.launch(Dispatchers.Main) { if (job != null) job = title to done / total.coerceAtLeast(1).toFloat() }
+                    !jobCancel
+                }
+            }
+            job = null
+            toast(message)
+        }
+    }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 12.dp)) {
+        // Header: back, the run (kind, start, frames and speed) and a second line with its length and RAW.
         Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("←  Back", color = Color.White, fontSize = 16.sp, modifier = Modifier.clickable(onClick = onBack))
-            Spacer(Modifier.weight(1f))
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(buildString { append("BURST  "); append(index + 1); append(" / "); append(burst.frames.size) },
-                    color = Muted, fontFamily = Mono, fontSize = 12.sp, letterSpacing = 1.sp)
-                Text(SimpleDateFormat("d MMM · HH:mm:ss", Locale.getDefault()).format(Date(burst.startedAt)),
-                    color = Color.White, fontSize = 14.sp)
+            Text("‹", color = Color.White, fontSize = 26.sp,
+                modifier = Modifier.clickable(onClick = onBack).padding(horizontal = 8.dp))
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    if (burst.isTimed) "TIMED ${clock.format(Date(burst.startedAt))} · ${burst.frames.size} × ${burst.intervalS} s"
+                    else "BURST ${clock.format(Date(burst.startedAt))} · ${burst.frames.size} × ${burst.fps} fps",
+                    color = Color.White, fontFamily = Mono, fontSize = 13.sp
+                )
+                val days = burst.rawDaysLeft()
+                Text(
+                    if (burst.isTimed) {
+                        val runS = (burst.frames.size - 1).coerceAtLeast(0) * burst.intervalS
+                        val run = if (runS >= 60) "${(runS + 30) / 60} min run" else "$runS s run"
+                        "%s · plays as %.1f s at %d fps".format(Locale.US, run, burst.frames.size / burst.fps.coerceAtLeast(1).toFloat(), burst.fps)
+                    } else listOfNotNull(
+                        "%.1f s".format(Locale.US, burst.lengthSeconds),
+                        if (burst.preFrames > 0) "${burst.preFrames} before the shutter" else null,
+                        when {
+                            burst.format == "Raw" -> "RAW only"
+                            days != null -> "RAW $days ${if (days == 1) "day" else "days"}"
+                            burst.frames.any { it.dng != null } -> "RAW kept"
+                            else -> null
+                        }
+                    ).joinToString(" · "),
+                    color = Muted, fontSize = 11.sp
+                )
             }
-            Spacer(Modifier.weight(1f))
-            Spacer(Modifier.width(56.dp))
+            Spacer(Modifier.width(34.dp))
         }
         // The frame (tap: select it while selecting). Pinch to zoom, drag to pan, double tap: 3x there / back to fit.
         // The zoom stays while scrubbing, so frames compare at the same spot.
@@ -390,16 +436,25 @@ private fun BurstViewer(folder: String, onBack: () -> Unit) {
                     placeholder = playbackFrame
                 )
             }
-            if (!allPrepared) {
+            // Progress: playback preparing, or an export / stack running (Stop cancels it).
+            val running = job
+            if (running != null || !allPrepared) {
                 Column(
                     Modifier.align(Alignment.BottomCenter).padding(10.dp).fillMaxWidth()
                         .background(Color.Black.copy(alpha = .62f), RoundedCornerShape(12.dp))
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
-                    Text("Preparing playback · $prepared / ${burst.frames.size}", color = Color.White, fontSize = 13.sp)
+                    val fraction = running?.second ?: (prepared / burst.frames.size.toFloat())
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(running?.let { "${it.first} · ${(it.second * 100).toInt()} %" }
+                            ?: "Preparing playback · $prepared / ${burst.frames.size}",
+                            color = Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                        if (running != null) Text("Stop", color = CaptureColors.Accent, fontSize = 13.sp,
+                            modifier = Modifier.clickable { jobCancel = true }.padding(start = 8.dp))
+                    }
                     Spacer(Modifier.height(6.dp))
                     Box(Modifier.fillMaxWidth().height(3.dp).background(Line, RoundedCornerShape(2.dp))) {
-                        Box(Modifier.fillMaxWidth(prepared / burst.frames.size.toFloat()).height(3.dp)
+                        Box(Modifier.fillMaxWidth(fraction.coerceIn(0f, 1f)).height(3.dp)
                             .background(CaptureColors.Accent, RoundedCornerShape(2.dp)))
                     }
                 }
@@ -409,14 +464,18 @@ private fun BurstViewer(folder: String, onBack: () -> Unit) {
                     Badge(String.format(Locale.US, "%.1f×", zoom), Color.White)
                 }
             }
-            Row(Modifier.align(Alignment.TopStart).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (frame.number == burst.pressNumber) Badge("◉ SHUTTER")
-                if (frame.number == burst.cover) Badge("COVER")
-                if (frame.number < burst.pressNumber) Badge("BEFORE SHUTTER", Muted)
+            // Frame number and its time (from the shutter press, or the clock for a timed run); what it is.
+            Box(Modifier.align(Alignment.TopStart).padding(8.dp)) {
+                Badge(if (selecting) "${selected.size} selected" else "${index + 1} / ${burst.frames.size} · ${frameTime(index)}", Color.White)
+            }
+            Row(Modifier.align(Alignment.TopEnd).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (!burst.isTimed && frame.number == burst.pressNumber) Badge("◉ SHUTTER")
+                if (frame.number == burst.cover) Badge("COVER", Color.White)
+                if (!burst.isTimed && frame.number < burst.pressNumber) Badge("BEFORE SHUTTER", Muted)
             }
             if (selecting) {
                 val on = frame.number in selected
-                Box(Modifier.align(Alignment.TopEnd).padding(10.dp).size(26.dp)
+                Box(Modifier.align(Alignment.BottomEnd).padding(10.dp).size(26.dp)
                     .background(if (on) CaptureColors.Accent else Color.Black.copy(alpha = .4f), CircleShape)
                     .border(2.dp, Color.White, CircleShape), contentAlignment = Alignment.Center) {
                     if (on) Text("✓", color = Color(0xFF111111), fontSize = 14.sp)
@@ -439,79 +498,75 @@ private fun BurstViewer(folder: String, onBack: () -> Unit) {
                         })
                 ) {
                     FrameImage(f.view, 200, Modifier.fillMaxSize())
-                    if (f.number in selected) Box(Modifier.align(Alignment.TopEnd).padding(2.dp).size(14.dp)
+                    if (f.number in selected) Box(Modifier.align(Alignment.BottomEnd).padding(2.dp).size(12.dp)
                         .background(CaptureColors.Accent, CircleShape))
                 }
             }
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(6.dp))
+        // The bar: Play · Select · Develop · Video · Stack; while selecting, what to do with the ticked frames.
+        val busy = job != null
         if (!selecting) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ActionButton(if (playing) "Pause" else if (allPrepared) "Play" else "Play · preparing",
-                    Modifier.weight(1f), enabled = allPrepared || playing) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceAround) {
+                BarItem(if (playing) "❚❚" else "▶", if (playing) "Pause" else "Play", enabled = (allPrepared || playing) && !busy) {
                     if (!playing && index >= burst.frames.lastIndex) position = 0
                     playing = !playing
                 }
-                ActionButton("Select", Modifier.weight(1f)) { playing = false; selecting = true; selected = setOf(frame.number) }
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ActionButton("Develop full quality", Modifier.weight(1f), accent = true, enabled = frame.dng != null) {
-                    val dng = frame.dng ?: return@ActionButton
+                BarItem("✓", "Select", enabled = !busy) { playing = false; selecting = true; selected = setOf(frame.number) }
+                BarItem("◎", "Develop", enabled = frame.dng != null && !busy) {
+                    val dng = frame.dng ?: return@BarItem
                     if (!developWith(context, dng)) toast("Couldn't open the RAW")
                 }
-                ActionButton("Export", Modifier.weight(1f)) {
-                    scope.launch {
-                        val n = withContext(Dispatchers.IO) { BurstStore.export(context, folder, setOf(frame.number)) }
-                        toast(if (n > 0) "Saved to DCIM/Rawr Bursts" else "Couldn't export")
-                    }
-                }
+                BarItem("▣", "Video", accent = sheet == "video", enabled = !busy) { playing = false; sheet = "video" }
+                BarItem("≡", "Stack", accent = sheet == "stack", enabled = !busy) { playing = false; sheet = "stack" }
             }
-            val days = burst.rawDaysLeft()
-            Text(
-                when {
-                    frame.dng == null -> "No RAW for this frame"
-                    days != null -> "RAW kept for $days more ${if (days == 1) "day" else "days"} · Develop opens it in Rawr or another editor"
-                    else -> "Develop opens this frame's RAW in Rawr's renderer or another editor (Lightroom, Snapseed…)"
-                },
-                color = Muted, fontSize = 11.sp, modifier = Modifier.padding(vertical = 8.dp)
-            )
         } else {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("${selected.size} selected", color = CaptureColors.Accent, fontSize = 14.sp)
-                Spacer(Modifier.weight(1f))
-                Text("All", color = Color.White, fontSize = 14.sp,
-                    modifier = Modifier.clickable { selected = burst.frames.map { it.number }.toSet() }.padding(8.dp))
-                Text("Cancel", color = Muted, fontSize = 14.sp,
-                    modifier = Modifier.clickable { selecting = false; selected = emptySet() }.padding(8.dp))
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ActionButton("Keep ${selected.size}, delete ${burst.frames.size - selected.size}", Modifier.weight(1f),
-                    enabled = selected.isNotEmpty() && selected.size < burst.frames.size) { confirmKeep = true }
-                ActionButton("Export ${selected.size}", Modifier.weight(1f), accent = true, enabled = selected.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceAround) {
+                BarItem("✓", "Keep ${selected.size}", accent = true,
+                    enabled = selected.isNotEmpty() && selected.size < burst.frames.size && !busy) { confirmKeep = true }
+                BarItem("↧", "Export ${selected.size}", enabled = selected.isNotEmpty() && !busy) {
                     val chosen = selected
                     scope.launch {
                         val n = withContext(Dispatchers.IO) { BurstStore.export(context, folder, chosen) }
-                        toast(if (n > 0) "$n saved to DCIM/Rawr Bursts" else "Couldn't export")
+                        toast(if (n > 0) "$n saved to ${BurstStore.exportDir(burst).removeSuffix("/")}" else "Couldn't export")
                     }
                 }
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ActionButton("Set as cover", Modifier.weight(1f), enabled = selected.size == 1) {
+                BarItem("◎", "+ RAW", enabled = selected.isNotEmpty() && !busy) {
+                    val chosen = selected
+                    scope.launch {
+                        val n = withContext(Dispatchers.IO) { BurstStore.export(context, folder, chosen, withDng = true) }
+                        toast(if (n > 0) "$n files saved to ${BurstStore.exportDir(burst).removeSuffix("/")}" else "Couldn't export")
+                    }
+                }
+                BarItem("★", "Cover", enabled = selected.size == 1) {
                     BurstStore.setCover(context, folder, selected.first())
                     toast("Cover set")
                     reload++
                 }
-                ActionButton("Export with RAW", Modifier.weight(1f), enabled = selected.isNotEmpty()) {
-                    val chosen = selected
-                    scope.launch {
-                        val n = withContext(Dispatchers.IO) { BurstStore.export(context, folder, chosen, withDng = true) }
-                        toast(if (n > 0) "$n files saved to DCIM/Rawr Bursts" else "Couldn't export")
-                    }
+                BarItem("All", if (selected.size == burst.frames.size) "None" else "All") {
+                    selected = if (selected.size == burst.frames.size) emptySet() else burst.frames.map { it.number }.toSet()
                 }
+                BarItem("✕", "Cancel") { selecting = false; selected = emptySet() }
             }
-            Spacer(Modifier.height(10.dp))
+        }
+        Spacer(Modifier.height(4.dp))
+    }
+    // Export video / Stack sheets (the camera's panel style), over the bottom of the viewer.
+    val chosenFrames = burst.frames.filter { it.number in selected }
+    if (sheet == "video") {
+        Box(Modifier.fillMaxSize().navigationBarsPadding().padding(10.dp), contentAlignment = Alignment.BottomCenter) {
+            VideoSheet(burst, chosenFrames.size, onClose = { sheet = null }) { options, onlySelected ->
+                val frames = if (onlySelected) chosenFrames else burst.frames
+                runJob("Making the video") { progress -> FrameVideoExport.export(context, burst, frames, options, progress).message }
+            }
+        }
+    }
+    if (sheet == "stack") {
+        Box(Modifier.fillMaxSize().navigationBarsPadding().padding(10.dp), contentAlignment = Alignment.BottomCenter) {
+            StackSheet(burst, chosenFrames.size, onClose = { sheet = null }) { mode, align, onlySelected ->
+                val frames = if (onlySelected) chosenFrames else burst.frames
+                runJob("Stacking (${mode.label})") { progress -> FrameStack.stack(context, burst, frames, mode, align, progress).message }
+            }
         }
     }
     if (confirmKeep) {
@@ -543,19 +598,106 @@ private fun Badge(text: String, color: Color = CaptureColors.Accent) {
         modifier = Modifier.background(Color.Black.copy(alpha = .55f), RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 2.dp))
 }
 
+/** A bar item: a symbol over its label (accent when it's the open one). */
 @Composable
-private fun ActionButton(label: String, modifier: Modifier, accent: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
+private fun BarItem(symbol: String, label: String, accent: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
     val tint = when {
         !enabled -> Color.White.copy(alpha = .3f)
         accent -> CaptureColors.Accent
-        else -> Color.White
+        else -> Color.White.copy(alpha = .85f)
     }
-    Box(
-        modifier.height(44.dp)
-            .border(1.dp, if (accent && enabled) CaptureColors.Accent else Line, RoundedCornerShape(12.dp))
-            .clickable(enabled = enabled, onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) { Text(label, color = tint, fontSize = 14.sp, maxLines = 1) }
+    Column(
+        Modifier.clickable(enabled = enabled, onClick = onClick).padding(horizontal = 6.dp, vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(symbol, color = tint, fontSize = 18.sp, maxLines = 1)
+        Text(label, color = tint, fontSize = 11.sp, maxLines = 1)
+    }
+}
+
+/** Export video: format, speed, size, deflicker and which frames; the camera's panel controls. */
+@Composable
+private fun VideoSheet(
+    burst: BurstInfo,
+    selectedCount: Int,
+    onClose: () -> Unit,
+    onExport: (FrameVideoExport.Options, onlySelected: Boolean) -> Unit
+) {
+    val formats = FrameVideoExport.Format.entries
+    var format by remember { mutableStateOf(FrameVideoExport.Format.Hevc) }
+    // A burst plays in real time (its own fps) or slowed; a timed run as a time lapse.
+    val speeds = if (burst.isTimed) listOf(24, 30, 60) else listOf(burst.fps.coerceIn(1, 60), 10, 24).distinct()
+    var fps by remember { mutableStateOf(speeds.first()) }
+    var uhd by remember { mutableStateOf(false) }
+    var deflicker by remember { mutableStateOf(burst.isTimed) }
+    var onlySelected by remember { mutableStateOf(false) }
+    val frames = if (onlySelected) selectedCount else burst.frames.size
+    com.rawr.camera.ui.X14uSheet("EXPORT VIDEO", onClose) {
+        com.rawr.camera.ui.X14uSheetLabel("Format")
+        com.rawr.camera.ui.X14uSegments(formats.map { it.label }, formats.indexOf(format), { format = formats[it] })
+        com.rawr.camera.ui.X14uSheetLabel("Speed")
+        com.rawr.camera.ui.X14uSegments(
+            speeds.map { if (!burst.isTimed && it == burst.fps) "Real time $it fps" else if (!burst.isTimed && it < burst.fps) "Slow $it fps" else "$it fps" },
+            speeds.indexOf(fps), { fps = speeds[it] })
+        if (format != FrameVideoExport.Format.Gif) {
+            com.rawr.camera.ui.X14uSheetLabel("Size")
+            com.rawr.camera.ui.X14uSegments(listOf("1080p", "4K"), if (uhd) 1 else 0, { uhd = it == 1 })
+        }
+        com.rawr.camera.ui.X14uSheetLabel("Deflicker")
+        com.rawr.camera.ui.X14uSegments(listOf("Off", "On"), if (deflicker) 1 else 0, { deflicker = it == 1 })
+        com.rawr.camera.ui.X14uSheetLabel("Frames")
+        com.rawr.camera.ui.X14uSegments(listOf("All ${burst.frames.size}", "Selected $selectedCount"), if (onlySelected) 1 else 0,
+            { onlySelected = it == 1 }, enabled = { it == 0 || selectedCount >= 2 })
+        com.rawr.camera.ui.X14uSheetDivider()
+        val gifFrames = minOf(frames, FrameVideoExport.GIF_MAX_FRAMES)
+        Text(
+            if (format == FrameVideoExport.Format.Gif) "%.1f s loop · %d px · %s".format(Locale.US, gifFrames / fps.toFloat(),
+                FrameVideoExport.GIF_LONG_SIDE, if (frames > gifFrames) "first $gifFrames frames" else "$gifFrames frames")
+            else "%.1f s · %s MP4 · to %s".format(Locale.US, frames / fps.toFloat(), format.label, BurstStore.exportDir(burst).removeSuffix("/")),
+            color = Color.White.copy(alpha = .7f), fontSize = 12.sp
+        )
+        com.rawr.camera.ui.X14uSegments(listOf("Cancel", "Export"), null, { i ->
+            if (i == 0) onClose()
+            else onExport(FrameVideoExport.Options(format, fps, if (uhd) 2160 else 1080, deflicker), onlySelected)
+        }, enabled = { it == 0 || frames >= 2 }, emphasis = 1)
+    }
+}
+
+/** Stack into one photo: Average / Lighten / Clean, which frames, and alignment for handheld runs. */
+@Composable
+private fun StackSheet(
+    burst: BurstInfo,
+    selectedCount: Int,
+    onClose: () -> Unit,
+    onStack: (FrameStack.Mode, align: Boolean, onlySelected: Boolean) -> Unit
+) {
+    val modes = FrameStack.Mode.entries
+    var mode by remember { mutableStateOf(FrameStack.Mode.Average) }
+    var align by remember { mutableStateOf(!burst.isTimed) }
+    var onlySelected by remember { mutableStateOf(false) }
+    val frames = if (onlySelected) selectedCount else burst.frames.size
+    com.rawr.camera.ui.X14uSheet("STACK INTO ONE PHOTO", onClose) {
+        com.rawr.camera.ui.X14uTiles(modes.size, 3, { modes[it] == mode }, { modes[it].label }, { modes[it].note }, { mode = modes[it] })
+        com.rawr.camera.ui.X14uSheetLabel("Frames")
+        com.rawr.camera.ui.X14uSegments(listOf("All ${burst.frames.size}", "Selected $selectedCount"), if (onlySelected) 1 else 0,
+            { onlySelected = it == 1 }, enabled = { it == 0 || selectedCount >= 2 })
+        com.rawr.camera.ui.X14uSheetLabel("Align")
+        com.rawr.camera.ui.X14uSegments(listOf("Off (tripod)", "On (handheld)"), if (align) 1 else 0, { align = it == 1 })
+        com.rawr.camera.ui.X14uSheetDivider()
+        Text(
+            when (mode) {
+                FrameStack.Mode.Average -> if (burst.isTimed) "Like one %s exposure".format(
+                    ((frames - 1).coerceAtLeast(0) * burst.intervalS).let { if (it >= 60) "${(it + 30) / 60} min" else "$it s" })
+                    else "Less noise, motion blurred"
+                FrameStack.Mode.Lighten -> "The brightest of each point: trails of moving lights"
+                FrameStack.Mode.Clean -> "What stays still: passers-by and cars go (two passes)"
+            } + " · to " + BurstStore.exportDir(burst).removeSuffix("/"),
+            color = Color.White.copy(alpha = .7f), fontSize = 12.sp
+        )
+        com.rawr.camera.ui.X14uSegments(listOf("Cancel", "Stack"), null, { i ->
+            if (i == 0) onClose() else onStack(mode, align, onlySelected)
+        }, enabled = { it == 0 || frames >= 2 }, emphasis = 1)
+    }
 }
 
 /**
@@ -601,6 +743,16 @@ private fun Timeline(burst: BurstInfo, index: Int, selected: Set<Int>, ready: (I
             drawLine(CaptureColors.Accent, Offset(cx, top), Offset(cx, tickBottom + 2f * density), 3f * density)
         }
         val fps = burst.fps.coerceAtLeast(1).toFloat()
+        if (burst.isTimed) {
+            // A timed run: the clock at its first and last photo.
+            val clock = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+            Box(Modifier.fillMaxWidth()) {
+                Text(clock.format(Date(burst.startedAt)), color = Muted, fontFamily = Mono, fontSize = 10.sp,
+                    modifier = Modifier.align(Alignment.CenterStart))
+                Text(clock.format(Date(burst.startedAt + (n - 1).coerceAtLeast(0) * burst.intervalS * 1000L)), color = Muted,
+                    fontFamily = Mono, fontSize = 10.sp, modifier = Modifier.align(Alignment.CenterEnd))
+            }
+        } else Column {
         Box(Modifier.fillMaxWidth()) {
             Text(if (pre > 0) "−%.1f s".format(Locale.US, pre / fps) else "0 s", color = Muted, fontFamily = Mono, fontSize = 10.sp,
                 modifier = Modifier.align(Alignment.CenterStart))
@@ -624,6 +776,7 @@ private fun Timeline(burst: BurstInfo, index: Int, selected: Set<Int>, ready: (I
             LegendKey(PreTint, "before shutter")
             LegendKey(Color(0xFFBDBDBD), "while held")
             LegendKey(CaptureColors.Accent, "on screen", narrow = true)
+        }
         }
     }
 }

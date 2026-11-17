@@ -28,8 +28,11 @@ data class BurstInfo(
     val format: String,
     /** Days the DNGs stay (0 = kept). */
     val rawKeepDays: Int,
-    val frames: List<BurstFrame>
+    val frames: List<BurstFrame>,
+    /** A timed burst (intervalometer) run: seconds between its photos; 0 for a burst. */
+    val intervalS: Int = 0
 ) {
+    val isTimed: Boolean get() = intervalS > 0
     val coverFrame: BurstFrame? get() = frames.firstOrNull { it.number == cover } ?: frames.firstOrNull()
     val lengthSeconds: Float get() = if (fps > 0) frames.size / fps.toFloat() else 0f
     /** Whole days left before the DNGs go (null = kept, or none). */
@@ -48,10 +51,14 @@ object BurstStore {
     fun framesRoot(context: Context) = File(context.filesDir, "burst_frames")
     private fun manifestFile(context: Context, folder: String) = File(File(context.filesDir, "bursts"), "$folder.json")
 
-    /** Newest first. */
+    /** Newest first (bursts and timed runs together, by when they started). */
     fun list(context: Context): List<BurstInfo> =
-        framesRoot(context).listFiles()?.filter { it.isDirectory }?.sortedByDescending { it.name }
-            ?.mapNotNull { load(context, it.name) }?.filter { it.frames.isNotEmpty() }.orEmpty()
+        framesRoot(context).listFiles()?.filter { it.isDirectory }
+            ?.mapNotNull { load(context, it.name) }?.filter { it.frames.isNotEmpty() }
+            ?.sortedByDescending { it.startedAt }.orEmpty()
+
+    /** "…_041" or, a merged photo, "…_041_MF6": the frame number. */
+    private val numberRule = Regex("""_(\d+)(?:_MF\d+)?$""")
 
     fun latest(context: Context): BurstInfo? = list(context).firstOrNull()
 
@@ -59,13 +66,16 @@ object BurstStore {
         val dir = File(framesRoot(context), folder)
         if (!dir.isDirectory) return null
         val numbered = dir.listFiles().orEmpty().mapNotNull { file ->
-            val number = file.nameWithoutExtension.substringAfterLast('_').toIntOrNull() ?: return@mapNotNull null
+            val number = numberRule.find(file.nameWithoutExtension)?.groupValues?.get(1)?.toIntOrNull()
+                ?: return@mapNotNull null
             number to file
         }.groupBy({ it.first }, { it.second })
+        // A merged (timed burst) photo has its base DNG and the merged one: the merged one goes with the JPEG.
+        fun pick(files: List<java.io.File>, ext: String) = files.filter { it.extension.equals(ext, true) }
+            .maxByOrNull { if (it.nameWithoutExtension.contains("_MF")) 1 else 0 }
         val frames = numbered.keys.sorted().map { n ->
             val files = numbered.getValue(n)
-            BurstFrame(n, files.firstOrNull { it.extension.equals("jpg", true) },
-                files.firstOrNull { it.extension.equals("dng", true) })
+            BurstFrame(n, pick(files, "jpg"), pick(files, "dng"))
         }
         val json = runCatching { JSONObject(manifestFile(context, folder).readText()) }.getOrNull()
         val press = json?.optInt("pressNumber", 1) ?: 1
@@ -78,9 +88,26 @@ object BurstStore {
             cover = json?.optInt("cover", press) ?: press,
             format = json?.optString("format", "Jpeg") ?: "Jpeg",
             rawKeepDays = json?.optInt("rawKeepDays", 0) ?: 0,
-            frames = frames
+            frames = frames,
+            intervalS = json?.optInt("intervalS", 0) ?: 0
         )
     }
+
+    /** A timed burst run ended: its manifest (the viewer plays it at [playFps]). */
+    fun writeTimedManifest(context: Context, folder: String, startedAt: Long, intervalS: Int, photos: Int, playFps: Int = 24) {
+        runCatching {
+            val file = manifestFile(context, folder)
+            file.parentFile?.mkdirs()
+            file.writeText(JSONObject()
+                .put("folder", folder).put("kind", "timed").put("startedAt", startedAt)
+                .put("intervalS", intervalS).put("fps", playFps).put("preFrames", 0)
+                .put("pressNumber", 1).put("cover", 1).put("liveFrames", photos)
+                .put("format", "Jpeg").put("rawKeepDays", 0).toString(2))
+        }
+    }
+
+    /** Where a run's exports go: DCIM/Rawr Bursts or DCIM/Rawr Timed. */
+    fun exportDir(info: BurstInfo): String = if (info.isTimed) "DCIM/Rawr Timed/${info.folder}/" else "DCIM/Rawr Bursts/${info.folder}/"
 
     fun setCover(context: Context, folder: String, number: Int) {
         val file = manifestFile(context, folder)
@@ -118,7 +145,7 @@ object BurstStore {
                     val values = ContentValues().apply {
                         put(MediaStore.Images.Media.DISPLAY_NAME, "RAWR_${folder}_%03d.${file.extension}".format(frame.number))
                         put(MediaStore.Images.Media.MIME_TYPE, mime)
-                        put(MediaStore.Images.Media.RELATIVE_PATH, "DCIM/Rawr Bursts/$folder/")
+                        put(MediaStore.Images.Media.RELATIVE_PATH, exportDir(info))
                         put(MediaStore.Images.Media.IS_PENDING, 1)
                     }
                     val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return@runCatching

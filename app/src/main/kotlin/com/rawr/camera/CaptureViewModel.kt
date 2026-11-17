@@ -959,6 +959,8 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                             ultraHdrEnabled = false,
                             imageTone = s.imageTone.copy(jpegQuality = 95f)
                         )
+                        // Timed burst shooting single frames (merge Off, or Auto at a short interval).
+                        com.rawr.camera.burst.TimedBurstSettings.runSingleFrame -> s.copy(experimentalMultiframeEnabled = false)
                         digitalZoomCrop > 1.01f && s.experimentalMultiframeEnabled && zoomMerge != null -> s.copy(
                             multiframeTuning = s.multiframeTuning.copy(mergeAlgorithm = zoomMerge)
                         )
@@ -1212,7 +1214,8 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             if (galleryRefreshGeneration.get() == generation) mutableLatestGalleryImage.value = latest
         }
         // Back from the burst viewer (bursts deleted there): the burst thumbnail and its count follow the library.
-        if (burstFlow.value) viewModelScope.launch(Dispatchers.IO) {
+        // With the timed burst on, the thumbnail shows the last run the same way.
+        if (burstFlow.value || com.rawr.camera.burst.TimedBurstSettings.values.value.enabled) viewModelScope.launch(Dispatchers.IO) {
             val latest = com.rawr.camera.burst.BurstStore.latest(getApplication())
             latestBurstFolder = latest?.folder
             latestBurstFlow.value = latest?.coverFrame?.view?.let(Uri::fromFile)

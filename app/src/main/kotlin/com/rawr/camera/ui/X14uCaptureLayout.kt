@@ -630,7 +630,7 @@ internal fun X14uCaptureLayout(
         if (timedRun.running) timedRun.end(state, dispatch)
         else if (timedReady) {
             closeAll()
-            timedRun.start(state, dispatch, timedSettings)
+            timedRun.start(state, dispatch, timedSettings, hostView.context)
         }
     }
     // A pano set or a timed burst run locks the row (and the lens pill).
