@@ -5,6 +5,7 @@
 #include <sys/resource.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -49,6 +50,8 @@ class PrecaptureRing final {
     // maxFrames 0 disarms and drops everything (frozen frames too).
     void arm(uint32_t maxFrames, uint32_t intervalMs) {
         std::lock_guard<std::mutex> lock(mutex_);
+        if (maxFrames != maxFrames_)
+            emit("PRECAPTURE_ARM frames=" + std::to_string(maxFrames) + " intervalMs=" + std::to_string(intervalMs));
         maxFrames_ = maxFrames;
         intervalNs_ = uint64_t(intervalMs) * 1'000'000ull;
         if (maxFrames == 0) {
@@ -80,6 +83,7 @@ class PrecaptureRing final {
         if (geometry.rawBufferWidth == 0 || geometry.rawBufferHeight == 0) return false;
         // A camera switch: the old camera's frames go.
         if (generation_ != metadata.cameraContext->cameraContextGeneration) {
+            if (!ring_.empty()) ++stats_.generationDrops;
             while (!ring_.empty()) dropOldestLocked();
             generation_ = metadata.cameraContext->cameraContextGeneration;
         }
@@ -100,6 +104,7 @@ class PrecaptureRing final {
         while (pending_.size() > 8) pending_.erase(pending_.begin());
         lastOfferedNs_ = ts;
         nextDueNs_ += intervalNs_;
+        ++stats_.offered;
         return true;
     }
 
@@ -108,7 +113,18 @@ class PrecaptureRing final {
         if (!image || !ahb) return false;
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = pending_.find(timestampNs);
-        if (it == pending_.end()) return false;
+        if (it == pending_.end()) {
+            ++stats_.notPending;
+            return false;
+        }
+        // Nov 17 (diagnostics 20:36): the copies fell behind, every waiting copy held a camera image, and the RAW
+        // reader (6 images, 3 of them the viewfinder's) ran dry: the camera dropped frames and the ring stopped. At
+        // most kMaxCopying copies wait; a frame beyond that is skipped and its image goes straight back.
+        if (copying_ >= kMaxCopying) {
+            ++stats_.skippedBusy;
+            pending_.erase(it);
+            return false;
+        }
         const int fence = acquireFenceFd >= 0 ? dup(acquireFenceFd) : -1;
         Job job;
         job.lease = imaging::RawFrameLease({image, ahb, fence, timestampNs, 0});
@@ -177,17 +193,25 @@ class PrecaptureRing final {
             Job job;
             {
                 std::unique_lock<std::mutex> lock(mutex_);
-                changed_.wait(lock, [this] { return stopped_ || !jobs_.empty(); });
+                // Woken every 2 s while armed, so the stats line also shows a ring that gets no frames at all.
+                while (!stopped_ && jobs_.empty()) {
+                    if (changed_.wait_for(lock, std::chrono::seconds(2)) == std::cv_status::timeout) {
+                        const std::string line = statsLineLocked();
+                        if (!line.empty()) {
+                            lock.unlock();
+                            emit(line);
+                            lock.lock();
+                        }
+                    }
+                }
                 if (stopped_ && jobs_.empty()) return;
                 job = std::move(jobs_.front());
                 jobs_.pop_front();
             }
             auto& frame = *job.snapshot.frame;
             bool ok = false;
-            // Nov 17: on some lenses (17, 50, 75 mm) the ring stopped filling until a lens switch. The copy locks the
-            // buffer behind the camera's acquire fence, which waits for good if that fence never signals, and this one
-            // worker then holds every later frame too. Wait at most 400 ms here; a frame whose fence hasn't signalled
-            // by then is skipped and the ring goes on.
+            // A camera acquire fence that never signals must not hold this worker: wait at most 400 ms, then skip
+            // the frame. (Frames handed over at retire come without a fence; the 20:36 diagnostics showed no timeout.)
             const int acquireFence = job.lease.get().acquireFenceFd;
             if (acquireFence >= 0) {
                 pollfd pfd{acquireFence, POLLIN, 0};
@@ -208,6 +232,7 @@ class PrecaptureRing final {
                     std::chrono::steady_clock::now() - waitStart).count();
                 if (waitedMs > 100) emit("PRECAPTURE_FENCE_SLOW ms=" + std::to_string(waitedMs));
             }
+            const auto copyStart = std::chrono::steady_clock::now();
             try {
                 frame.raw16 = RawBufferPool::take(std::size_t(frame.width) * frame.height * 2);
                 const auto& camera = job.lease.get();
@@ -222,8 +247,19 @@ class PrecaptureRing final {
                 ok = false;
             }
             job.lease = imaging::RawFrameLease({});  // the camera image goes back
-            std::lock_guard<std::mutex> lock(mutex_);
+            const double copyMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - copyStart).count();
+            std::string statsLine;
+            std::unique_lock<std::mutex> lock(mutex_);
             --copying_;
+            stats_.copyMsTotal += copyMs;
+            stats_.copyMsMax = std::max(stats_.copyMsMax, copyMs);
+            if (ok) {
+                ++stats_.copied;
+            } else {
+                ++stats_.failed;
+                stats_.lastError = job.snapshot.copyResult.error.empty() ? "exception" : job.snapshot.copyResult.error;
+            }
+            statsLine = statsLineLocked();
             if (!ok) {
                 giveBack(job.snapshot);
             } else if (frozenActive_) {
@@ -236,7 +272,28 @@ class PrecaptureRing final {
                 while (ring_.size() > maxFrames_) dropOldestLocked();
             }
             changed_.notify_all();
+            lock.unlock();
+            if (!statsLine.empty()) emit(statsLine);
         }
+    }
+    // Every 2 s while armed: what the ring took and why it didn't (PRECAPTURE_STATS), then the counts restart.
+    std::string statsLineLocked() {
+        if (maxFrames_ == 0 && stats_.offered == 0) return {};
+        const auto now = std::chrono::steady_clock::now();
+        if (now - statsAt_ < std::chrono::seconds(2)) return {};
+        statsAt_ = now;
+        const uint64_t copies = stats_.copied + stats_.failed;
+        std::string line = "PRECAPTURE_STATS gen=" + std::to_string(generation_) + " held=" + std::to_string(ring_.size()) +
+            "/" + std::to_string(maxFrames_) + " offered=" + std::to_string(stats_.offered) + " copied=" +
+            std::to_string(stats_.copied) + " failed=" + std::to_string(stats_.failed) + " skippedBusy=" +
+            std::to_string(stats_.skippedBusy) + " notPending=" + std::to_string(stats_.notPending) + " pending=" +
+            std::to_string(pending_.size()) + " copying=" + std::to_string(copying_) + " genDrops=" +
+            std::to_string(stats_.generationDrops) + " copyMsAvg=" +
+            std::to_string(copies ? int(stats_.copyMsTotal / double(copies)) : 0) + " copyMsMax=" +
+            std::to_string(int(stats_.copyMsMax)) + " frozen=" + (frozenActive_ ? "1" : "0");
+        if (!stats_.lastError.empty()) line += " lastError=" + stats_.lastError;
+        stats_ = Stats{};
+        return line;
     }
     static void giveBack(SingleFrameSnapshot& s) {
         if (s.frame) RawBufferPool::give(std::move(s.frame->raw16));
@@ -272,6 +329,15 @@ class PrecaptureRing final {
     uint64_t generation_ = 0;
     uint32_t copying_ = 0;
     uint32_t fenceTimeouts_ = 0;
+    // Copies waiting or running hold a camera image each: the reader lends 6, the viewfinder keeps up to 3.
+    static constexpr uint32_t kMaxCopying = 2;
+    struct Stats {
+        uint64_t offered = 0, copied = 0, failed = 0, skippedBusy = 0, notPending = 0, generationDrops = 0;
+        double copyMsTotal = 0.0, copyMsMax = 0.0;
+        std::string lastError;
+    };
+    Stats stats_;
+    std::chrono::steady_clock::time_point statsAt_{};
     bool frozenActive_ = false;
     bool draining_ = false;
     std::map<uint64_t, SingleFrameSnapshot> pending_;
