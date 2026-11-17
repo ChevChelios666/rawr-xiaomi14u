@@ -1059,13 +1059,14 @@ internal fun X14uCaptureLayout(
         val slotHeight = if (classicVideo) videoBand else 76.dp * s
         // The lens row and the badges ride on the picture's foot: in Classic video that is the (shorter) video's.
         val overlayTop = if (classicVideo) videoTop + videoRect.height - frame.height else top
+        val layoutWidth = maxWidth
         Box(Modifier.fillMaxSize()) {
             if (classic) {
                 val density = androidx.compose.ui.platform.LocalDensity.current
                 val picSize = if (isVideo) videoRect else frame
                 val picTop = if (isVideo) videoTop else top
                 val plan = with(density) {
-                    val left = ((maxWidth - picSize.width) / 2).toPx()
+                    val left = ((layoutWidth - picSize.width) / 2).toPx()
                     val picture = androidx.compose.ui.geometry.Rect(left, picTop.toPx(), left + picSize.width.toPx(), (picTop + picSize.height).toPx())
                     val barTop = cutoutTop.toPx()
                     val barBottom = (cutoutTop + CaptureDimens.TopBarHeight).toPx()
