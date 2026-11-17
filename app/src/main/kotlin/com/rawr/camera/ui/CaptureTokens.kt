@@ -1,5 +1,7 @@
 package com.rawr.camera.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -8,7 +10,11 @@ internal object CaptureColors {
     val Background = Color(0xFF020202)
     val Surface = Color(0xFF080808)
     val Panel = Color(0xFF101010)
-    val Accent = Color(0xFFE06A61)
+    /** X14U: the Classic style is on (set by the capture screen; state, so what reads the accent recomposes). */
+    var classic by androidx.compose.runtime.mutableStateOf(false)
+    private val Coral = Color(0xFFE06A61)
+    /** Coral; the Classic style's orange while that style is on. */
+    val Accent: Color get() = if (classic) ClassicColors.Accent else Coral
     val AccentSoft = Color(0xFFF2C7AA)
     val Danger = Color(0xFFFF6961)
     val Success = Color(0xFF65D17A)

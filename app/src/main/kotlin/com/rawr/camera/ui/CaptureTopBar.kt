@@ -79,7 +79,8 @@ internal fun CaptureTopBar(
     Row(
         modifier
             .fillMaxWidth()
-            .background(if (transparent) Color.Black.copy(alpha = .18f) else CaptureColors.Surface)
+            // Classic: the body draws the metal plate under the bar.
+            .background(if (isClassicStyle()) Color.Transparent else if (transparent) Color.Black.copy(alpha = .18f) else CaptureColors.Surface)
             .height(CaptureDimens.TopBarHeight),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -137,7 +138,7 @@ internal fun CaptureTopBar(
                     contentPadding = PaddingValues(0.dp)
                 ) {
                     Text("LOG", fontFamily = CaptureMono, fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                        color = if (state.videoLogEnabled) CaptureColors.Accent else CaptureColors.Muted,
+                        color = if (state.videoLogEnabled) CaptureColors.Accent else topBarMuted,
                         modifier = Modifier.uprightInLandscape(state.orientation))
                 }
             }
@@ -252,7 +253,7 @@ internal fun CaptureTopBar(
                     .semantics { contentDescription = "White balance" },
                 colors =
                     IconButtonDefaults.iconToggleButtonColors(
-                        contentColor = CaptureColors.Muted,
+                        contentColor = topBarMuted,
                         checkedContentColor = CaptureColors.Accent
                     )
             ) {
@@ -280,7 +281,7 @@ internal fun CaptureTopBar(
                 Icon(
                     if (toolsOpen) X14uIcons.ChevronUp else X14uIcons.ChevronDown,
                     contentDescription = null,
-                    tint = if (toolsOpen) CaptureColors.Accent else CaptureColors.Muted,
+                    tint = if (toolsOpen) CaptureColors.Accent else topBarMuted,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -308,7 +309,7 @@ internal fun CaptureTopBar(
                     .semantics { contentDescription = "Monitoring and overlays" },
                 colors =
                     IconButtonDefaults.iconToggleButtonColors(
-                        contentColor = CaptureColors.Muted,
+                        contentColor = topBarMuted,
                         checkedContentColor = CaptureColors.Accent
                     )
             ) {
@@ -329,7 +330,7 @@ internal fun CaptureTopBar(
                 },
                 modifier = Modifier.testTag(CaptureTestTags.TOPBAR_SETTINGS)
                     .semantics { contentDescription = "Open Settings" },
-                colors = IconButtonDefaults.iconButtonColors(contentColor = CaptureColors.Muted.copy(alpha = .82f))
+                colors = IconButtonDefaults.iconButtonColors(contentColor = topBarMuted.copy(alpha = .82f))
             ) {
                 Icon(
                     Icons.Outlined.Settings,
@@ -381,12 +382,12 @@ private fun VideoTopBarChoice(
             Icon(
                 icon,
                 contentDescription = null,
-                tint = if (enabled) CaptureColors.Accent else CaptureColors.Muted,
+                tint = if (enabled) topBarLabel else topBarMuted,
                 modifier = Modifier.size(20.dp).then(if (rotateIcon) Modifier.uprightInLandscape(orientation) else Modifier)
             )
             Text(
                 label,
-                color = if (enabled) CaptureColors.Accent else CaptureColors.Muted,
+                color = if (enabled) topBarLabel else topBarMuted,
                 fontFamily = CaptureMono,
                 fontSize = 8.sp,
                 lineHeight = 9.sp,
@@ -440,7 +441,7 @@ private fun SelfTimerTopBarChoice(
             Icon(
                 Icons.Outlined.Timer,
                 contentDescription = null,
-                tint = if (armed) CaptureColors.Accent else CaptureColors.Muted,
+                tint = if (armed) CaptureColors.Accent else topBarMuted,
                 modifier = Modifier.size(22.dp)
             )
             if (armed) {
@@ -466,3 +467,11 @@ internal fun RowScope.TopBarSlot(content: @Composable () -> Unit) {    Box(
         content()
     }
 }
+
+/** X14U Classic: the top bar's idle labels copper (engraving filled with paint), as in the user's mockup. */
+private val topBarMuted: Color
+    @Composable get() = if (isClassicStyle()) ClassicColors.Copper.copy(alpha = .7f) else CaptureColors.Muted
+
+/** The chips that always show a value (format, video crop and fps): accent in Minimal, copper in Classic. */
+private val topBarLabel: Color
+    @Composable get() = if (isClassicStyle()) ClassicColors.Copper else CaptureColors.Accent

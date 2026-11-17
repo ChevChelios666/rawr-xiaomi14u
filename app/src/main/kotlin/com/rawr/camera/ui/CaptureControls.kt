@@ -454,6 +454,8 @@ internal fun Shutter(
         animationSpec = tween(durationMillis = 90),
         label = "shutterPressAlpha"
     )
+    // X14U Classic: a brushed-metal shutter with a red ring (the user's mockup); it darkens when pressed.
+    val classic = isClassicStyle()
     Box(
         modifier
             .size(CaptureDimens.ShutterOuter)
@@ -461,9 +463,14 @@ internal fun Shutter(
             .graphicsLayer {
                 scaleX = pressScale
                 scaleY = pressScale
-                alpha = pressAlpha
+                alpha = if (classic) 1f else pressAlpha
             }
-            .border(2.dp, Color.White.copy(alpha = .86f), CircleShape)
+            .then(
+                if (classic) Modifier.drawBehind {
+                    drawMetalKnob(center, size.minDimension / 2f, ring = ClassicColors.Red, pressed = pressed)
+                    if (exposing) drawCircle(Color.Black.copy(alpha = .45f), size.minDimension / 2f * .72f, center)
+                } else Modifier.border(2.dp, Color.White.copy(alpha = .86f), CircleShape)
+            )
             .semantics {
                 role = Role.Button
                 contentDescription = when { stopSquare -> "Stop panorama"; countingDown -> "Cancel self timer"; else -> "Shutter" }
@@ -488,7 +495,7 @@ internal fun Shutter(
     ) {
         if (stopSquare) {
             Box(Modifier.size(26.dp).background(Color(0xFFE5484D), RoundedCornerShape(6.dp)))
-        } else Box(
+        } else if (!classic) Box(
             Modifier.size(CaptureDimens.ShutterInner)
                 .background(Color(0xFFF5F5F5).copy(alpha = if (exposing) .35f else 1f), CircleShape)
         )
@@ -596,8 +603,22 @@ internal fun Thumbnail(state: CaptureUiState, imageUri: Uri?, onClick: () -> Uni
         label = "thumbnailBorderWidth"
     )
 
+    // X14U Classic: the picture in a brushed-metal frame (the user's mockup), a little larger so the photo keeps its size.
+    val classic = isClassicStyle()
     Box(
-        modifier.size(CaptureDimens.Thumbnail),
+        modifier.size(if (classic) CaptureDimens.Thumbnail + 8.dp else CaptureDimens.Thumbnail)
+            .then(if (classic) Modifier.drawBehind {
+                val corner = androidx.compose.ui.geometry.CornerRadius(15.dp.toPx())
+                drawRoundRect(Color(0xFF040404), cornerRadius = corner)
+                drawRoundRect(
+                    androidx.compose.ui.graphics.Brush.sweepGradient(
+                        listOf(Color(0xFF4A4A48), Color(0xFF1A1A1A), Color(0xFF55554F), Color(0xFF1C1C1C), Color(0xFF4A4A48)), center
+                    ),
+                    topLeft = Offset(1.dp.toPx(), 1.dp.toPx()),
+                    size = androidx.compose.ui.geometry.Size(size.width - 2.dp.toPx(), size.height - 2.dp.toPx()),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(14.dp.toPx())
+                )
+            }.padding(4.dp) else Modifier),
         contentAlignment = Alignment.Center
     ) {
         Box(

@@ -13,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -112,11 +113,19 @@ internal fun VideoRecordButton(
             },
         contentAlignment = Alignment.Center
     ) {
+        // X14U Classic: the metal shutter with its red ring; a red record dot on the cap (a stop square while recording).
+        val classic = isClassicStyle()
         Box(
-            Modifier.size(CaptureDimens.ShutterOuter).border(2.dp, ring, CircleShape),
+            Modifier.size(CaptureDimens.ShutterOuter).then(
+                if (classic) Modifier.drawBehind { drawMetalKnob(center, size.minDimension / 2f, ring = ClassicColors.Red) }
+                else Modifier.border(2.dp, ring, CircleShape)
+            ),
             contentAlignment = Alignment.Center
         ) {
-            if (state.recording) {
+            if (classic) {
+                if (state.recording) Box(Modifier.size(20.dp).background(ClassicColors.Red, RoundedCornerShape(4.dp)))
+                else Box(Modifier.size(22.dp).background(ring, CircleShape))
+            } else if (state.recording) {
                 Box(
                     Modifier.size(CaptureDimens.VideoStopInner)
                         .background(Color.White, RoundedCornerShape(5.dp))

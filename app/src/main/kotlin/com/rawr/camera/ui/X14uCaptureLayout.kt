@@ -41,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import kotlinx.coroutines.launch
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawBehind
 import com.rawr.camera.architecture.TriggerCapture
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -1035,15 +1036,53 @@ internal fun X14uCaptureLayout(
         // photo frame does; a tall one (16:9 and up) starts right under the cut-out with the top bar over it.
         // Muted: no meter (an empty box says nothing); the histogram moves up into its place.
         val audioMeterOn = isVideo && LocalCaptureExtras.current.tools.audioMeter && !videoControls.audio.muted
+        // Classic (Nov 18, option 3): in Video the mode band folds to a strip above the shutter row, the readouts sit
+        // on it and the picture fits between the top bar and them, in its bezel: nothing covers it.
+        val classic = isClassicStyle()
+        val classicVideo = classic && isVideo
+        val foldStrip = 26.dp
+        val readoutsTopVideo = shutterCenter - 46.dp - foldStrip - 48.dp * s
         val (videoRect, videoTop) = run {
-            val upper = cutoutTop + 2.dp
-            val lower = shutterCenter - 50.dp
+            val upper = if (classicVideo) minOf(cutoutTop + CaptureDimens.TopBarHeight + 8.dp, top) else cutoutTop + 2.dp
+            val lower = if (classicVideo) readoutsTopVideo - 8.dp else shutterCenter - 50.dp
             var w = frameWidth
             var h = w * videoAspect
             if (h > lower - upper) { h = lower - upper; w = h / videoAspect }
             DpSize(w, h) to (if (top + h <= lower) top else upper)
         }
+        // The readout row and the slot under it (modes, or the open control); Classic video moves them (above).
+        val rowY = if (classicVideo) readoutsTopVideo else bottom + 6.dp * s
+        val slotIdle = !(burst && state.burst.running) && !timedRun.running && !(presetsOpen && !recordingLock && !panoLocked) &&
+            currentKey == null && panel == null
+        // Classic video: the folded strip when idle; an open control floats over the picture's foot, above the readouts.
+        val slotY = when {
+            !classicVideo -> bottom + 58.dp * s
+            slotIdle -> rowY + 48.dp * s
+            else -> rowY - 76.dp * s - 4.dp
+        }
+        val slotHeight = if (classicVideo && slotIdle) foldStrip else 76.dp * s
+        // The lens row and the badges ride on the picture's foot: in Classic video that is the (shorter) video's.
+        val overlayTop = if (classicVideo) videoTop + videoRect.height - frame.height else top
         Box(Modifier.fillMaxSize()) {
+            if (classic) {
+                val density = androidx.compose.ui.platform.LocalDensity.current
+                val picSize = if (isVideo) videoRect else frame
+                val picTop = if (isVideo) videoTop else top
+                val plan = with(density) {
+                    val left = ((maxWidth - picSize.width) / 2).toPx()
+                    val picture = androidx.compose.ui.geometry.Rect(left, picTop.toPx(), left + picSize.width.toPx(), (picTop + picSize.height).toPx())
+                    val barTop = cutoutTop.toPx()
+                    val barBottom = (cutoutTop + CaptureDimens.TopBarHeight).toPx()
+                    ClassicBodyPlan(
+                        topBar = barTop..barBottom,
+                        bezel = barBottom..(picture.bottom + 2.dp.toPx()),
+                        picture = picture,
+                        readouts = (rowY + 2.dp).toPx()..(rowY + 48.dp * s).toPx(),
+                        band = if (slotIdle) slotY.toPx()..(slotY + slotHeight).toPx() else null
+                    )
+                }
+                X14uClassicBody(plan, Modifier.fillMaxSize())
+            }
             CaptureViewfinder(
                 state = state,
                 dispatch = dispatch,
@@ -1095,7 +1134,7 @@ internal fun X14uCaptureLayout(
             // Video: the corner marks sit on the picture's own corners.
             if (isVideo) FrameBrackets(Modifier.align(Alignment.TopCenter).offset(y = videoTop).size(videoRect))
 
-            Box(Modifier.align(Alignment.TopCenter).offset(y = top).size(frame)) {
+            Box(Modifier.align(Alignment.TopCenter).offset(y = overlayTop).size(frame)) {
                 if (!isVideo) FrameBrackets(Modifier.fillMaxSize())
                 val tools = LocalCaptureExtras.current.tools
                 if (!isVideo && !pano) X14uAspectMask(tools.photoAspect, Modifier.fillMaxSize())
@@ -1427,7 +1466,9 @@ internal fun X14uCaptureLayout(
                     panelMemory.remember(if (panel == X14uPanel.Look) "look.$lookTab" else "exposure", key)
                 }
             }
-            val rowModifier = Modifier.fillMaxWidth().offset(y = bottom + 6.dp * s).height(48.dp * s)
+            // Classic video: the readouts dim while recording, so the picture stands out (the shutter row stays bright).
+            val rowModifier = Modifier.fillMaxWidth().offset(y = rowY).height(48.dp * s)
+                .alpha(if (classicVideo && videoControls.recording) .45f else 1f)
             if (panel == null && simplePhoto && !pano) {
                 // A: what auto exposure picked, dim either side of EV; tapping one switches to S or I with its editor open.
                 val live = if (state.exposureControl.mode == ExposureMode.Auto) {
@@ -1446,7 +1487,10 @@ internal fun X14uCaptureLayout(
                     upright = panel == null, onTap = onCellTap)
             }
             Box(
-                Modifier.fillMaxWidth().offset(y = bottom + 58.dp * s).height(76.dp * s).padding(horizontal = 12.dp),
+                Modifier.fillMaxWidth().offset(y = slotY).height(slotHeight)
+                    // Classic video: an open control over the picture gets a dark backing.
+                    .then(if (classicVideo && !slotIdle) Modifier.background(Color.Black.copy(alpha = .62f)) else Modifier)
+                    .padding(horizontal = 12.dp),
                 contentAlignment = Alignment.Center
             ) {
                 val key = currentKey
@@ -1470,7 +1514,8 @@ internal fun X14uCaptureLayout(
                 } else if (key != null) {
                     X14uEditorView(editorFor(key), orientation)
                 } else if (panel == null) {
-                    X14uIdleControlArea(state, dispatch, videoControls, showNumbers, enabled = !recordingLock && !panoLocked)
+                    X14uIdleControlArea(state, dispatch, videoControls, showNumbers, enabled = !recordingLock && !panoLocked,
+                        folded = classicVideo)
                 }
             }
             X14uShutterRow(
@@ -1570,6 +1615,7 @@ private fun RowScope.X14uOptionToggles(
     burst: Boolean = false
 ) {
     val haptics = LocalCaptureHaptics.current
+    val classic = isClassicStyle()
     lensOptionSlots(quick.lensOptions).filter { it.second.toggle }.forEach { (name, _) ->
         val row = options?.options?.indexOfFirst { it.name.trim().equals(name, ignoreCase = true) } ?: -1
         val runsAsLens = row >= 0 && options!!.options[row].choices.any { !it.runAs.isNullOrBlank() }
@@ -1586,7 +1632,7 @@ private fun RowScope.X14uOptionToggles(
         TopBarSlot {
             val color = when {
                 on -> if (enabled) CaptureColors.Accent else CaptureColors.Accent.copy(alpha = .45f)
-                available && enabled && !otherAperture -> Color.White.copy(alpha = .55f)
+                available && enabled && !otherAperture -> if (classic) ClassicColors.Copper.copy(alpha = .75f) else Color.White.copy(alpha = .55f)
                 else -> Color.White.copy(alpha = .22f)
             }
             Text(
@@ -1612,6 +1658,9 @@ private fun RowScope.X14uOptionToggles(
 
 // ---- Lens row --------------------------------------------------------------------------------------------------
 
+/** Classic: what a round button is drawn as (a metal knob, the Look button's colour wheel, the knurled exposure dial). */
+private enum class ClassicFace { Knob, HueWheel, Dial }
+
 /** Round dark button: accent icon and ring when [highlighted] (lens overrides), filled accent when [open]. */
 @Composable
 private fun X14uRoundButton(
@@ -1626,14 +1675,30 @@ private fun X14uRoundButton(
     onLongClick: (() -> Unit)? = null,
     /** Turn the icon upright in landscape (shutter row); the lens row's round buttons don't. */
     turn: Boolean = true,
+    face: ClassicFace = ClassicFace.Knob,
     onClick: () -> Unit
 ) {
     val haptics = LocalCaptureHaptics.current
+    val classic = isClassicStyle()
+    // Classic: a metal knob (or the wheel / dial) one size up; open and highlighted show as an accent ring.
+    val drawn = if (classic) size + 6.dp else size
     Box(
         Modifier
-            .size(size)
-            .background(if (open) CaptureColors.Accent else Color.Black.copy(alpha = .5f), CircleShape)
-            .then(if (highlighted && !open) Modifier.border(1.2.dp, CaptureColors.Accent, CircleShape) else Modifier)
+            .size(drawn)
+            .then(
+                if (!classic) Modifier.background(if (open) CaptureColors.Accent else Color.Black.copy(alpha = .5f), CircleShape)
+                else Modifier.drawBehind {
+                    val r = this.size.minDimension / 2f
+                    when (face) {
+                        ClassicFace.Knob -> drawMetalKnob(center, r)
+                        ClassicFace.HueWheel -> drawHueWheel(center, r, dim = !enabled)
+                        ClassicFace.Dial -> drawKnurledDial(center, r)
+                    }
+                    if (open || highlighted) drawCircle(CaptureColors.Accent, r - 1.dp.toPx(), center,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(if (open) 2.dp.toPx() else 1.2.dp.toPx()))
+                }
+            )
+            .then(if (highlighted && !open && !classic) Modifier.border(1.2.dp, CaptureColors.Accent, CircleShape) else Modifier)
             .captureCombinedClickable(
                 shape = CircleShape,
                 enabled = enabled,
@@ -1646,16 +1711,19 @@ private fun X14uRoundButton(
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center
     ) {
-        Icon(
+        // Classic: the colour wheel is the Look button's face (no icon); the dial keeps a small one.
+        if (!classic || face != ClassicFace.HueWheel) Icon(
             icon,
             contentDescription = null,
             tint = when {
                 !enabled -> Color.White.copy(alpha = .25f)
-                open -> Color.Black
-                highlighted -> CaptureColors.Accent
+                open && !classic -> Color.Black
+                open || highlighted -> CaptureColors.Accent
+                classic -> ClassicColors.Engraved.copy(alpha = .9f)
                 else -> Color.White.copy(alpha = .9f)
             },
-            modifier = Modifier.size(size * iconScale).then(if (turn) Modifier.uprightInLandscape(orientation) else Modifier)
+            modifier = Modifier.size(size * (if (classic && face == ClassicFace.Dial) iconScale * .7f else iconScale))
+                .then(if (turn) Modifier.uprightInLandscape(orientation) else Modifier)
         )
     }
 }
@@ -1765,7 +1833,8 @@ private fun X14uLensRow(
                 X14uIcons.Look, "Look: profile, tone and highlights", orientation,
                 open = panel == X14uPanel.Look,
                 highlighted = groups.any { it != LensOverrides.GROUP_AE },
-                turn = false
+                turn = false,
+                face = ClassicFace.HueWheel
             ) { onTogglePanel(X14uPanel.Look) }
         }
         Box(Modifier.align(Alignment.CenterEnd)) {
@@ -1774,15 +1843,19 @@ private fun X14uLensRow(
                 open = panel == X14uPanel.Exposure,
                 highlighted = LensOverrides.GROUP_AE in groups,
                 onLongClick = extras.onOpenExposureSettings,
-                turn = false
+                turn = false,
+                face = ClassicFace.Dial
             ) { onTogglePanel(X14uPanel.Exposure) }
         }
         val pill = RoundedCornerShape(18.dp)
-        Box(Modifier.align(Alignment.Center).padding(horizontal = 42.dp)) {
+        val classic = isClassicStyle()
+        // Classic (user, Nov 18): lighter, see-through, a hairline edge; the focal lengths as text only.
+        Box(Modifier.align(Alignment.Center).padding(horizontal = if (classic) 46.dp else 42.dp)) {
         Row(
             Modifier
                 .height(36.dp)
-                .background(Color.Black.copy(alpha = .4f), pill)
+                .background(Color.Black.copy(alpha = if (classic) .26f else .4f), pill)
+                .then(if (classic) Modifier.border(.5.dp, Color.White.copy(alpha = .16f), pill) else Modifier)
                 .padding(horizontal = 4.dp)
                 .horizontalScroll(rememberScrollState()),
             verticalAlignment = Alignment.CenterVertically
@@ -1855,7 +1928,10 @@ private fun X14uLensRow(
                             },
                         contentAlignment = Alignment.Center
                     ) {
-                        if (isSelected) Box(Modifier.size(32.dp).background(Color.Black.copy(alpha = .55f), CircleShape))
+                        if (isSelected && !classic) Box(Modifier.size(32.dp).background(Color.Black.copy(alpha = .55f), CircleShape))
+                        // Classic: a short accent line under the lens in use.
+                        if (isSelected && classic) Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 1.dp)
+                            .size(14.dp, 1.5.dp).background(if (enabled) CaptureColors.Accent else CaptureColors.Accent.copy(alpha = .45f)))
                         val color = when {
                             isSelected -> if (enabled) CaptureColors.Accent else CaptureColors.Accent.copy(alpha = .45f)
                             else -> Color.White.copy(alpha = if (enabled) .9f else .3f)
@@ -2144,8 +2220,12 @@ private fun X14uAmsiPill(state: CaptureUiState, dispatch: CaptureDispatch, enabl
     val haptics = LocalCaptureHaptics.current
     val supported = state.capabilities.supportedExposureModes
     val current = state.exposureControl.mode
+    // Classic: engraved letters on the plate (no pill), the mode in use lit with a dot under it, like a dial's index.
+    val classic = isClassicStyle()
     Row(
-        Modifier.height(40.dp).background(Color.White.copy(alpha = .08f), RoundedCornerShape(20.dp)).padding(horizontal = 3.dp),
+        Modifier.height(40.dp)
+            .then(if (classic) Modifier else Modifier.background(Color.White.copy(alpha = .08f), RoundedCornerShape(20.dp)))
+            .padding(horizontal = 3.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         listOf(ExposureMode.Auto to "A", ExposureMode.Manual to "M", ExposureMode.ShutterPriority to "S", ExposureMode.IsoPriority to "I")
@@ -2155,7 +2235,7 @@ private fun X14uAmsiPill(state: CaptureUiState, dispatch: CaptureDispatch, enabl
                 Box(
                     Modifier
                         .size(32.dp, 34.dp)
-                        .background(if (on) CaptureColors.Accent.copy(alpha = .22f) else Color.Transparent, RoundedCornerShape(17.dp))
+                        .background(if (on && !classic) CaptureColors.Accent.copy(alpha = .22f) else Color.Transparent, RoundedCornerShape(17.dp))
                         .captureClickable(shape = RoundedCornerShape(17.dp), enabled = usable) {
                             if (!on) {
                                 haptics.selection()
@@ -2176,11 +2256,13 @@ private fun X14uAmsiPill(state: CaptureUiState, dispatch: CaptureDispatch, enabl
                         fontSize = dpText(15f),
                         color = when {
                             on -> CaptureColors.Accent
-                            usable -> Color.White.copy(alpha = .75f)
+                            usable -> if (classic) ClassicColors.Engraved.copy(alpha = .8f) else Color.White.copy(alpha = .75f)
                             else -> Color.White.copy(alpha = .25f)
                         },
                         modifier = Modifier.uprightInLandscape(state.orientation)
                     )
+                    if (on && classic) Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 2.dp).size(3.dp)
+                        .background(CaptureColors.Accent, CircleShape))
                 }
             }
     }
@@ -2713,13 +2795,16 @@ private fun configEditor(key: String, q: FilmSimQuickState, actions: ConfigActio
 private fun X14uEditorView(editor: X14uEditor, orientation: Orientation) {
     when (editor) {
         is X14uEditor.Ruler -> Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+            val classic = isClassicStyle()
             if (editor.auto != null) {
                 X14uAutoButton(active = editor.auto, enabled = true, orientation = orientation, onClick = editor.onAuto)
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(if (classic) 8.dp else 6.dp))
             }
             // Keyed by the scale so swapping rulers (WB Kelvin <-> tint) starts the new one fresh.
+            // Classic: the ruler behind a glass window with knurled ends (the user's mockup).
             androidx.compose.runtime.key(editor.count, editor.spacing) {
-                X14uRuler(editor, orientation, Modifier.weight(1f))
+                X14uRuler(editor, orientation,
+                    if (classic) Modifier.weight(1f).padding(vertical = 6.dp).classicWindow() else Modifier.weight(1f))
             }
             if (editor.trailing != null) {
                 Spacer(Modifier.width(6.dp))
@@ -2742,10 +2827,14 @@ private fun X14uEditorView(editor: X14uEditor, orientation: Orientation) {
 @Composable
 private fun X14uTextRoundButton(text: String, active: Boolean, orientation: Orientation, onClick: () -> Unit) {
     val haptics = LocalCaptureHaptics.current
+    val classic = isClassicStyle()
     Box(
         Modifier
-            .size(36.dp)
-            .background(if (active) CaptureColors.Accent.copy(alpha = .22f) else Color.White.copy(alpha = .12f), CircleShape)
+            .size(if (classic) 44.dp else 36.dp)
+            .then(
+                if (classic) Modifier.drawBehind { drawMetalKnob(center, this.size.minDimension / 2f) }
+                else Modifier.background(if (active) CaptureColors.Accent.copy(alpha = .22f) else Color.White.copy(alpha = .12f), CircleShape)
+            )
             .captureClickable(shape = CircleShape) {
                 haptics.selection()
                 onClick()
@@ -2763,10 +2852,15 @@ private fun X14uTextRoundButton(text: String, active: Boolean, orientation: Orie
 @Composable
 private fun X14uAutoButton(active: Boolean, enabled: Boolean, orientation: Orientation, onClick: () -> Unit) {
     val haptics = LocalCaptureHaptics.current
+    val classic = isClassicStyle()
+    // Classic: a metal "A" button beside the window, as in the user's mockup.
     Box(
         Modifier
-            .size(36.dp)
-            .background(if (active) CaptureColors.Accent.copy(alpha = .22f) else Color.White.copy(alpha = .12f), CircleShape)
+            .size(if (classic) 44.dp else 36.dp)
+            .then(
+                if (classic) Modifier.drawBehind { drawMetalKnob(center, this.size.minDimension / 2f) }
+                else Modifier.background(if (active) CaptureColors.Accent.copy(alpha = .22f) else Color.White.copy(alpha = .12f), CircleShape)
+            )
             .captureClickable(shape = CircleShape, enabled = enabled) {
                 haptics.selection()
                 onClick()
@@ -2798,12 +2892,15 @@ private fun X14uChoiceChips(
     val haptics = LocalCaptureHaptics.current
     val even = labels.size in 2..6 && labels.all { it.length <= 7 }
     val track = RoundedCornerShape(50)
+    val classic = isClassicStyle()
     Box(modifier, contentAlignment = Alignment.Center) {
         Row(
             Modifier
                 .then(if (even) Modifier.fillMaxWidth() else Modifier)
                 .height(36.dp)
-                .background(Color(0xD91C1A17), track)
+                // Classic: the choices sit in a dark glass track with a hairline rim.
+                .background(if (classic) ClassicColors.Glass else Color(0xD91C1A17), track)
+                .then(if (classic) Modifier.border(.6.dp, Color.White.copy(alpha = .1f), track) else Modifier)
                 .padding(3.dp)
                 .then(if (even) Modifier else Modifier.horizontalScroll(rememberScrollState())),
             horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -2818,7 +2915,7 @@ private fun X14uChoiceChips(
                         .then(if (even) Modifier.weight(1f) else Modifier.widthIn(min = 44.dp))
                         .fillMaxHeight()
                         .then(
-                            if (isSelected) Modifier.background(Color(0xFF2F2A24), shape).border(1.dp, CaptureColors.Accent, shape)
+                            if (isSelected) Modifier.background(if (classic) Color(0xFF1E1D1C) else Color(0xFF2F2A24), shape).border(1.dp, CaptureColors.Accent, shape)
                             else Modifier
                         )
                         .captureClickable(shape = shape, enabled = enabled) {
@@ -2873,7 +2970,12 @@ private fun X14uRuler(editor: X14uEditor.Ruler, orientation: Orientation, modifi
             editor.valueText,
             fontFamily = X14uFont,
             fontSize = dpText(14f),
-            color = if (enabled) Color.White else Color.White.copy(alpha = .4f),
+            // Classic: the value lit in the accent through the window, as in the mockup.
+            color = when {
+                !enabled -> Color.White.copy(alpha = .4f)
+                isClassicStyle() -> CaptureColors.Accent
+                else -> Color.White
+            },
             maxLines = 1,
             modifier = Modifier.align(Alignment.TopCenter).padding(top = 4.dp).uprightInLandscape(orientation)
         )
@@ -3001,10 +3103,13 @@ private fun X14uIdleControlArea(
     dispatch: CaptureDispatch,
     video: VideoControlState,
     showNumbers: Boolean,
-    enabled: Boolean
+    enabled: Boolean,
+    /** Classic video: the band folded to a thin strip (smaller names, no handle). */
+    folded: Boolean = false
 ) {
     val haptics = LocalCaptureHaptics.current
     val extras = LocalCaptureExtras.current
+    val classic = isClassicStyle()
     val current = currentX14uMode(state, extras.proUi, extras.pano, extras.burst)
     // The strip shows the stills mode last used (Photo or Photo+; swipe up on the viewfinder switches), Video, Burst
     // and Pano.
@@ -3053,9 +3158,11 @@ private fun X14uIdleControlArea(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Box(Modifier.size(20.dp, 3.dp).background(Color.White.copy(alpha = .3f), RoundedCornerShape(2.dp)))
-                Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(30.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (!folded) {
+                    Box(Modifier.size(20.dp, 3.dp).background(Color.White.copy(alpha = .3f), RoundedCornerShape(2.dp)))
+                    Spacer(Modifier.height(10.dp))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(if (folded) 22.dp else 30.dp), verticalAlignment = Alignment.CenterVertically) {
                     stripModes.forEach { mode ->
                         val isSelected = current == mode
                         val stills = mode == X14uMode.Photo || mode == X14uMode.Pro
@@ -3063,9 +3170,11 @@ private fun X14uIdleControlArea(
                         Text(
                             mode.label,
                             fontFamily = X14uFont,
-                            fontSize = dpText(15f),
+                            fontSize = dpText(if (folded) 12f else 15f),
+                            letterSpacing = if (folded) dpText(1f) else androidx.compose.ui.unit.TextUnit.Unspecified,
                             color = when {
                                 isSelected -> if (enabled) CaptureColors.Accent else CaptureColors.Accent.copy(alpha = .4f)
+                                classic -> ClassicColors.Engraved.copy(alpha = if (enabled) .85f else .25f)
                                 else -> Color.White.copy(alpha = if (enabled) .85f else .25f)
                             },
                             modifier = Modifier
@@ -3081,10 +3190,10 @@ private fun X14uIdleControlArea(
                                     role = Role.Tab
                                     this.selected = isSelected
                                 }
-                                .padding(horizontal = 6.dp, vertical = 4.dp)
+                                .padding(horizontal = 6.dp, vertical = if (folded) 2.dp else 4.dp)
                         )
                         // Two dots under the stills label: Photo · Photo+ (there is a second stills mode).
-                        if (stills) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (stills && !folded) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             listOf(false, true).forEach { plus ->
                                 val lit = extras.proUi == plus
                                 Box(Modifier.size(4.dp).background(

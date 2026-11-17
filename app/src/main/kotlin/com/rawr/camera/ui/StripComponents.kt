@@ -34,6 +34,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
@@ -401,13 +402,19 @@ internal fun CompactSidePill(
     minWidth: androidx.compose.ui.unit.Dp = CaptureDimens.CompactPillMinWidth
 ) {
     val haptics = LocalCaptureHaptics.current
-    val contentColor = if (active) CaptureColors.Accent else Color.White.copy(alpha = .55f)
+    // X14U Classic: a metal button with the icon and its label engraved on the cap (the user's mockup).
+    val classic = isClassicStyle()
+    val contentColor = when {
+        active -> CaptureColors.Accent
+        classic -> ClassicColors.Engraved.copy(alpha = .75f)
+        else -> Color.White.copy(alpha = .55f)
+    }
     // Bare toggle styling (mirrors LensSelector): icon + label only, no card.
     // Generous invisible touch target retained.
     Box(
         modifier
-            .widthIn(min = minWidth)
-            .height(CaptureDimens.CompactPillHeight)
+            .then(if (classic) Modifier.size(52.dp).drawBehind { drawMetalKnob(center, size.minDimension / 2f) }
+                else Modifier.widthIn(min = minWidth).height(CaptureDimens.CompactPillHeight))
             .testTag(testTag)
             .captureCombinedClickable(
                 shape = CapturePillRippleShape,
@@ -439,9 +446,9 @@ internal fun CompactSidePill(
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+            modifier = Modifier.padding(horizontal = if (classic) 2.dp else 8.dp, vertical = 4.dp)
         ) {
-            Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(20.dp))
+            Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(if (classic) 17.dp else 20.dp))
             Text(
                 label,
                 color = contentColor,

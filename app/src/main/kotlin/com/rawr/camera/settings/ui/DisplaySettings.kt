@@ -39,8 +39,16 @@ internal fun DisplayControlsSettings(state: SettingsUiState, dispatch: SettingsD
                     dispatch.invoke(OpenSection(SettingsSection.Monitoring))
                 }
             )
-            // X14U: no "Control Style" row: Frosted / Basic only skin upstream's previous capture screen, which this
-            // build never shows (ControlStyleSettings and the setting stay, for upstream merges).
+            // X14U (Nov 18): the style of the capture screen: Classic (camera body) or Minimal (as before).
+            SettingDivider()
+            SettingsRow(
+                "Control Style",
+                if (state.values.controlSurfaceStyle == ControlSurfaceStyle.Classic) "Classic" else "Minimal",
+                testTag = SettingsTestTags.row("DisplayControls", "control_style"),
+                onClick = {
+                    dispatch.invoke(OpenSection(SettingsSection.ControlStyle))
+                }
+            )
         }
         SettingsGroup(
             title = "Xiaomi 14 Ultra grip",
@@ -167,20 +175,23 @@ internal fun ControlStyleSettings(state: SettingsUiState, dispatch: SettingsDisp
     val haptics = LocalSettingsHaptics.current
     SettingsPageContainer {
         SettingsGroup(
-            description = "Changes only the visual material used by Capture Screen controls. Layout and interaction stay identical."
+            description = "How the capture screen looks. Controls work the same in both."
         ) {
+            // X14U: Frosted only skinned upstream's previous capture screen; it stays in code, not offered.
             SettingsSelectionRow(
-                title = "Frosted",
-                selected = state.values.controlSurfaceStyle == ControlSurfaceStyle.Frosted,
+                title = "Classic",
+                supportingText = "A camera body: brushed metal, leather, metal dials.",
+                selected = state.values.controlSurfaceStyle == ControlSurfaceStyle.Classic,
                 onClick = {
                     haptics.detent()
-                    dispatch.invoke(SetControlSurfaceStyle(ControlSurfaceStyle.Frosted))
+                    dispatch.invoke(SetControlSurfaceStyle(ControlSurfaceStyle.Classic))
                 }
             )
             SettingDivider()
             SettingsSelectionRow(
-                title = "Basic",
-                selected = state.values.controlSurfaceStyle == ControlSurfaceStyle.Basic,
+                title = "Minimal",
+                supportingText = "Black, as before.",
+                selected = state.values.controlSurfaceStyle != ControlSurfaceStyle.Classic,
                 onClick = {
                     haptics.detent()
                     dispatch.invoke(SetControlSurfaceStyle(ControlSurfaceStyle.Basic))

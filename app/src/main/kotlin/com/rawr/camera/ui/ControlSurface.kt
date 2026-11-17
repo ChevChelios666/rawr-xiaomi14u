@@ -66,7 +66,7 @@ internal fun Modifier.captureControlSurface(
             )
     }
 
-    ControlSurfaceStyle.Basic -> {
+    ControlSurfaceStyle.Basic, ControlSurfaceStyle.Classic -> {
         this
             .background(
                 color = if (active) Color.Black.copy(alpha = .39f) else Color.Black.copy(alpha = .31f),

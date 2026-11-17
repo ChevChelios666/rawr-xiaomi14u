@@ -39,6 +39,8 @@ fun CaptureScreen(
     onToggleVideoRecording: () -> Unit = {}
 ) {
     val haptics = rememberCaptureHaptics()
+    // X14U: the Classic style's accent (orange) everywhere the accent is read.
+    androidx.compose.runtime.SideEffect { CaptureColors.classic = state.controlSurfaceStyle == com.rawr.camera.model.ControlSurfaceStyle.Classic }
     CompositionLocalProvider(
         LocalControlSurfaceStyle provides state.controlSurfaceStyle,
         LocalCaptureHaptics provides haptics

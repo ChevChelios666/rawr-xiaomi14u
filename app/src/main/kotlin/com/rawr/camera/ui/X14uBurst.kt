@@ -87,11 +87,14 @@ internal fun X14uBurstShutter(
             },
         contentAlignment = Alignment.Center
     ) {
+        // X14U Classic: the metal shutter with a red ring; ready, a dashed ring on its collar; running, the count on the cap.
+        val classic = isClassicStyle()
         Canvas(Modifier.size(CaptureDimens.ShutterOuter)) {
             val outline = 2.dp.toPx()
             val r = size.minDimension / 2f
             // Outline, as on the photo shutter; while running, the progress ring over it.
-            drawCircle(Color.White.copy(alpha = .86f), radius = r - outline / 2f, style = Stroke(outline))
+            if (classic) drawMetalKnob(center, r, ring = ClassicColors.Red, pressed = pressed)
+            else drawCircle(Color.White.copy(alpha = .86f), radius = r - outline / 2f, style = Stroke(outline))
             if (burst.running) {
                 val w = 4.dp.toPx()
                 drawArc(
@@ -114,17 +117,19 @@ internal fun X14uBurstShutter(
         }
         val inner = if (burst.running) CaptureDimens.ShutterInner - 6.dp else CaptureDimens.ShutterInner - 12.dp
         Box(
-            Modifier.size(inner).background(Color(0xFFF5F5F5).copy(alpha = if (pressed) .8f else 1f), CircleShape),
+            Modifier.size(inner).then(
+                if (classic) Modifier else Modifier.background(Color(0xFFF5F5F5).copy(alpha = if (pressed) .8f else 1f), CircleShape)
+            ),
             contentAlignment = Alignment.Center
         ) {
             if (burst.running) {
                 Column(Modifier.uprightInLandscape(orientation), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("${burst.shots}", color = Color(0xFF1A1A1A), fontFamily = X14uFont, fontWeight = FontWeight.Medium,
-                        fontSize = dpText(18f), maxLines = 1)
+                    Text("${burst.shots}", color = if (classic) ClassicColors.Engraved else Color(0xFF1A1A1A), fontFamily = X14uFont,
+                        fontWeight = FontWeight.Medium, fontSize = dpText(18f), maxLines = 1)
                     // The speed reached (after the first moment), so a slower save path shows honestly.
                     val elapsed = android.os.SystemClock.uptimeMillis() - burst.startedAtMs
                     val rate = if (elapsed > 700L && burst.shots > 1) (burst.shots * 1000f / elapsed).toInt() else fps
-                    Text("$rate fps", color = Color(0xFF555555), fontFamily = X14uFont, fontSize = dpText(9f), maxLines = 1)
+                    Text("$rate fps", color = if (classic) ClassicColors.EngravedDim else Color(0xFF555555), fontFamily = X14uFont, fontSize = dpText(9f), maxLines = 1)
                 }
             }
         }
