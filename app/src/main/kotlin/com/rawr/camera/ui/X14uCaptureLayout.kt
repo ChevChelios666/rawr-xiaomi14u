@@ -273,6 +273,7 @@ internal fun X14uCaptureLayout(
     // Hold-to-lock video (Nov 17): holding the record button records with the chosen settings locked from that moment
     // (S and ISO through the exposure mode, focus through AF lock, WB at its current value), given back at the stop.
     val videoLockSettings by com.rawr.camera.video.VideoLockSettings.values.collectAsState()
+    val faceSettings by com.rawr.camera.settings.model.FaceSettings.values.collectAsState()
     val videoLock = remember { X14uVideoLock() }
     var videoHolding by remember { mutableStateOf(false) }
     val latestState by androidx.compose.runtime.rememberUpdatedState(state)
@@ -935,7 +936,7 @@ internal fun X14uCaptureLayout(
             }
         }
         X14uPanel.Exposure -> {
-            cells = aeCells(quick)
+            cells = aeCells(quick, faceSettings.exposure)
             editorFor = { key -> aeEditor(key, quick, onQuickEvent) }
         }
         X14uPanel.Look -> {
@@ -1721,41 +1722,37 @@ private fun X14uLensRow(
         if (totalZoom != null) kotlin.math.abs(totalZoom - stop.zoom) <= stop.zoom * .01f
         else stop.lens == state.selectedLensId && kotlin.math.abs(state.videoCrop.digitalZoom - stop.crop) <= stop.crop * .01f
     }
-    // A hidden lens stays hidden, also while a digital focal length crops it; it shows only when it is in use and
-    // nothing on the pill stands for it (pinch zoom, a lens picked elsewhere).
+    // A hidden lens never shows (Nov 17: zooming past a digital focal length onto a hidden lens put that lens on the
+    // pill with the zoom on it). The live focal length shows on the pill's item just below it instead (see anchor).
     val lenses = state.capabilities.lenses.filterNot { isFrontLens(it.id, it.displayName) }
-        .filter { it.id !in buttons.hidden || (it.id == state.selectedLensId && activeStop == null) }
+        .filter { it.id !in buttons.hidden }
     val lensMm: (String) -> Int? = { id -> com.rawr.camera.settings.model.ZoomChain.factorOf(id)?.let { com.rawr.camera.settings.model.LensButtons.mmOf(it) } }
-    // Lenses in their order, each digital stop before the first lens longer than it. A hidden lens in use (pinch on
-    // it) goes where its live focal length falls, not at its own: zooming 17 → 22 mm on a hidden 12 mm showed its
-    // chip left of "17", so the pill jumped (Nov 17).
-    val liveHidden = lenses.firstOrNull { it.id in buttons.hidden }
-    val liveMm: Float? = liveHidden?.let { lens ->
-        val own = lensMm(lens.id)?.toFloat()
-        val factor = zoomChain.firstOrNull { it.first == lens.id }?.second
-        if (own != null && factor != null && totalZoom != null) own * totalZoom / factor else own
-    }
+    // Lenses in their order, each digital stop before the first lens longer than it.
     val items: List<Any> = buildList {
         val pending = stops.sortedBy { it.mm }.toMutableList()
-        lenses.filter { it !== liveHidden }.forEach { lens ->
+        lenses.forEach { lens ->
             val mm = lensMm(lens.id)
             if (mm != null) while (pending.isNotEmpty() && pending.first().mm < mm) add(pending.removeAt(0))
             add(lens)
         }
         addAll(pending)
-        if (liveHidden != null) {
-            val at = indexOfFirst { item ->
-                val mm = (item as? com.rawr.camera.model.LensCapability)?.let { lensMm(it.id)?.toFloat() }
-                    ?: (item as? com.rawr.camera.settings.model.ResolvedStop)?.mm?.toFloat()
-                mm != null && liveMm != null && mm > liveMm
-            }
-            add(if (at < 0) size else at, liveHidden)
-        }
     }
-    // Grip zoom lever: the next focal length up or down the pill (lenses and digital ones), as a tap would.
     val itemMm: (Any) -> Int? = { item ->
         (item as? com.rawr.camera.model.LensCapability)?.let { lensMm(it.id) } ?: (item as? com.rawr.camera.settings.model.ResolvedStop)?.mm
     }
+    // The focal length in use when it isn't a pill stop: the lens's own scaled by any zoom on it.
+    val liveMm: Float? = if (activeStop != null) null else {
+        val own = lensMm(state.selectedLensId)?.toFloat()
+        val factor = zoomChain.firstOrNull { it.first == state.selectedLensId }?.second
+        if (own != null && factor != null && totalZoom != null) own * totalZoom / factor else own
+    }
+    // The item that stands for it: the longest one at or below it (the widest when it is wider than all), so the
+    // live zoom shows on "55" between 55 and 75 mm, not on a hidden 46 mm lens.
+    val anchor: Any? = liveMm?.let { live ->
+        items.filter { (itemMm(it) ?: Int.MAX_VALUE) <= live + .5f }.maxByOrNull { itemMm(it) ?: 0 }
+            ?: items.minByOrNull { itemMm(it) ?: Int.MAX_VALUE }
+    }
+    // Grip zoom lever: the next focal length up or down the pill (lenses and digital ones), as a tap would.
     val step by androidx.compose.runtime.rememberUpdatedState { direction: Int ->
         // The lens's own pill number scaled by any zoom on it (3.2x x 23 = 73.6 would miss the "75" button and
         // step onto it again, so the lever stopped at 75 mm).
@@ -1765,8 +1762,7 @@ private fun X14uLensRow(
             ?: if (totalZoom != null && ownMm != null && ownFactor != null) ownMm * totalZoom / ownFactor
             else ownMm ?: totalZoom?.let { it * com.rawr.camera.settings.model.LensButtons.MAIN_MM }
         if (enabled && currentMm != null) {
-            // A hidden lens in use isn't a lever stop (its own focal length is off the pill).
-            val candidates = items.filter { it !== liveHidden }.mapNotNull { item -> itemMm(item)?.let { item to it } }
+            val candidates = items.mapNotNull { item -> itemMm(item)?.let { item to it } }
             val next = if (direction > 0) candidates.filter { it.second > currentMm + .5f }.minByOrNull { it.second }
                 else candidates.filter { it.second < currentMm - .5f }.maxByOrNull { it.second }
             when (val item = next?.first) {
@@ -1839,18 +1835,23 @@ private fun X14uLensRow(
                 null -> items.forEach { item ->
                     val lens = item as? com.rawr.camera.model.LensCapability
                     val stop = item as? com.rawr.camera.settings.model.ResolvedStop
-                    val isSelected = if (lens != null) state.selectedLensId == lens.id && activeStop == null else stop == activeStop
+                    val isSelected = when {
+                        activeStop != null -> stop == activeStop
+                        anchor != null -> item === anchor
+                        else -> lens != null && state.selectedLensId == lens.id
+                    }
                     val name = lens?.displayName ?: "${stop!!.mm} mm"
+                    // The anchor away from its own focal length shows the live one.
+                    val live = if (item === anchor && liveMm != null && kotlin.math.abs(liveMm - (itemMm(item) ?: 0)) > .5f) liveMm else null
                     // Label: the zoom factor ("1x", "2.2x") or the focal length over "mm".
-                    val liveZoom = if (lens != null && isSelected && zoomLabel != null) totalZoom else null
                     val mm: Int? = when {
+                        live != null -> live.roundToInt()
                         stop != null -> stop.mm
-                        liveZoom != null -> (liveZoom * com.rawr.camera.settings.model.LensButtons.MAIN_MM).roundToInt()
                         else -> lensMm(lens!!.id)
                     }
                     val factorText = when {
+                        live != null -> zoomLabel ?: zoomText(live / com.rawr.camera.settings.model.LensButtons.MAIN_MM)
                         stop != null -> zoomText(stop.zoom)
-                        isSelected && zoomLabel != null -> zoomLabel
                         else -> lens!!.displayName
                     }
                     Box(
@@ -2570,11 +2571,13 @@ private fun highlightEditor(key: String, quick: ViewfinderQuickState, onQuickEve
     }
 }
 
-private fun aeCells(quick: ViewfinderQuickState): List<X14uCell> {
+private fun aeCells(quick: ViewfinderQuickState, faceExposure: Boolean): List<X14uCell> {
     val ae = quick.rawrAe
     val on = ae.enabled
     return listOf(
         X14uCell("ae", if (on) "Rawr" else "Device", "AE", changed = on),
+        // Expose for faces (Nov 17, also in Settings → Capture): either AE meters the main face when one is seen.
+        X14uCell("ae.faces", if (faceExposure) "On" else "Off", "FACES"),
         X14uCell("ae.metering", ae.metering.label, "METER", enabled = on),
         X14uCell("ae.night", ae.nightLook.label, "NIGHT", enabled = on),
         X14uCell("ae.balance", ae.balance.label.replace("Balanced", "Bal."), "BALANCE", enabled = on),
@@ -2598,6 +2601,12 @@ private fun aeEditor(key: String, quick: ViewfinderQuickState, onQuickEvent: (Ca
         }
         "ae.slowest" -> X14uEditor.Chips(RawrMaxShutter.entries.map { it.label }, ae.maxShutter.ordinal, enabled) { i ->
             onQuickEvent(CaptureQuickEvent.SetRawrAeOption { it.copy(maxShutter = RawrMaxShutter.entries[i]) })
+        }
+        "ae.faces" -> {
+            val faces = com.rawr.camera.settings.model.FaceSettings.values.value
+            X14uEditor.Chips(listOf("Off", "On"), if (faces.exposure) 1 else 0, enabled) { i ->
+                com.rawr.camera.settings.model.FaceSettings.update(faces.copy(exposure = i == 1))
+            }
         }
         "ae.gain" -> X14uEditor.Chips(RawrDigitalGain.entries.map { it.label }, ae.digitalGain.ordinal, enabled) { i ->
             onQuickEvent(CaptureQuickEvent.SetRawrAeOption { it.copy(digitalGain = RawrDigitalGain.entries[i]) })

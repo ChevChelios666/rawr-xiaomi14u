@@ -685,7 +685,11 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         .map { v ->
             val list = v.presetList()
             val active = list.firstOrNull { it.id == v.activePresetId } ?: list.first()
-            val changed = presetSnap(active, v)?.let { snap -> v.withPresetGroups(snap, active.groups) != v } ?: false
+            // Compared as stored, so an in-memory difference that doesn't survive saving (a rounding) isn't a change.
+            val changed = presetSnap(active, v)?.let { snap ->
+                val merged = v.withPresetGroups(snap, active.groups)
+                merged != v && presetCodec.encode(merged) != presetCodec.encode(v)
+            } ?: false
             PresetsUi(
                 items = list.mapIndexed { i, p ->
                     PresetItem(

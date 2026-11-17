@@ -144,6 +144,7 @@ internal class PanoSet {
         fovX = fov(lensFactor, alongWidth = true)
         fovY = fov(lensFactor, alongWidth = false)
         layOut()
+        android.util.Log.i("RawrPano", "PANO_START shape=$shape overlap=$overlap stopAt=$stopAt fov=$fovX/$fovY targets=${targets.size}")
         arming = true
         if (state.exposureControl.mode != ExposureMode.Manual &&
             ExposureMode.Manual in state.capabilities.supportedExposureModes) dispatch(SetExposureMode(ExposureMode.Manual))
@@ -201,6 +202,7 @@ internal class PanoSet {
     /** Takes the next frame; frame 1 also fixes the reference orientation. */
     fun shoot(orientation: FloatArray?, dispatch: CaptureDispatch) {
         if (frames == 0) reference = orientation
+        android.util.Log.i("RawrPano", "PANO_SHOOT frame=${frames + 1} motion=${orientation != null} reference=${reference != null}")
         arming = false
         frames += 1
         lastShotAt = System.currentTimeMillis()
@@ -220,6 +222,8 @@ internal class PanoSet {
 
     /** Ends the set and gives back the exposure, focus and white balance it locked. */
     fun end(state: CaptureUiState, dispatch: CaptureDispatch) {
+        // With the caller's stack: a set that ends after frame 1 shows who ended it (Nov 17 test).
+        if (frames > 0 || arming) android.util.Log.i("RawrPano", "PANO_END frames=$frames arming=$arming", Throwable("pano end"))
         saved?.let { s ->
             if (s.exposure != state.exposureControl.mode && s.exposure in state.capabilities.supportedExposureModes) {
                 dispatch(SetExposureMode(s.exposure))
@@ -346,6 +350,7 @@ internal fun X14uPanoOverlay(
         var lastAt = 0L
         var speed = 0f
         var shotsSeen = set.frames
+        var noAimLogged = false
         while (true) {
             kotlinx.coroutines.delay(50L)
             val ref = set.reference
@@ -362,6 +367,10 @@ internal fun X14uPanoOverlay(
                 holdStart = 0L
             }
             if (ref == null || now == null || set.frames == 0) {
+                if (set.frames > 0 && !noAimLogged) {
+                    android.util.Log.i("RawrPano", "PANO_NO_AIM reference=${ref != null} motion=${now != null}")
+                    noAimLogged = true
+                }
                 aim = null
                 lastRawA = Float.NaN
                 accA = 0f
@@ -369,6 +378,7 @@ internal fun X14uPanoOverlay(
             }
             if (target == null) {
                 // Every frame is in: the set ends by itself.
+                if (aim != null) android.util.Log.i("RawrPano", "PANO_COMPLETE frames=${set.frames} targets=${set.targets.size}")
                 aim = null
                 if (System.currentTimeMillis() - set.lastShotAt > 700L) finish()
                 continue
