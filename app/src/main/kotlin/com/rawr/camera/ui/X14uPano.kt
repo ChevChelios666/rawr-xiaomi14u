@@ -455,20 +455,22 @@ internal fun X14uPanoOverlay(
                 }
                 if (flash.value > 0f) drawRect(Color.White.copy(alpha = flash.value))
             }
-            // Placed as the phone is held: in landscape the top is the screen's right edge, the bottom its left.
+            // The locks sit with the other status badges, clear of the histogram (top right as held): portrait top
+            // left; landscape the top right as held (the screen's bottom right, above the lens row).
             if (landscape) {
-                Column(Modifier.align(Alignment.TopEnd).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 64.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     listOf("AE-L", "AF-L", "WB-L").forEach { PanoBadge(it, CaptureColors.Accent, orientation) }
                 }
             } else {
-                Row(Modifier.align(Alignment.TopEnd).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(Modifier.align(Alignment.TopStart).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     listOf("AE-L", "AF-L", "WB-L").forEach { PanoBadge(it, CaptureColors.Accent, orientation) }
                 }
             }
             PanoProgress(
                 set,
-                if (landscape) Modifier.align(Alignment.CenterEnd).padding(end = 36.dp).uprightLayoutInLandscape(orientation)
-                else Modifier.align(Alignment.TopCenter).padding(top = 36.dp)
+                // Bottom centre as held, above the lens row: the top holds the histogram and the capture status.
+                if (landscape) Modifier.align(Alignment.CenterStart).padding(start = 16.dp).uprightLayoutInLandscape(orientation)
+                else Modifier.align(Alignment.BottomCenter).padding(bottom = 64.dp)
             )
             if (state != null) {
                 // Below the centre as held, clear of the level line.

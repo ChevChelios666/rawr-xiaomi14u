@@ -1107,35 +1107,48 @@ internal fun X14uCaptureLayout(
                     modifier = Modifier.fillMaxSize()
                 )
                 if (tools.level) X14uLevel(Modifier.fillMaxSize())
-                // Timed burst: what is set (ready) or how far the run is, and its locks.
-                if (timedReady || timedRun.running) {
-                    Text(
+                // Status badges in one place, clear of the histogram (top right as held; Nov 17 the timed badge sat on it
+                // in landscape): portrait top left; landscape the top right as held (the screen's bottom right, above
+                // the lens row). A line per mode badge (level lock / stabilise, timed burst), then the locks in force.
+                run {
+                    val stabBadge = isVideo && tools.stabilize != com.rawr.camera.settings.model.VideoStabilize.Off &&
+                        !isFrontLens(state.selectedLensId, state.selectedLensId)
+                    val lines = listOfNotNull(
+                        if (isVideo && (tools.horizonLock || tools.horizonFollow || stabBadge)) listOfNotNull(
+                            if (tools.horizonFollow) "LEVEL FOLLOW" else if (tools.horizonLock) "LEVEL LOCK" else null,
+                            if (stabBadge) "STAB" else null
+                        ).joinToString(" · ") else null,
                         if (timedRun.running) "TIMED · ${timedRun.shots} / ${if (timedRun.total > 0) "${timedRun.total}" else "∞"}"
-                        else "TIMED ${timedBurstShort(timedSettings)}",
-                        fontFamily = CaptureMono,
-                        fontSize = dpText(10.5f),
-                        color = CaptureColors.Accent,
-                        modifier = Modifier
-                            .align(if (orientation == Orientation.Landscape) Alignment.TopEnd else Alignment.TopStart)
-                            .padding(8.dp)
-                            .uprightLayoutInLandscape(orientation)
-                            .background(Color.Black.copy(alpha = .5f), RoundedCornerShape(6.dp))
-                            .padding(horizontal = 6.dp, vertical = 3.dp)
+                        else if (timedReady) "TIMED ${timedBurstShort(timedSettings)}" else null
                     )
-                }
-                if (timedRun.running && timedRun.locks.isNotEmpty()) {
-                    Row(
-                        (if (orientation == Orientation.Landscape) Modifier.align(Alignment.BottomEnd).padding(end = 10.dp, bottom = 64.dp)
-                            else Modifier.align(Alignment.TopEnd).padding(top = 10.dp, end = 10.dp))
-                            .uprightLayoutInLandscape(orientation),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        timedRun.locks.forEach { chip ->
-                            Text(
-                                "🔒 $chip", fontFamily = X14uFont, fontSize = dpText(11f), color = Color.White,
-                                modifier = Modifier.background(Color.Black.copy(alpha = .55f), RoundedCornerShape(6.dp))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
+                    val chips = when {
+                        isVideo && videoControls.recording && videoLock.active -> videoLock.chips
+                        timedRun.running -> timedRun.locks
+                        else -> emptyList()
+                    }
+                    if (lines.isNotEmpty() || chips.isNotEmpty()) {
+                        Column(
+                            (if (orientation == Orientation.Landscape) Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 64.dp)
+                                else Modifier.align(Alignment.TopStart).padding(8.dp))
+                                .uprightLayoutInLandscape(orientation),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            lines.forEach { line ->
+                                Text(
+                                    line, fontFamily = CaptureMono, fontSize = dpText(10.5f), color = CaptureColors.Accent,
+                                    modifier = Modifier.background(Color.Black.copy(alpha = .5f), RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 6.dp, vertical = 3.dp)
+                                )
+                            }
+                            if (chips.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                chips.forEach { chip ->
+                                    Text(
+                                        "🔒 $chip", fontFamily = X14uFont, fontSize = dpText(11f), color = Color.White,
+                                        modifier = Modifier.background(Color.Black.copy(alpha = .55f), RoundedCornerShape(6.dp))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -1148,32 +1161,12 @@ internal fun X14uCaptureLayout(
                         color = Color.White,
                         maxLines = 1,
                         modifier = Modifier
+                            // Below the capture status (56 dp from the top as held).
                             .align(if (orientation == Orientation.Landscape) Alignment.CenterEnd else Alignment.TopCenter)
-                            .padding(if (orientation == Orientation.Landscape) PaddingValues(end = 56.dp) else PaddingValues(top = 56.dp))
+                            .padding(if (orientation == Orientation.Landscape) PaddingValues(end = 96.dp) else PaddingValues(top = 96.dp))
                             .uprightLayoutInLandscape(orientation)
                             .background(Color.Black.copy(alpha = .6f), RoundedCornerShape(6.dp))
                             .padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                }
-                // Video horizon Lock / Follow on: a small badge, so the fixed crop isn't a surprise.
-                val stabBadge = tools.stabilize != com.rawr.camera.settings.model.VideoStabilize.Off &&
-                    !isFrontLens(state.selectedLensId, state.selectedLensId)
-                if (isVideo && (tools.horizonLock || tools.horizonFollow || stabBadge)) {
-                    Text(
-                        listOfNotNull(
-                            if (tools.horizonFollow) "LEVEL FOLLOW" else if (tools.horizonLock) "LEVEL LOCK" else null,
-                            if (stabBadge) "STAB" else null
-                        ).joinToString(" · "),
-                        fontFamily = X14uFont,
-                        fontSize = dpText(10.5f),
-                        color = CaptureColors.Accent,
-                        // Top-left as the phone is held (landscape turns the badge and its slot).
-                        modifier = Modifier
-                            .align(if (orientation == Orientation.Landscape) Alignment.TopEnd else Alignment.TopStart)
-                            .padding(8.dp)
-                            .uprightLayoutInLandscape(orientation)
-                            .background(Color.Black.copy(alpha = .5f), RoundedCornerShape(6.dp))
-                            .padding(horizontal = 6.dp, vertical = 3.dp)
                     )
                 }
                 // Photo / Photo+ only: in Video the viewfinder runs past this frame (16:9), so the loupe would sit off.
@@ -1242,22 +1235,6 @@ internal fun X14uCaptureLayout(
                             .background(Color.Black.copy(alpha = .55f), RoundedCornerShape(8.dp))
                             .padding(horizontal = 10.dp, vertical = 5.dp)
                     )
-                }
-                if (isVideo && videoControls.recording && videoLock.active && videoLock.chips.isNotEmpty()) {
-                    Row(
-                        (if (orientation == Orientation.Landscape) Modifier.align(Alignment.BottomEnd).padding(end = 10.dp, bottom = 64.dp)
-                            else Modifier.align(Alignment.TopEnd).padding(top = 10.dp, end = 10.dp))
-                            .uprightLayoutInLandscape(orientation),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        videoLock.chips.forEach { chip ->
-                            Text(
-                                "🔒 $chip", fontFamily = X14uFont, fontSize = dpText(11f), color = Color.White,
-                                modifier = Modifier.background(Color.Black.copy(alpha = .55f), RoundedCornerShape(6.dp))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
                 }
                 if (isVideo && videoControls.recording) {
                     X14uRecordTimer(
