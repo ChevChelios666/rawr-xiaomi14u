@@ -101,7 +101,11 @@ class PrecaptureRing final {
         snapshot.filmEnabled = film;
         snapshot.filmLook = look;
         pending_[metadata.timestampNs] = std::move(snapshot);
-        while (pending_.size() > 8) pending_.erase(pending_.begin());
+        // Taken at submit but never handed over at retire (begin()): counted, so the stats show it.
+        while (pending_.size() > 8) {
+            pending_.erase(pending_.begin());
+            ++stats_.neverBegun;
+        }
         lastOfferedNs_ = ts;
         nextDueNs_ += intervalNs_;
         ++stats_.offered;
@@ -248,7 +252,7 @@ class PrecaptureRing final {
             }
             job.lease = imaging::RawFrameLease({});  // the camera image goes back
             const double copyMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - copyStart).count();
-            std::string statsLine;
+            std::string statsLine, failureLine;
             std::unique_lock<std::mutex> lock(mutex_);
             --copying_;
             stats_.copyMsTotal += copyMs;
@@ -258,6 +262,15 @@ class PrecaptureRing final {
             } else {
                 ++stats_.failed;
                 stats_.lastError = job.snapshot.copyResult.error.empty() ? "exception" : job.snapshot.copyResult.error;
+                if (failureLogged_ != generation_) {
+                    failureLogged_ = generation_;
+                    const auto& r = job.snapshot.copyResult;
+                    failureLine = "PRECAPTURE_COPY_FAILED gen=" + std::to_string(generation_) + " error=" +
+                                  stats_.lastError + " size=" + std::to_string(frame.width) + "x" +
+                                  std::to_string(frame.height) + " rowStride=" + std::to_string(r.sourceRowStrideBytes) +
+                                  " pixelStride=" + std::to_string(r.sourcePixelStrideBytes) +
+                                  " lockMs=" + std::to_string(int(r.lockMs));
+                }
             }
             statsLine = statsLineLocked();
             if (!ok) {
@@ -273,6 +286,7 @@ class PrecaptureRing final {
             }
             changed_.notify_all();
             lock.unlock();
+            if (!failureLine.empty()) emit(failureLine);
             if (!statsLine.empty()) emit(statsLine);
         }
     }
@@ -286,7 +300,7 @@ class PrecaptureRing final {
         std::string line = "PRECAPTURE_STATS gen=" + std::to_string(generation_) + " held=" + std::to_string(ring_.size()) +
             "/" + std::to_string(maxFrames_) + " offered=" + std::to_string(stats_.offered) + " copied=" +
             std::to_string(stats_.copied) + " failed=" + std::to_string(stats_.failed) + " skippedBusy=" +
-            std::to_string(stats_.skippedBusy) + " notPending=" + std::to_string(stats_.notPending) + " pending=" +
+            std::to_string(stats_.skippedBusy) + " notPending=" + std::to_string(stats_.notPending) + " neverBegun=" + std::to_string(stats_.neverBegun) + " pending=" +
             std::to_string(pending_.size()) + " copying=" + std::to_string(copying_) + " genDrops=" +
             std::to_string(stats_.generationDrops) + " copyMsAvg=" +
             std::to_string(copies ? int(stats_.copyMsTotal / double(copies)) : 0) + " copyMsMax=" +
@@ -332,11 +346,13 @@ class PrecaptureRing final {
     // Copies waiting or running hold a camera image each: the reader lends 6, the viewfinder keeps up to 3.
     static constexpr uint32_t kMaxCopying = 2;
     struct Stats {
-        uint64_t offered = 0, copied = 0, failed = 0, skippedBusy = 0, notPending = 0, generationDrops = 0;
+        uint64_t offered = 0, copied = 0, failed = 0, skippedBusy = 0, notPending = 0, generationDrops = 0,
+                 neverBegun = 0;
         double copyMsTotal = 0.0, copyMsMax = 0.0;
         std::string lastError;
     };
     Stats stats_;
+    uint64_t failureLogged_ = ~uint64_t(0);
     std::chrono::steady_clock::time_point statsAt_{};
     bool frozenActive_ = false;
     bool draining_ = false;

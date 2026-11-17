@@ -648,8 +648,8 @@ data class SettingsValues(
     // Preview-only look-stage (tonemap or film) downsample divisor, 1..4.
     // Film always runs at 2 or more. Never touches stills, video, or EXIF.
     val viewfinderDivisor: Int = 2,
-    val armedOverlays: Set<OverlayMode> =
-        setOf(OverlayMode.Peaking, OverlayMode.TonemapShadows, OverlayMode.RawHighlights),
+    // X14U (Nov 17): every overlay starts off; they're turned on in the swipe-down panel.
+    val armedOverlays: Set<OverlayMode> = emptySet(),
     val falseColorManual: Boolean = false,
     val activeScopes: List<ScopeType> = listOf(ScopeType.Waveform),
     val waveformMode: WaveformMode = WaveformMode.RgbOverlay,

@@ -34,3 +34,8 @@ internal fun migrateV37LensShadingDefaults(values: com.rawr.camera.settings.mode
     photoLensShadingEnabled = true,
     videoLensShadingEnabled = true
 )
+
+/** X14U: viewfinder overlays start off; existing installs adopt it once. */
+internal fun migrateV38OverlaysOff(values: com.rawr.camera.settings.model.SettingsValues) = values.copy(
+    armedOverlays = emptySet()
+)

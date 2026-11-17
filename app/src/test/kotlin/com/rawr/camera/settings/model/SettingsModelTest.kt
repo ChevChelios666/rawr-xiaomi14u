@@ -81,7 +81,7 @@ class SettingsModelTest {
         assertEquals(MultiframeMergeAlgorithm.Rexture, v.multiframeTuning.mergeAlgorithm)
         assertEquals(6, v.multiframeTuning.maxFrames)
         // Monitoring.
-        assertEquals(setOf(OverlayMode.Peaking, OverlayMode.TonemapShadows, OverlayMode.RawHighlights), v.armedOverlays)
+        assertEquals(emptySet<OverlayMode>(), v.armedOverlays)
         assertEquals("peaking.high", v.peakingSensitivityId)
         assertEquals(listOf(ScopeType.Waveform), v.activeScopes)
         assertEquals(WaveformMode.RgbOverlay, v.waveformMode)

@@ -408,6 +408,9 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
                     // v37 -> v38: lens shading correction defaults on for photo and video;
                     // existing installs move to it one-time (it can be turned off again).
                     37 -> migrateV37LensShadingDefaults(values)
+                    // v38 -> v39 (X14U): peaking, RAW highlights and tonemap shadows start off; existing installs
+                    // and older backups turn them off once (they can be turned on again).
+                    38 -> migrateV38OverlaysOff(values)
                     else -> {
                         return defaults
                     }
@@ -1017,7 +1020,7 @@ class SettingsPreferencesRepository(context: Context, private val defaults: Sett
 
     private companion object {
         const val LEGACY_SCHEMA_VERSION = 0
-        const val CURRENT_SCHEMA_VERSION = 38
+        const val CURRENT_SCHEMA_VERSION = 39
     }
 
     private object Keys {
