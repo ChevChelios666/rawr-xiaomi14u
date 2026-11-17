@@ -228,15 +228,16 @@ struct NativeCameraController::Impl final : CameraEventSink {
         teardownCameraResourcesLocked(lock);
     }
 
-    void setLens(const std::string& value) {
+    // True when the lens changed (the camera restarts on it, or starts on it next).
+    bool setLens(const std::string& value) {
         std::unique_lock<std::mutex> lock(mutex);
-        if (lensId == value) return;
+        if (lensId == value) return false;
         startLadder.resetGivenUp();
 
         const bool restart = active;
         if (!restart) {
             lensId = value;
-            return;
+            return true;
         }
 
         // Reject any late result from the retiring lens while its session drains.
@@ -257,6 +258,7 @@ struct NativeCameraController::Impl final : CameraEventSink {
         diag("CAMERA_LENS_SWITCH_RESTART lensId=" + lensId +
              " generation=" + std::to_string(deviceSession.generation()));
         startLocked(lock);
+        return true;
     }
 
     void publishProfileLocked() {
@@ -2038,7 +2040,7 @@ NativeCameraController::NativeCameraController(PreviewCallbacks callbacks)
     : impl_(std::make_unique<Impl>(std::move(callbacks))) {}
 NativeCameraController::~NativeCameraController() = default;
 void NativeCameraController::setActive(bool active) { impl_->setActive(active); }
-void NativeCameraController::setLensId(const std::string& lensId) { impl_->setLens(lensId); }
+bool NativeCameraController::setLensId(const std::string& lensId) { return impl_->setLens(lensId); }
 const CameraProfile& deviceBuiltInCameraProfile() { return builtInCameraProfile(activeProfileId(deviceProfileMatch())); }
 
 bool NativeCameraController::setProfile(CameraProfile profile) { return impl_->setProfile(std::move(profile)); }

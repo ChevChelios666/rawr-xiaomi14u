@@ -73,7 +73,10 @@ void setRawrAutoExposure(EngineHandle h, bool enabled, int nightLook, int isoMin
     engine(h)->cameraControls().setRawrAeConfig(c);
 }
 void selectLens(EngineHandle h, const std::string& v) noexcept {
-    if (h) engine(h)->cameraControls().selectLens(v);
+    if (!h) return;
+    // X14U digital zoom: a crop sent from now on is for the new lens; the old lens's last frames keep theirs.
+    engine(h)->armZoomForLensSwitch();
+    if (!engine(h)->cameraControls().selectLens(v)) engine(h)->disarmZoomForLensSwitch();
 }
 bool setCameraProfile(EngineHandle h, const std::string& json) noexcept {
     return h && engine(h)->cameraControls().setCameraProfile(json);

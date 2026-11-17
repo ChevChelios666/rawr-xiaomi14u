@@ -133,7 +133,18 @@ class FrameSubmitCoordinator final {
     void setFilmSimLook(const spektrafilm_native::FilmLook& value) { filmLook_ = value; }
     // Idle video-mode preview crop: recording output size (0 = full frame).
     // Written on the camera worker, read on the submit thread.
-    void setViewfinderZoom(float crop) noexcept { viewfinderZoom_.store(crop, std::memory_order_relaxed); }
+    void setViewfinderZoom(float crop) noexcept {
+        viewfinderZoom_.store(crop, std::memory_order_relaxed);
+        zoomHoldThrough_.store(0, std::memory_order_relaxed);
+    }
+    /** [crop] for frames of cameras after [generation]; that camera's own frames keep the crop they had. */
+    void setViewfinderZoomAfter(float crop, uint64_t generation) noexcept {
+        if (zoomHoldThrough_.load(std::memory_order_relaxed) != generation) {
+            zoomBefore_.store(viewfinderZoom_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+            zoomHoldThrough_.store(generation, std::memory_order_relaxed);
+        }
+        viewfinderZoom_.store(crop, std::memory_order_relaxed);
+    }
     void setVideoPreviewCropOut(uint32_t width, uint32_t height) noexcept {
         videoCropOutWidth_.store(width, std::memory_order_relaxed);
         videoCropOutHeight_.store(height, std::memory_order_relaxed);
@@ -331,6 +342,9 @@ class FrameSubmitCoordinator final {
     std::atomic<uint32_t> videoCropOutWidth_{0};
     std::atomic<uint32_t> videoCropOutHeight_{0};
     std::atomic<float> viewfinderZoom_{1.0f};
+    // X14U lens switch: frames of camera generations up to zoomHoldThrough_ (0 = none) use zoomBefore_.
+    std::atomic<float> zoomBefore_{1.0f};
+    std::atomic<uint64_t> zoomHoldThrough_{0};
     spektrafilm_native::FilmLook filmLook_{};
     uint32_t viewfinderDivisor_ = 2;
     std::string colorMode_ = "auto";

@@ -96,6 +96,9 @@ class SessionEngine {
     [[nodiscard]] float focusMeterValue();
     // X14U digital zoom on the viewfinder (centred crop factor, 1 = none): presentation, tap mapping, metering.
     void setViewfinderZoom(float crop);
+    /** A lens switch is starting: crops set until the next camera runs apply to that camera's frames only. */
+    void armZoomForLensSwitch();
+    void disarmZoomForLensSwitch();
     [[nodiscard]] float viewfinderZoom() const noexcept { return viewfinderZoom_.load(std::memory_order_relaxed); }
     void focusAtDisplay(float x, float y, uint64_t requestId);
     void clearTapAf(uint64_t requestId);
@@ -297,6 +300,8 @@ class SessionEngine {
     uint32_t videoCropOutWidth_ = 0;
     uint32_t videoCropOutHeight_ = 0;
     std::atomic<float> viewfinderZoom_{1.0f};
+    // X14U lens switch: the camera generation the switch leaves (0 = none pending).
+    uint64_t zoomSwitchFromGeneration_ = 0;
     rawrcam::diagnostics::PipelineDiagnostics pipelineDiagnostics_{
         [this](const std::string& line) { appendDiagnostic(line); }};
     capture::CaptureCoordinator capture_{

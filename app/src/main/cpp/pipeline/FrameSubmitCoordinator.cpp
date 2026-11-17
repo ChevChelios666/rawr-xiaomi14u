@@ -807,7 +807,11 @@ FrameSubmitCoordinator::RecordedSubmit FrameSubmitCoordinator::recordSubmitComma
     recordInput.distortionCorrectionEnabled = distortionCorrectionEnabled_.load(std::memory_order_relaxed);
     recordInput.videoCropOutWidth = videoCropOutWidth_.load(std::memory_order_relaxed);
     recordInput.videoCropOutHeight = videoCropOutHeight_.load(std::memory_order_relaxed);
-    recordInput.viewfinderZoom = viewfinderZoom_.load(std::memory_order_relaxed);
+    {
+        const uint64_t hold = zoomHoldThrough_.load(std::memory_order_relaxed);
+        recordInput.viewfinderZoom = (hold != 0 && config_.generation <= hold)
+            ? zoomBefore_.load(std::memory_order_relaxed) : viewfinderZoom_.load(std::memory_order_relaxed);
+    }
     recordInput.filmEnabled = filmSimEnabled_;
     recordInput.filmLook = filmLook_;
     recordInput.viewfinderDivisor = viewfinderDivisor_;

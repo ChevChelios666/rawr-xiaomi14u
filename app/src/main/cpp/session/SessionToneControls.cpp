@@ -1,4 +1,5 @@
 // Tone/LUT/color-mode controls.
+#include <algorithm>
 #include "diagnostics/logging/NativeLog.h"
 #include "session/SessionEngine.h"
 #include "tonemap/ColorRenderProfile.h"
@@ -60,9 +61,26 @@ float SessionEngine::focusMeterValue() { return monitoringCoordinator_.scopes().
 void SessionEngine::setViewfinderZoom(float crop) {
     std::lock_guard<std::mutex> lock(mu_);
     viewfinderZoom_.store(crop, std::memory_order_relaxed);
-    realtime_.coordinator().setViewfinderZoom(crop);
+    // Mid lens switch: the new crop waits for the new camera's frames (the old lens's last frames, still being
+    // developed, flashed at the new crop: 3.2x framing going up past 5x, ~7.5x coming back).
+    if (zoomSwitchFromGeneration_ != 0 && cameraSetupGeneration_ <= zoomSwitchFromGeneration_) {
+        realtime_.coordinator().setViewfinderZoomAfter(crop, zoomSwitchFromGeneration_);
+    } else {
+        zoomSwitchFromGeneration_ = 0;
+        realtime_.coordinator().setViewfinderZoom(crop);
+    }
     monitoringCoordinator_.scopes().setFocusZoom(crop);
     swapchainRenderer_.resetLogging();
+}
+
+void SessionEngine::armZoomForLensSwitch() {
+    std::lock_guard<std::mutex> lock(mu_);
+    zoomSwitchFromGeneration_ = std::max<uint64_t>(cameraSetupGeneration_, 1);
+}
+
+void SessionEngine::disarmZoomForLensSwitch() {
+    std::lock_guard<std::mutex> lock(mu_);
+    zoomSwitchFromGeneration_ = 0;
 }
 
 void SessionEngine::setColorMode(const std::string& mode) {

@@ -135,8 +135,8 @@ bool CameraControlSurface::setRecordingFps(int fps) {
 void CameraControlSurface::setShutterAngleDegrees(double degrees) {
     if (cameraController_) cameraController_->setShutterAngleDegrees(degrees);
 }
-void CameraControlSurface::selectLens(const std::string& lensId) {
-    if (cameraController_) cameraController_->setLensId(lensId);
+bool CameraControlSurface::selectLens(const std::string& lensId) {
+    return cameraController_ && cameraController_->setLensId(lensId);
 }
 bool CameraControlSurface::setCameraProfile(const std::string& json) {
     if (!cameraController_) return false;

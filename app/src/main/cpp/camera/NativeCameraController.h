@@ -43,7 +43,8 @@ class NativeCameraController {
     NativeCameraController& operator=(const NativeCameraController&) = delete;
 
     void setActive(bool active);
-    void setLensId(const std::string& lensId);
+    /** True when the lens changed (the camera restarts on it). */
+    bool setLensId(const std::string& lensId);
     // Replaces the lens profile (user configuration). Returns false when a
     // debug setprop pins a built-in profile.
     bool setProfile(CameraProfile profile);

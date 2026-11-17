@@ -56,7 +56,8 @@ class CameraControlSurface final {
     void setVideoMode(bool video, int fps);
     bool setRecordingFps(int fps);
     void setShutterAngleDegrees(double degrees);
-    void selectLens(const std::string& lensId);
+    /** True when the lens changed. */
+    bool selectLens(const std::string& lensId);
     // Lens profile JSON (CameraProfileJson); false when it is malformed or
     // a debug setprop pins a built-in profile.
     bool setCameraProfile(const std::string& json);
