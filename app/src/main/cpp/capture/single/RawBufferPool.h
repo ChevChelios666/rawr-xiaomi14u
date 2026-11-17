@@ -1,9 +1,11 @@
 #pragma once
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
+#include <thread>
 #include <vector>
 
 namespace rawrcam::capture {
@@ -32,13 +34,15 @@ class RawBufferPool final {
         return fresh;
     }
 
-    static void give(std::vector<uint8_t>&& buffer) {
-        if (buffer.capacity() == 0) return;
+    /** False when the pool is full (the buffer is freed). */
+    static bool give(std::vector<uint8_t>&& buffer) {
+        if (buffer.capacity() == 0) return false;
         std::vector<uint8_t> owned = std::move(buffer);
         std::lock_guard<std::mutex> lock(mutex());
-        if (pooledBytes() + owned.capacity() > kMaxBytes) return;  // freed as `owned` leaves scope
+        if (pooledBytes() + owned.capacity() > capLocked()) return false;  // freed as `owned` leaves scope
         pooledBytes() += owned.capacity();
         buffers().push_back(std::move(owned));
+        return true;
     }
 
     // Burst mode entered: fill the pool ahead (on a worker), so the first frames don't wait either.
@@ -49,7 +53,7 @@ class RawBufferPool final {
                 std::lock_guard<std::mutex> lock(mutex());
                 std::size_t fitting = 0;
                 for (const auto& b : buffers()) fitting += b.capacity() >= bytes ? 1 : 0;
-                if (fitting >= count || pooledBytes() + bytes > kMaxBytes) return;
+                if (fitting >= count || pooledBytes() + bytes > capLocked()) return;
             }
             std::vector<uint8_t> fresh;
             fresh.resize(bytes);  // zero-fill also brings the pages in
@@ -57,7 +61,40 @@ class RawBufferPool final {
         }
     }
 
+    /** Buffers of at least [bytes] waiting here. */
+    static std::size_t fitting(std::size_t bytes) {
+        std::lock_guard<std::mutex> lock(mutex());
+        std::size_t n = 0;
+        for (const auto& b : buffers()) n += b.capacity() >= bytes ? 1 : 0;
+        return n;
+    }
+
+    /**
+     * X14U Burst pre-capture (Nov 17): while the ring is armed the pool may keep up to [bytes] (its frames plus a
+     * few), so a lens switch or a run hands its buffers back here instead of freeing them; a new 25 MB buffer took
+     * ~170 ms. 0 returns to the normal cap; what's over it is freed on a background thread.
+     */
+    static void setReserve(std::size_t bytes) {
+        std::vector<std::vector<uint8_t>> extra;
+        {
+            std::lock_guard<std::mutex> lock(mutex());
+            reserve() = bytes;
+            auto& pool = buffers();
+            while (!pool.empty() && pooledBytes() > capLocked()) {
+                pooledBytes() -= pool.back().capacity();
+                extra.push_back(std::move(pool.back()));
+                pool.pop_back();
+            }
+        }
+        if (!extra.empty()) std::thread([freed = std::move(extra)]() mutable { freed.clear(); }).detach();
+    }
+
    private:
+    static std::size_t capLocked() { return std::max(kMaxBytes, reserve()); }
+    static std::size_t& reserve() {
+        static std::size_t n = 0;
+        return n;
+    }
     // 8 frames at 12 MP: a burst's journal writes can lag a few frames behind capture (Nov 14: the pool ran dry
     // and frames waited 65-165 ms for fresh buffers).
     static constexpr std::size_t kMaxBytes = std::size_t(208) * 1024 * 1024;

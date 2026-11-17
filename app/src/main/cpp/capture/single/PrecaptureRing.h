@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -34,8 +35,16 @@ class PrecaptureRing final {
     using Diagnostic = std::function<void(const std::string&)>;
     explicit PrecaptureRing(Diagnostic diagnostic) : diagnostic_(std::move(diagnostic)) {
         worker_ = std::thread([this] { run(); });
+        for (auto& t : allocators_) t = std::thread([this] { allocate(); });
     }
     ~PrecaptureRing() {
+        {
+            std::lock_guard<std::mutex> lock(allocMutex_);
+            allocStopped_ = true;
+        }
+        allocChanged_.notify_all();
+        for (auto& t : allocators_)
+            if (t.joinable()) t.join();
         {
             std::lock_guard<std::mutex> lock(mutex_);
             stopped_ = true;
@@ -43,6 +52,7 @@ class PrecaptureRing final {
         changed_.notify_all();
         if (worker_.joinable()) worker_.join();
         clearLocked();
+        RawBufferPool::setReserve(0);
     }
     PrecaptureRing(const PrecaptureRing&) = delete;
     PrecaptureRing& operator=(const PrecaptureRing&) = delete;
@@ -56,9 +66,11 @@ class PrecaptureRing final {
         intervalNs_ = uint64_t(intervalMs) * 1'000'000ull;
         if (maxFrames == 0) {
             clearLocked();
+            syncAllocLocked();
             return;
         }
         while (ring_.size() > maxFrames_) dropOldestLocked();
+        syncAllocLocked();
     }
     bool armed() const {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -87,6 +99,7 @@ class PrecaptureRing final {
             while (!ring_.empty()) dropOldestLocked();
             generation_ = metadata.cameraContext->cameraContextGeneration;
         }
+        frameBytes_ = std::size_t(geometry.rawBufferWidth) * geometry.rawBufferHeight * 2;
         auto frame = std::make_shared<imaging::RawSnapshot>();
         frame->timestampNs = metadata.timestampNs;
         frame->width = geometry.rawBufferWidth;
@@ -109,6 +122,7 @@ class PrecaptureRing final {
         lastOfferedNs_ = ts;
         nextDueNs_ += intervalNs_;
         ++stats_.offered;
+        syncAllocLocked();
         return true;
     }
 
@@ -137,6 +151,7 @@ class PrecaptureRing final {
         jobs_.push_back(std::move(job));
         pending_.erase(it);
         ++copying_;
+        syncAllocLocked();
         changed_.notify_all();
         return true;
     }
@@ -151,6 +166,7 @@ class PrecaptureRing final {
         frozen_.clear();
         for (auto& f : ring_) frozen_.push_back(std::move(f));
         ring_.clear();
+        syncAllocLocked();
         emit("PRECAPTURE_FREEZE frames=" + std::to_string(frozen_.size()) + " copying=" + std::to_string(copying_));
         return uint32_t(frozen_.size()) + copying_;
     }
@@ -172,6 +188,7 @@ class PrecaptureRing final {
         if (frozen_.empty()) {
             draining_ = false;
             frozenActive_ = false;
+            syncAllocLocked();
         }
         return out;
     }
@@ -182,6 +199,7 @@ class PrecaptureRing final {
         frozen_.clear();
         draining_ = false;
         frozenActive_ = false;
+        syncAllocLocked();
     }
 
    private:
@@ -229,6 +247,7 @@ class PrecaptureRing final {
                     std::lock_guard<std::mutex> lock(mutex_);
                     --copying_;
                     giveBack(job.snapshot);
+                    syncAllocLocked();
                     changed_.notify_all();
                     continue;
                 }
@@ -284,10 +303,52 @@ class PrecaptureRing final {
                 ring_.push_back(std::move(job.snapshot));
                 while (ring_.size() > maxFrames_) dropOldestLocked();
             }
+            syncAllocLocked();
             changed_.notify_all();
             lock.unlock();
             if (!failureLine.empty()) emit(failureLine);
             if (!statsLine.empty()) emit(statsLine);
+        }
+    }
+    // Nov 17 (diagnostics 22:09): while the ring filled, each copy waited ~170 ms for a new 25 MB buffer, so most
+    // frames were skipped and a 2 s ring took 6-8 s to fill. While armed, two low-priority threads keep the pool
+    // stocked ahead (ring + copies + pool up to the ring's size + 3), and the pool's cap is raised to match so a
+    // lens switch or a run hands buffers back instead of freeing them. Disarmed: the cap returns, extras are freed.
+    void syncAllocLocked() {
+        const uint32_t target = (maxFrames_ > 0 && !frozenActive_ && frameBytes_ > 0) ? maxFrames_ + kMaxCopying + 1 : 0;
+        const std::size_t reserve = (maxFrames_ > 0 && frameBytes_ > 0) ? (std::size_t(maxFrames_) + kMaxCopying + 3) * frameBytes_ : 0;
+        inUse_.store(uint32_t(ring_.size()) + copying_);
+        if (reserve != reserve_) {
+            reserve_ = reserve;
+            RawBufferPool::setReserve(reserve);
+        }
+        if (target != allocTarget_.load() || frameBytes_ != allocBytes_.load()) {
+            allocBytes_.store(frameBytes_);
+            allocTarget_.store(target);
+            allocBlocked_.store(false);
+            allocChanged_.notify_all();
+        }
+    }
+    bool needMoreBuffers() const {
+        const std::size_t bytes = allocBytes_.load();
+        const uint32_t target = allocTarget_.load();
+        if (bytes == 0 || target == 0 || allocBlocked_.load()) return false;
+        return inUse_.load() + RawBufferPool::fitting(bytes) < target;
+    }
+    void allocate() {
+        setpriority(PRIO_PROCESS, 0, 6);
+        std::unique_lock<std::mutex> lock(allocMutex_);
+        while (!allocStopped_) {
+            if (!needMoreBuffers()) {
+                allocChanged_.wait_for(lock, std::chrono::milliseconds(500));
+                continue;
+            }
+            const std::size_t bytes = allocBytes_.load();
+            lock.unlock();
+            std::vector<uint8_t> fresh(bytes);
+            // The pool full (a size change left other buffers in it): stop until the next change.
+            if (!RawBufferPool::give(std::move(fresh))) allocBlocked_.store(true);
+            lock.lock();
         }
     }
     // Every 2 s while armed: what the ring took and why it didn't (PRECAPTURE_STATS), then the counts restart.
@@ -352,6 +413,16 @@ class PrecaptureRing final {
         std::string lastError;
     };
     Stats stats_;
+    std::size_t frameBytes_ = 0;
+    std::size_t reserve_ = 0;
+    std::atomic<std::size_t> allocBytes_{0};
+    std::atomic<uint32_t> allocTarget_{0};
+    std::atomic<uint32_t> inUse_{0};
+    std::atomic<bool> allocBlocked_{false};
+    std::mutex allocMutex_;
+    std::condition_variable allocChanged_;
+    bool allocStopped_ = false;
+    std::thread allocators_[2];
     uint64_t failureLogged_ = ~uint64_t(0);
     std::chrono::steady_clock::time_point statsAt_{};
     bool frozenActive_ = false;
