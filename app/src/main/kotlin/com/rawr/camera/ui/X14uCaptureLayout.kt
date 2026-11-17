@@ -1036,12 +1036,13 @@ internal fun X14uCaptureLayout(
         // photo frame does; a tall one (16:9 and up) starts right under the cut-out with the top bar over it.
         // Muted: no meter (an empty box says nothing); the histogram moves up into its place.
         val audioMeterOn = isVideo && LocalCaptureExtras.current.tools.audioMeter && !videoControls.audio.muted
-        // Classic (Nov 18, option 3): in Video the mode band folds to a strip above the shutter row, the readouts sit
-        // on it and the picture fits between the top bar and them, in its bezel: nothing covers it.
+        // Classic (Nov 18, option 3): in Video the mode band is a slim one above the shutter row (the modes, or the
+        // open control in their place, as in Minimal), the readouts sit on it and the picture fits between the top bar
+        // and them, in its bezel: nothing covers it.
         val classic = isClassicStyle()
         val classicVideo = classic && isVideo
-        val foldStrip = 26.dp
-        val readoutsTopVideo = shutterCenter - 46.dp - foldStrip - 48.dp * s
+        val videoBand = 60.dp
+        val readoutsTopVideo = shutterCenter - 46.dp - videoBand - 48.dp * s
         val (videoRect, videoTop) = run {
             val upper = if (classicVideo) minOf(cutoutTop + CaptureDimens.TopBarHeight + 8.dp, top) else cutoutTop + 2.dp
             val lower = if (classicVideo) readoutsTopVideo - 8.dp else shutterCenter - 50.dp
@@ -1054,13 +1055,8 @@ internal fun X14uCaptureLayout(
         val rowY = if (classicVideo) readoutsTopVideo else bottom + 6.dp * s
         val slotIdle = !(burst && state.burst.running) && !timedRun.running && !(presetsOpen && !recordingLock && !panoLocked) &&
             currentKey == null && panel == null
-        // Classic video: the folded strip when idle; an open control floats over the picture's foot, above the readouts.
-        val slotY = when {
-            !classicVideo -> bottom + 58.dp * s
-            slotIdle -> rowY + 48.dp * s
-            else -> rowY - 76.dp * s - 4.dp
-        }
-        val slotHeight = if (classicVideo && slotIdle) foldStrip else 76.dp * s
+        val slotY = if (classicVideo) rowY + 48.dp * s else bottom + 58.dp * s
+        val slotHeight = if (classicVideo) videoBand else 76.dp * s
         // The lens row and the badges ride on the picture's foot: in Classic video that is the (shorter) video's.
         val overlayTop = if (classicVideo) videoTop + videoRect.height - frame.height else top
         Box(Modifier.fillMaxSize()) {
@@ -1132,7 +1128,10 @@ internal fun X14uCaptureLayout(
                 }
             )
             // Video: the corner marks sit on the picture's own corners.
-            if (isVideo) FrameBrackets(Modifier.align(Alignment.TopCenter).offset(y = videoTop).size(videoRect))
+            // The bottom marks only where the picture's foot is clear of the controls (Nov 18: in Minimal the tall video
+            // runs under the readouts, and its bottom left mark sat on the open control's A button).
+            if (isVideo) FrameBrackets(Modifier.align(Alignment.TopCenter).offset(y = videoTop).size(videoRect),
+                bottom = videoTop + videoRect.height <= rowY)
 
             Box(Modifier.align(Alignment.TopCenter).offset(y = overlayTop).size(frame)) {
                 if (!isVideo) FrameBrackets(Modifier.fillMaxSize())
@@ -1286,9 +1285,7 @@ internal fun X14uCaptureLayout(
                             else Modifier.align(Alignment.TopCenter).padding(top = 10.dp)
                     )
                 }
-                // Classic video: an open control takes the picture's foot, where the lens row is (it comes back on close).
-                val lensRowShown = !(classicVideo && !slotIdle)
-                if (lensRowShown) X14uLensRow(
+                X14uLensRow(
                     state = state,
                     dispatch = dispatch,
                     quick = quick,
@@ -1353,7 +1350,7 @@ internal fun X14uCaptureLayout(
                         .padding(bottom = (31.dp * s - 18.dp).coerceAtLeast(4.dp), start = 7.dp, end = 7.dp)
                 )
                 // Preset badge just above the Look button: text only, grey P0, accent P1…, "*" once changed.
-                if (activePreset != null && lensRowShown) {
+                if (activePreset != null) {
                     X14uPresetBadge(
                         label = activePreset.label + if (presetChanged) "*" else "",
                         accent = !activePreset.isBaseline,
@@ -1489,10 +1486,7 @@ internal fun X14uCaptureLayout(
                     upright = panel == null, onTap = onCellTap)
             }
             Box(
-                Modifier.fillMaxWidth().offset(y = slotY).height(slotHeight)
-                    // Classic video: an open control over the picture gets a dark backing.
-                    .then(if (classicVideo && !slotIdle) Modifier.background(Color.Black.copy(alpha = .62f)) else Modifier)
-                    .padding(horizontal = 12.dp),
+                Modifier.fillMaxWidth().offset(y = slotY).height(slotHeight).padding(horizontal = 12.dp),
                 contentAlignment = Alignment.Center
             ) {
                 val key = currentKey
@@ -1580,7 +1574,7 @@ private fun lookTabs(film: Boolean): List<String> = buildList {
 }
 
 @Composable
-private fun FrameBrackets(modifier: Modifier) {
+private fun FrameBrackets(modifier: Modifier, bottom: Boolean = true) {
     Canvas(modifier) {
         val l = 22.dp.toPx()
         val w = 1.5.dp.toPx()
@@ -1588,6 +1582,7 @@ private fun FrameBrackets(modifier: Modifier) {
         val corners = listOf(Offset(0f, 0f) to Offset(1f, 1f), Offset(size.width, 0f) to Offset(-1f, 1f),
             Offset(0f, size.height) to Offset(1f, -1f), Offset(size.width, size.height) to Offset(-1f, -1f))
         corners.forEach { (p, d) ->
+            if (!bottom && d.y < 0f) return@forEach
             val o = Offset(p.x + d.x * w / 2, p.y + d.y * w / 2)
             drawLine(c, o, Offset(o.x + d.x * l, o.y), w)
             drawLine(c, o, Offset(o.x, o.y + d.y * l), w)
@@ -2967,6 +2962,8 @@ private fun X14uRuler(editor: X14uEditor.Ruler, orientation: Orientation, modifi
     val shown = if (dragging) gestureIndex else editor.index.coerceIn(0, count - 1)
     val labelStyle = TextStyle(fontFamily = X14uFont, fontSize = dpText(10f))
     val enabled = editor.enabled
+    // Classic: the scale printed on a drum turning behind the window: marks crowd and fade toward the ends.
+    val drum = isClassicStyle()
     Box(modifier.fillMaxHeight()) {
         Text(
             editor.valueText,
@@ -3035,19 +3032,26 @@ private fun X14uRuler(editor: X14uEditor.Ruler, orientation: Orientation, modifi
             val labelY = 6.dp.toPx()
             val tickBottom = size.height - 10.dp.toPx()
             val offset = if (dragging) -residual.coerceIn(-stepPx, stepPx) else 0f
-            val visible = (size.width / 2f / stepPx).toInt() + 2
+            // The drum: a mark [d] along the scale shows at R sin(d / R), up to 1.25 rad either side.
+            val drumRadius = size.width / 2f / kotlin.math.sin(1.25f)
+            val visible = if (drum) (drumRadius * 1.25f / stepPx).toInt() + 2 else (size.width / 2f / stepPx).toInt() + 2
             val clearOfValue = 34.dp.toPx()
             for (i in (shown - visible).coerceAtLeast(0)..(shown + visible).coerceAtMost(count - 1)) {
-                val x = cx + (i - shown) * stepPx + offset
+                val along = (i - shown) * stepPx + offset
+                val angle = along / drumRadius
+                if (drum && abs(angle) > 1.25f) continue
+                val x = if (drum) cx + drumRadius * kotlin.math.sin(angle) else cx + along
                 if (x < 0f || x > size.width) continue
                 val isMajor = editor.major(i)
                 val h = if (isMajor) 15.dp.toPx() else 10.dp.toPx()
-                val fade = 1f - (abs(x - cx) / (size.width / 2f)).coerceIn(0f, 1f) * .8f
+                val fade = if (drum) kotlin.math.cos(angle).coerceIn(.15f, 1f)
+                    else 1f - (abs(x - cx) / (size.width / 2f)).coerceIn(0f, 1f) * .8f
+                val thin = if (drum) .45f + .55f * kotlin.math.cos(angle) else 1f
                 drawLine(
                     Color.White.copy(alpha = (if (enabled) (if (isMajor) .9f else .55f) else .2f) * fade),
                     Offset(x, tickBottom - h),
                     Offset(x, tickBottom),
-                    strokeWidth = if (isMajor) 1.6.dp.toPx() else 1.dp.toPx()
+                    strokeWidth = (if (isMajor) 1.6.dp.toPx() else 1.dp.toPx()) * thin
                 )
                 if (abs(x - cx) > clearOfValue) editor.label(i)?.let { text ->
                     val layout = measurer.measure(text, labelStyle)
@@ -3106,7 +3110,7 @@ private fun X14uIdleControlArea(
     video: VideoControlState,
     showNumbers: Boolean,
     enabled: Boolean,
-    /** Classic video: the band folded to a thin strip (smaller names, no handle). */
+    /** Classic video: the slim band (no handle). */
     folded: Boolean = false
 ) {
     val haptics = LocalCaptureHaptics.current
@@ -3164,7 +3168,7 @@ private fun X14uIdleControlArea(
                     Box(Modifier.size(20.dp, 3.dp).background(Color.White.copy(alpha = .3f), RoundedCornerShape(2.dp)))
                     Spacer(Modifier.height(10.dp))
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(if (folded) 22.dp else 30.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(horizontalArrangement = Arrangement.spacedBy(30.dp), verticalAlignment = Alignment.CenterVertically) {
                     stripModes.forEach { mode ->
                         val isSelected = current == mode
                         val stills = mode == X14uMode.Photo || mode == X14uMode.Pro
@@ -3172,8 +3176,7 @@ private fun X14uIdleControlArea(
                         Text(
                             mode.label,
                             fontFamily = X14uFont,
-                            fontSize = dpText(if (folded) 12f else 15f),
-                            letterSpacing = if (folded) dpText(1f) else androidx.compose.ui.unit.TextUnit.Unspecified,
+                            fontSize = dpText(15f),
                             color = when {
                                 isSelected -> if (enabled) CaptureColors.Accent else CaptureColors.Accent.copy(alpha = .4f)
                                 classic -> ClassicColors.Engraved.copy(alpha = if (enabled) .85f else .25f)
@@ -3192,10 +3195,10 @@ private fun X14uIdleControlArea(
                                     role = Role.Tab
                                     this.selected = isSelected
                                 }
-                                .padding(horizontal = 6.dp, vertical = if (folded) 2.dp else 4.dp)
+                                .padding(horizontal = 6.dp, vertical = 4.dp)
                         )
                         // Two dots under the stills label: Photo · Photo+ (there is a second stills mode).
-                        if (stills && !folded) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (stills) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             listOf(false, true).forEach { plus ->
                                 val lit = extras.proUi == plus
                                 Box(Modifier.size(4.dp).background(

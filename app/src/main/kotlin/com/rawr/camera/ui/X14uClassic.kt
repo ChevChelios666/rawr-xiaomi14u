@@ -298,26 +298,58 @@ internal fun DrawScope.drawHueWheel(center: Offset, radius: Float, dim: Boolean)
 }
 
 /**
- * The ruler's glass window: a dark recessed pane with knurled blocks at both ends (drawn over the ruler's faded
- * edges), a soft shadow at the top inside and a hairline highlight on the bottom edge.
+ * The ruler's window, after the user's mockup: a metal rim, then a recess where the scale turns on a drum (shaded
+ * darker toward both ends, as a cylinder), knurled rollers at the ends, a soft shadow under the rim at the top, a
+ * faint reflection on the glass and a hairline catch-light along the bottom.
  */
-internal fun Modifier.classicWindow(knurlWidth: Dp = 34.dp): Modifier = drawWithContent {
-    val corner = CornerRadius(5.dp.toPx())
-    drawRoundRect(Color(0xFF040404), cornerRadius = corner)
-    val inset = 2.dp.toPx()
-    drawRoundRect(ClassicColors.Glass, Offset(inset, inset), Size(size.width - inset * 2, size.height - inset * 2), corner)
+internal fun Modifier.classicWindow(knurlWidth: Dp = 30.dp): Modifier = drawWithContent {
+    val outer = CornerRadius(7.dp.toPx())
+    val inner = CornerRadius(5.dp.toPx())
+    // The rim: brushed metal with a light top edge and a dark lower one.
+    drawRoundRect(Color(0xFF040404), cornerRadius = outer)
+    drawRoundRect(
+        Brush.verticalGradient(listOf(Color(0xFF4A4A48), Color(0xFF2A2A29), Color(0xFF161615))),
+        Offset(1f, 1f), Size(size.width - 2f, size.height - 2f), outer
+    )
+    val inset = 3.dp.toPx()
+    val pane = Size(size.width - inset * 2, size.height - inset * 2)
+    drawRoundRect(Color(0xFF020202), Offset(inset - 1f, inset - 1f), Size(pane.width + 2f, pane.height + 2f), inner)
+    // The drum.
+    drawRoundRect(
+        Brush.horizontalGradient(
+            0f to Color(0xFF050505), .22f to Color(0xFF151515), .5f to Color(0xFF1C1C1B), .78f to Color(0xFF151515), 1f to Color(0xFF050505),
+            startX = inset, endX = inset + pane.width
+        ),
+        Offset(inset, inset), pane, inner
+    )
     drawContent()
-    val k = knurlWidth.toPx().coerceAtMost(size.width / 4f)
-    val h = size.height - inset * 2
-    drawRect(ClassicTextures.knurl, Offset(inset, inset), Size(k, h))
-    drawRect(ClassicTextures.knurl, Offset(size.width - inset - k, inset), Size(k, h))
-    drawRect(Brush.horizontalGradient(listOf(Color.Black.copy(alpha = .1f), Color.Black.copy(alpha = .6f)), inset, inset + k),
-        Offset(inset, inset), Size(k, h))
-    drawRect(Brush.horizontalGradient(listOf(Color.Black.copy(alpha = .6f), Color.Black.copy(alpha = .1f)),
-        size.width - inset - k, size.width - inset), Offset(size.width - inset - k, inset), Size(k, h))
-    drawRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .55f), Color.Transparent), inset, inset + 8.dp.toPx()),
-        Offset(inset, inset), Size(size.width - inset * 2, 8.dp.toPx()))
-    drawRect(Color.White.copy(alpha = .08f), Offset(inset, size.height - inset - 1f), Size(size.width - inset * 2, 1f))
+    // Knurled rollers at the ends, rounded like the drum: lit in the middle, dark at the top and bottom.
+    val k = knurlWidth.toPx().coerceAtMost(pane.width / 4f)
+    listOf(inset, inset + pane.width - k).forEach { x ->
+        drawRect(ClassicTextures.knurl, Offset(x, inset), Size(k, pane.height))
+        drawRect(
+            Brush.verticalGradient(
+                0f to Color.Black.copy(alpha = .75f), .35f to Color.Black.copy(alpha = .05f), .6f to Color.Transparent, 1f to Color.Black.copy(alpha = .8f),
+                startY = inset, endY = inset + pane.height
+            ),
+            Offset(x, inset), Size(k, pane.height)
+        )
+        drawRect(Color.Black.copy(alpha = .7f), Offset(if (x == inset) x + k - 1.dp.toPx() else x, inset), Size(1.dp.toPx(), pane.height))
+    }
+    // Curvature over the scale: darker toward both ends.
+    drawRect(
+        Brush.horizontalGradient(
+            0f to Color.Black.copy(alpha = .7f), .3f to Color.Transparent, .7f to Color.Transparent, 1f to Color.Black.copy(alpha = .7f),
+            startX = inset + k, endX = inset + pane.width - k
+        ),
+        Offset(inset + k, inset), Size(pane.width - k * 2, pane.height)
+    )
+    // Shadow under the rim, the glass's reflection, the catch-light.
+    drawRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .7f), Color.Transparent), inset, inset + 9.dp.toPx()),
+        Offset(inset, inset), Size(pane.width, 9.dp.toPx()))
+    drawRect(Brush.verticalGradient(listOf(Color.White.copy(alpha = .06f), Color.Transparent), inset + 2.dp.toPx(), inset + pane.height * .4f),
+        Offset(inset, inset + 2.dp.toPx()), Size(pane.width, pane.height * .4f))
+    drawRect(Color.White.copy(alpha = .12f), Offset(inset, size.height - inset), Size(pane.width, 1f))
 }
 
 /**
