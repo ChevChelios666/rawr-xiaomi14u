@@ -18,6 +18,8 @@ object GripEvents {
     /** ShutterRelease: the full press let go (ends a burst). RecordRelease: the red button let go (hold-to-lock). */
     enum class Action { Focus, Shutter, ShutterRelease, Record, RecordRelease }
     val actions = kotlinx.coroutines.flow.MutableSharedFlow<Action>(extraBufferCapacity = 4)
+    /** Set by the capture screen while the shutter does something else (a Pano set, a timed burst): the grip's full press does that too. */
+    @Volatile var shutterOverride: (() -> Boolean)? = null
 }
 
 /**

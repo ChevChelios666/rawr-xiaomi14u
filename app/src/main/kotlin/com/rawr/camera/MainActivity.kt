@@ -536,7 +536,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun triggerShutter() {
-        if (captureViewModel.burst.value && captureViewModel.controller.state.value.captureMode != CaptureMode.Video) {
+        val override = com.rawr.camera.integration.GripEvents.shutterOverride
+        if (captureViewModel.controller.state.value.captureMode != CaptureMode.Video && override?.invoke() == true) {
+            Unit
+        } else if (captureViewModel.burst.value && captureViewModel.controller.state.value.captureMode != CaptureMode.Video) {
             // Burst: held key = a run (ends on the key's release).
             captureViewModel.controller.dispatch(com.rawr.camera.burst.BurstControl.start())
         } else if (captureViewModel.controller.state.value.captureMode == CaptureMode.Video) {

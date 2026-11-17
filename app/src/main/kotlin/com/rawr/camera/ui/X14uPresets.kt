@@ -52,8 +52,6 @@ import com.rawr.camera.settings.model.PresetCamera
 import com.rawr.camera.settings.model.PresetGroup
 
 private val PresetMono = FontFamily.Monospace
-private val PanelColor = Color(0xF2282421)
-private val CardColor = Color(0xFF1E1C1A)
 
 /**
  * The preset badge above the Look button: just its text ("P0", "P1", "P1*"), light grey for P0, accent for any
@@ -157,10 +155,10 @@ internal fun X14uPresetStrip(
                                 scaleY = k
                             }
                             .size(cardWidth, 50.dp)
-                            .background(CardColor, RoundedCornerShape(9.dp))
+                            .background(X14uPanelStyle.Track, RoundedCornerShape(12.dp))
                             .then(
-                                if (selected) Modifier.border(1.5.dp, accent, RoundedCornerShape(9.dp))
-                                else Modifier.border(1.dp, Color.White.copy(alpha = .08f), RoundedCornerShape(9.dp))
+                                if (selected) Modifier.border(1.dp, accent, RoundedCornerShape(12.dp))
+                                else Modifier.border(1.dp, Color.White.copy(alpha = .12f), RoundedCornerShape(12.dp))
                             )
                             .pointerInput(id, enabled) {
                                 if (!enabled) return@pointerInput
@@ -234,8 +232,8 @@ internal fun X14uPresetStrip(
                 Box(
                     Modifier
                         .size(58.dp, 50.dp)
-                        .background(Color(0xFF141414), RoundedCornerShape(9.dp))
-                        .border(1.dp, Color.White.copy(alpha = .25f), RoundedCornerShape(9.dp))
+                        .background(X14uPanelStyle.Track, RoundedCornerShape(12.dp))
+                        .border(1.dp, Color.White.copy(alpha = .12f), RoundedCornerShape(12.dp))
                         .clickable(enabled = enabled) { haptics.selection(); onSaveNew() }
                         .testTag("x14u_preset_save"),
                     contentAlignment = Alignment.Center
@@ -250,46 +248,19 @@ internal fun X14uPresetStrip(
     }
 }
 
-/** A sheet over the viewfinder (save / details), styled like the video crop panel. */
-@Composable
-private fun PresetSheet(modifier: Modifier, content: @Composable () -> Unit) {
-    Column(
-        modifier
-            .background(PanelColor, RoundedCornerShape(14.dp))
-            .pointerInput(Unit) { detectTapGestures { } }
-            .padding(vertical = 8.dp)
-    ) { content() }
-}
-
-@Composable
-private fun SheetRow(onClick: (() -> Unit)? = null, content: @Composable () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 16.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) { content() }
-}
-
-@Composable
-private fun Divider() {
-    Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = .07f)))
-}
-
 @Composable
 private fun NameField(value: String, onValue: (String) -> Unit, onDone: () -> Unit, modifier: Modifier = Modifier) {
     BasicTextField(
         value = value,
         onValueChange = { onValue(it.take(CapturePreset.MAX_NAME)) },
         singleLine = true,
-        textStyle = TextStyle(color = Color.White, fontFamily = X14uFont, fontSize = dpText(14.5f)),
+        textStyle = TextStyle(color = Color.White, fontFamily = X14uFont, fontSize = dpText(14f)),
         cursorBrush = SolidColor(CaptureColors.Accent),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = { onDone() }),
         modifier = modifier
-            .background(Color.White.copy(alpha = .06f), RoundedCornerShape(6.dp))
-            .padding(horizontal = 8.dp, vertical = 5.dp)
+            .background(X14uPanelStyle.Track, RoundedCornerShape(50))
+            .padding(horizontal = 14.dp, vertical = 9.dp)
             .testTag("x14u_preset_name")
     )
 }
@@ -321,7 +292,7 @@ private fun presetExposureText(e: com.rawr.camera.settings.model.PresetExposure)
 
 /**
  * Save the current settings as a new preset: its name and the groups it holds (exposure, white balance, lens and
- * zoom, look, film recipe, merge and processing). Groups left out stay as they are when the preset is applied.
+ * zoom, look, film recipe, merge and processing) as tiles. Groups left out stay as they are when it is applied.
  */
 @Composable
 internal fun X14uPresetSaveSheet(
@@ -336,44 +307,35 @@ internal fun X14uPresetSaveSheet(
     var groups by remember {
         mutableStateOf(setOf(PresetGroup.Exposure, PresetGroup.Lens, PresetGroup.Look, PresetGroup.Film))
     }
-    val accent = CaptureColors.Accent
+    val all = PresetGroup.entries
     val save = { if (groups.isNotEmpty()) onSave(name, groups) }
-    PresetSheet(modifier.testTag("x14u_preset_save_sheet")) {
-        SheetRow {
-            Text("Save as ", fontFamily = X14uFont, fontSize = dpText(14f), color = Color.White)
-            Text(label, fontFamily = PresetMono, fontSize = dpText(14f), color = accent)
-            Spacer(Modifier.width(8.dp))
-            NameField(name, { name = it }, onDone = save, modifier = Modifier.weight(1f))
+    X14uSheet("SAVE PRESET", onClose, modifier.testTag("x14u_preset_save_sheet")) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, fontFamily = PresetMono, fontSize = dpText(14f), color = CaptureColors.Accent)
             Spacer(Modifier.width(10.dp))
-            Text("Cancel", fontFamily = X14uFont, fontSize = dpText(13.5f), color = Color.White.copy(alpha = .7f),
-                modifier = Modifier.clickable(onClick = onClose).padding(4.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Save", fontFamily = X14uFont, fontSize = dpText(14f), fontWeight = FontWeight.Medium,
-                color = if (groups.isEmpty()) Color.White.copy(alpha = .3f) else accent,
-                modifier = Modifier.clickable(enabled = groups.isNotEmpty(), onClick = save).padding(4.dp))
+            NameField(name, { name = it }, onDone = save, modifier = Modifier.weight(1f))
         }
-        PresetGroup.entries.forEach { group ->
-            Divider()
-            val on = group in groups
-            SheetRow(onClick = { groups = if (on) groups - group else groups + group }) {
-                Box(
-                    Modifier.size(16.dp)
-                        .border(1.5.dp, if (on) accent else Color.White.copy(alpha = .3f), RoundedCornerShape(4.dp)),
-                    contentAlignment = Alignment.Center
-                ) { if (on) Text("✓", fontSize = dpText(11f), color = accent) }
-                Spacer(Modifier.width(10.dp))
-                Text(group.label, fontFamily = X14uFont, fontSize = dpText(13.5f), color = Color.White, modifier = Modifier.weight(1f))
-                Text(presetGroupText(group, current, summary), fontFamily = X14uFont, fontSize = dpText(12f),
-                    color = Color.White.copy(alpha = .6f), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = 8.dp).widthIn(max = 170.dp))
-            }
-        }
+        X14uSheetLabel("Includes")
+        X14uTiles(
+            count = all.size, columns = 2,
+            isOn = { all[it] in groups },
+            title = { all[it].label },
+            subtitle = { presetGroupText(all[it], current, summary) },
+            onTap = { i -> groups = if (all[i] in groups) groups - all[i] else groups + all[i] }
+        )
+        X14uSheetDivider()
+        X14uSegments(
+            labels = listOf("Cancel", "Save"), selected = null, emphasis = 1,
+            enabled = { it == 0 || groups.isNotEmpty() },
+            onSelect = { if (it == 0) onClose() else save() }
+        )
     }
 }
 
 /**
- * A preset's details (tap the active card): what it holds, Update (the current settings into it), Rename,
- * Duplicate and Delete; P0 offers "Restore app defaults" instead of Delete.
+ * A preset's details (tap the active card): what it holds as tiles (left-out groups dim), then Update (the current
+ * settings into it), Rename, Duplicate and Delete; P0 offers "App defaults" instead of Delete. Delete and App
+ * defaults ask once more.
  */
 @Composable
 internal fun X14uPresetDetailsSheet(
@@ -387,61 +349,51 @@ internal fun X14uPresetDetailsSheet(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val accent = CaptureColors.Accent
     var renaming by remember(item.id) { mutableStateOf(false) }
     var name by remember(item.id) { mutableStateOf(item.name) }
     var confirm by remember(item.id) { mutableStateOf(false) }
-    PresetSheet(modifier.testTag("x14u_preset_details")) {
-        SheetRow {
-            Text(item.label, fontFamily = PresetMono, fontSize = dpText(15f), color = accent)
-            Spacer(Modifier.width(8.dp))
-            if (renaming) {
+    val all = PresetGroup.entries
+    X14uSheet(item.name, onClose, modifier.testTag("x14u_preset_details"), lead = item.label) {
+        if (renaming) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 NameField(name, { name = it }, onDone = { onRename(name); renaming = false }, modifier = Modifier.weight(1f))
-                Spacer(Modifier.width(10.dp))
-                Text("Done", fontFamily = X14uFont, fontSize = dpText(14f), color = accent,
-                    modifier = Modifier.clickable { onRename(name); renaming = false }.padding(4.dp))
-            } else {
-                Text(item.name, fontFamily = X14uFont, fontSize = dpText(15f), color = Color.White, modifier = Modifier.weight(1f),
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Close", fontFamily = X14uFont, fontSize = dpText(13.5f), color = Color.White.copy(alpha = .7f),
-                    modifier = Modifier.clickable(onClick = onClose).padding(4.dp))
             }
         }
-        PresetGroup.entries.forEach { group ->
-            Divider()
-            val on = group in item.groups
-            SheetRow {
-                Text(group.label, fontFamily = X14uFont, fontSize = dpText(13f),
-                    color = Color.White.copy(alpha = if (on) .65f else .3f), modifier = Modifier.weight(1f))
-                Text(if (on) presetGroupText(group, item.camera, item.summary) else "not included",
-                    fontFamily = X14uFont, fontSize = dpText(13f),
-                    color = if (on) Color.White else Color.White.copy(alpha = .3f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        X14uTiles(
+            count = all.size, columns = 2,
+            isOn = { false },
+            title = { all[it].label },
+            subtitle = { if (all[it] in item.groups) presetGroupText(all[it], item.camera, item.summary) else "not included" },
+            onTap = null,
+            dim = { all[it] !in item.groups }
+        )
+        X14uSheetDivider()
+        when {
+            renaming -> X14uSegments(listOf("Cancel", "Done"), selected = null, emphasis = 1, onSelect = {
+                if (it == 1) onRename(name) else name = item.name
+                renaming = false
+            })
+            confirm -> {
+                X14uSheetLabel(if (item.isBaseline) "Put P0 back to the app's defaults?" else "Delete ${item.label} ${item.name}?")
+                X14uSegments(listOf("Cancel", if (item.isBaseline) "App defaults" else "Delete"), selected = null,
+                    emphasis = 1, onSelect = {
+                        if (it == 1) { if (item.isBaseline) onRestoreDefaults() else onDelete() }
+                        confirm = false
+                    })
             }
-        }
-        Divider()
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            @Composable
-            fun Action(text: String, color: Color = Color.White, enabled: Boolean = true, onClick: () -> Unit) {
-                Text(text, fontFamily = X14uFont, fontSize = dpText(13.5f),
-                    color = if (enabled) color else Color.White.copy(alpha = .3f),
-                    modifier = Modifier.clickable(enabled = enabled, onClick = onClick).padding(horizontal = 8.dp, vertical = 8.dp))
-            }
-            if (confirm) {
-                Action(if (item.isBaseline) "Restore P0 to app defaults?" else "Delete ${item.label}?", Color.White.copy(alpha = .7f), enabled = false) {}
-                Action(if (item.isBaseline) "Restore" else "Delete", accent) {
-                    if (item.isBaseline) onRestoreDefaults() else onDelete()
-                    confirm = false
+            else -> X14uSegments(
+                labels = listOf("Update", "Rename", "Duplicate", if (item.isBaseline) "Defaults" else "Delete"),
+                selected = null, emphasis = 0,
+                enabled = { it != 2 || !full },
+                onSelect = { i ->
+                    when (i) {
+                        0 -> onUpdate()
+                        1 -> renaming = true
+                        2 -> onDuplicate()
+                        else -> confirm = true
+                    }
                 }
-                Action("Cancel") { confirm = false }
-            } else {
-                Action("Update", accent, onClick = onUpdate)
-                Action("Rename") { renaming = true }
-                Action("Duplicate", enabled = !full, onClick = onDuplicate)
-                Action(if (item.isBaseline) "App defaults" else "Delete") { confirm = true }
-            }
+            )
         }
     }
 }

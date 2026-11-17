@@ -471,9 +471,11 @@ internal fun X14uCaptureLayout(
     val lensOptions = quick.lensOptions.firstOrNull { it.lensId == state.selectedLensId }
     // Presets: the strip (in the mode names' place) and its sheet: "save" or the id of the preset whose details show.
     var presetsOpen by remember { mutableStateOf(false) }
+    // Timed burst (intervalometer) panel, from its tile in the tools panel.
+    var timedOpen by remember { mutableStateOf(false) }
     var presetSheet by remember { mutableStateOf<String?>(null) }
     val closeAll: () -> Boolean = {
-        val open = selected != null || panel != null || toolsOpen || cropOpen || presetsOpen || presetSheet != null
+        val open = selected != null || panel != null || toolsOpen || cropOpen || presetsOpen || presetSheet != null || timedOpen
         selected = null
         panel = null
         toolsOpen = false
@@ -481,6 +483,7 @@ internal fun X14uCaptureLayout(
         toolsChoice = null
         presetsOpen = false
         presetSheet = null
+        timedOpen = false
         open
     }
     val openTools: (Boolean) -> Unit = { open ->
@@ -490,6 +493,7 @@ internal fun X14uCaptureLayout(
             cropOpen = false
             presetsOpen = false
             presetSheet = null
+            timedOpen = false
         }
         toolsOpen = open
         toolsChoice = null
@@ -587,7 +591,49 @@ internal fun X14uCaptureLayout(
     }
     val panoSet = remember { PanoSet() }
     val panoMotion = rememberPanoMotion(pano)
-    val panoLocked = pano && panoSet.inSet
+    // Timed burst (Nov 17): with it on, the shutter in Photo / Photo+ starts a run (a photo every interval, focus and
+    // WB locked, exposure too when asked); the shutter stops it. While it runs the row is locked like a pano set.
+    val timedSettings by com.rawr.camera.burst.TimedBurstSettings.values.collectAsState()
+    val timedRun = remember { TimedRun() }
+    val timedReady = timedSettings.enabled && !isVideo && !pano && !burst
+    var timedNow by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+    val timedState by rememberUpdatedState(state)
+    val timedExtras = LocalCaptureExtras.current
+    LaunchedEffect(timedRun.running) {
+        while (timedRun.running) {
+            val now = android.os.SystemClock.uptimeMillis()
+            timedNow = now
+            // Saves still going from earlier photos: wait a little rather than pile them up.
+            if (now >= timedRun.nextAt && timedState.pendingCaptures.count { !it.terminal } < 4) {
+                timedRun.shoot { if (!timedExtras.onFullSizeShot()) dispatch(TriggerCapture) }
+                if (timedRun.finished) {
+                    kotlinx.coroutines.delay(600L)
+                    timedRun.end(timedState, dispatch)
+                }
+            }
+            kotlinx.coroutines.delay(100L)
+        }
+    }
+    // The screen stays on through a run.
+    androidx.compose.runtime.DisposableEffect(timedRun.running) {
+        hostView.keepScreenOn = timedRun.running
+        onDispose { hostView.keepScreenOn = false }
+    }
+    // Leaving Photo / Photo+, turning it off or leaving the screen ends a run.
+    LaunchedEffect(timedReady, screenStarted.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+        if (timedRun.running && (!timedReady || !screenStarted.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED))) {
+            timedRun.end(timedState, dispatch)
+        }
+    }
+    val timedPress: () -> Unit = {
+        if (timedRun.running) timedRun.end(state, dispatch)
+        else if (timedReady) {
+            closeAll()
+            timedRun.start(state, dispatch, timedSettings)
+        }
+    }
+    // A pano set or a timed burst run locks the row (and the lens pill).
+    val panoLocked = (pano && panoSet.inSet) || timedRun.running
     // A set locks the row: an open editor (EV's ruler, a pano choice) closes when it starts.
     LaunchedEffect(panoLocked) { if (panoLocked) selected = null }
     val panoScope = androidx.compose.runtime.rememberCoroutineScope()
@@ -612,6 +658,18 @@ internal fun X14uCaptureLayout(
     }
     val panoFrame: () -> Unit = { if (panoSet.frames > 0) panoSet.shoot(panoMotion(), dispatch) }
     val panoUndo: () -> Unit = { panoSet.undo(panoState, dispatch)?.let(panoExtras.onPanoUndo) }
+    // The grip's full press does what the shutter does here (start / stop a timed burst, a Pano frame).
+    val gripShutter by rememberUpdatedState(
+        when {
+            timedReady || timedRun.running -> timedPress
+            pano -> panoShoot
+            else -> null
+        }
+    )
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        com.rawr.camera.integration.GripEvents.shutterOverride = { gripShutter?.let { it(); true } ?: false }
+        onDispose { com.rawr.camera.integration.GripEvents.shutterOverride = null }
+    }
     // Leaving Pano (another mode, Video) ends the set, keeping its frames.
     LaunchedEffect(pano) { if (!pano && panoSet.inSet) panoSet.end(panoState, dispatch) }
     // Photo, Pro and Video each remember their own exposure mode (A·M·S·I) and white balance: switching mode saves
@@ -1048,6 +1106,38 @@ internal fun X14uCaptureLayout(
                     modifier = Modifier.fillMaxSize()
                 )
                 if (tools.level) X14uLevel(Modifier.fillMaxSize())
+                // Timed burst: what is set (ready) or how far the run is, and its locks.
+                if (timedReady || timedRun.running) {
+                    Text(
+                        if (timedRun.running) "TIMED · ${timedRun.shots} / ${if (timedRun.total > 0) "${timedRun.total}" else "∞"}"
+                        else "TIMED ${timedBurstShort(timedSettings)}",
+                        fontFamily = CaptureMono,
+                        fontSize = dpText(10.5f),
+                        color = CaptureColors.Accent,
+                        modifier = Modifier
+                            .align(if (orientation == Orientation.Landscape) Alignment.TopEnd else Alignment.TopStart)
+                            .padding(8.dp)
+                            .uprightLayoutInLandscape(orientation)
+                            .background(Color.Black.copy(alpha = .5f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 6.dp, vertical = 3.dp)
+                    )
+                }
+                if (timedRun.running && timedRun.locks.isNotEmpty()) {
+                    Row(
+                        (if (orientation == Orientation.Landscape) Modifier.align(Alignment.BottomEnd).padding(end = 10.dp, bottom = 64.dp)
+                            else Modifier.align(Alignment.TopEnd).padding(top = 10.dp, end = 10.dp))
+                            .uprightLayoutInLandscape(orientation),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        timedRun.locks.forEach { chip ->
+                            Text(
+                                "🔒 $chip", fontFamily = X14uFont, fontSize = dpText(11f), color = Color.White,
+                                modifier = Modifier.background(Color.Black.copy(alpha = .55f), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
                 // Pano merge progress / result (keeps showing in other modes while it runs).
                 LocalCaptureExtras.current.panoStatus?.let { message ->
                     Text(
@@ -1284,6 +1374,17 @@ internal fun X14uCaptureLayout(
                     Modifier.zIndex(30f).align(Alignment.TopCenter).offset(y = top + 6.dp).padding(horizontal = 12.dp).fillMaxWidth()
                 )
             }
+            if (timedOpen && !isVideo) {
+                val landscape = orientation == Orientation.Landscape
+                X14uTimedBurstPanel(
+                    values = timedSettings,
+                    onChange = com.rawr.camera.burst.TimedBurstSettings::update,
+                    onClose = { timedOpen = false },
+                    modifier = if (landscape) Modifier.zIndex(30f).align(Alignment.Center).uprightLayoutInLandscape(orientation)
+                        .width(minOf(fullHeight - top * 2, 560.dp))
+                    else Modifier.zIndex(30f).align(Alignment.TopCenter).offset(y = top + 6.dp).padding(horizontal = 12.dp).fillMaxWidth()
+                )
+            }
             if (cropOpen && isVideo) {
                 // Landscape: the whole panel turns, centred on the screen.
                 val landscape = orientation == Orientation.Landscape
@@ -1373,6 +1474,8 @@ internal fun X14uCaptureLayout(
                 if (burst && state.burst.running) {
                     // Burst: the count and speed above the finger (the shutter is under it).
                     X14uBurstCounter(state.burst, orientation)
+                } else if (timedRun.running) {
+                    X14uTimedCounter(timedRun, timedNow, orientation)
                 } else if (presetsOpen && !recordingLock && !panoLocked) {
                     X14uPresetStrip(
                         presets = presetsUi,
@@ -1398,6 +1501,7 @@ internal fun X14uCaptureLayout(
                 modifier = Modifier.fillMaxWidth().offset(y = shutterCenter - 46.dp).height(92.dp),
                 pano = if (!pano) null else PanoShutter(panoShoot, if (panoSet.frames > 0) panoUndo else null, panoLocked),
                 burst = burst,
+                timed = if (timedReady || timedRun.running) TimedShutter(timedPress, timedRun.running) else null,
                 videoHold = if (videoLockSettings.enabled) VideoHold(videoLockSettings.holdMs, onVideoHoldLock) { videoHolding = it } else null
             )
             // Tools panel, stock size and place: full width less 10 dp a side, its bottom 67 dp above the shutter's
@@ -1426,7 +1530,12 @@ internal fun X14uCaptureLayout(
                         tileHeight = 86.dp * s,
                         dcp = quick.dcps.firstOrNull { it.lensId == state.selectedLensId },
                         onSelectDcp = { file -> onQuickEvent(CaptureQuickEvent.SelectDcp(state.selectedLensId, file)) },
-                        panoSet = if (pano) panoSet else null
+                        panoSet = if (pano) panoSet else null,
+                        timedBurst = if (!isVideo && !pano && !burst) timedSettings else null,
+                        onTimedBurst = {
+                            openTools(false)
+                            timedOpen = true
+                        }
                     )
                 }
             }
@@ -3104,7 +3213,9 @@ private fun X14uShutterRow(
     /** Burst mode: the hold-to-shoot shutter and Burst's own focus and format buttons. */
     burst: Boolean = false,
     /** Video: hold the record button to record with settings locked (null: tap only). */
-    videoHold: VideoHold? = null
+    videoHold: VideoHold? = null,
+    /** Timed burst on: the shutter starts the run (and stops it while it goes). */
+    timed: TimedShutter? = null
 ) {
     val isVideo = state.captureMode == CaptureMode.Video
     val extras = LocalCaptureExtras.current
@@ -3183,13 +3294,14 @@ private fun X14uShutterRow(
             Shutter(
                 dispatch = when {
                     pano != null -> { action -> if (action is TriggerCapture) pano.onShoot() else dispatch(action) }
+                    timed != null -> { action -> if (action is TriggerCapture) timed.onPress() else dispatch(action) }
                     // 50 mp on (checked at the press): the shot runs on the 50 MP lens (the viewfinder stays 12 MP with AF).
                     else -> { action -> if (action !is TriggerCapture || !extras.onFullSizeShot()) dispatch(action) }
                 },
                 modifier = Modifier,
                 countingDown = state.selfTimerRemainingMs != null,
                 longExposure = state.longExposure,
-                stopSquare = pano?.locked == true
+                stopSquare = pano?.locked == true || timed?.running == true
             )
         }
         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
@@ -3262,6 +3374,8 @@ private fun rememberPanelMemory(): PanelMemory {
     val context = androidx.compose.ui.platform.LocalContext.current
     return remember { PanelMemory(context.getSharedPreferences("x14u_panels", android.content.Context.MODE_PRIVATE)) }
 }
+
+internal class TimedShutter(val onPress: () -> Unit, val running: Boolean)
 
 internal class VideoHold(val holdMs: Int, val onLock: () -> Unit, val onHolding: (Boolean) -> Unit)
 

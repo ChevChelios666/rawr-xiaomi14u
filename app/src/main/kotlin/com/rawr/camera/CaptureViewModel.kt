@@ -1062,6 +1062,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     init {
         com.rawr.camera.burst.BurstSettings.init(application)
         com.rawr.camera.video.VideoLockSettings.init(application)
+        com.rawr.camera.burst.TimedBurstSettings.init(application)
         com.rawr.camera.settings.model.FaceSettings.init(application)
         viewModelScope.launch {
             com.rawr.camera.settings.model.FaceSettings.values.collect { previewCoordinator.setFaceOptions(it.focus, it.exposure) }

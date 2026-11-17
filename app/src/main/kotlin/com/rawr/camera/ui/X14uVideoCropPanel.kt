@@ -107,28 +107,13 @@ internal fun X14uVideoCropPanel(
     }
 }
 
+// The shared panel controls (X14uPanelKit): every panel looks the same.
+@Suppress("UNUSED_PARAMETER")
 @Composable
-private fun CropSegments(labels: List<String>, selected: Int, accent: Color, onSelect: (Int) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().background(Color(0xFF1C1A17), RoundedCornerShape(50)).padding(3.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp)
-    ) {
-        labels.forEachIndexed { i, label ->
-            val on = i == selected
-            Box(
-                Modifier.weight(1f).height(34.dp)
-                    .then(if (on) Modifier.background(Color(0xFF2F2A24), RoundedCornerShape(50))
-                        .border(1.dp, accent, RoundedCornerShape(50)) else Modifier)
-                    .clickable { onSelect(i) },
-                contentAlignment = Alignment.Center
-            ) {
-                Text(label, color = if (on) accent else Color.White.copy(alpha = .75f), fontFamily = X14uFont,
-                    fontSize = dpText(13f), maxLines = 1)
-            }
-        }
-    }
-}
+private fun CropSegments(labels: List<String>, selected: Int, accent: Color, onSelect: (Int) -> Unit) =
+    X14uSegments(labels, selected, onSelect)
 
+@Suppress("UNUSED_PARAMETER")
 @Composable
 private fun CropTiles(
     count: Int,
@@ -138,30 +123,4 @@ private fun CropTiles(
     title: (Int) -> String,
     subtitle: (Int) -> String?,
     onSelect: (Int) -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        (0 until count).chunked(columns).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                row.forEach { i ->
-                    val on = i == selected
-                    Column(
-                        Modifier.weight(1f)
-                            .background(Color(0xFF1C1A17), RoundedCornerShape(12.dp))
-                            .border(1.dp, if (on) accent else Color.White.copy(alpha = .12f), RoundedCornerShape(12.dp))
-                            .clickable { onSelect(i) }
-                            .padding(vertical = 10.dp, horizontal = 6.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(title(i), color = if (on) accent else Color.White, fontFamily = X14uFont,
-                            fontSize = dpText(13f), textAlign = TextAlign.Center, maxLines = 1)
-                        subtitle(i)?.let {
-                            Text(it, color = Color.White.copy(alpha = .5f), fontFamily = X14uFont,
-                                fontSize = dpText(11f), textAlign = TextAlign.Center, maxLines = 1)
-                        }
-                    }
-                }
-                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
-            }
-        }
-    }
-}
+) = X14uTiles(count, columns, { it == selected }, title, subtitle, onSelect)

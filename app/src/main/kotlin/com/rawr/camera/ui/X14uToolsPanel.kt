@@ -65,6 +65,7 @@ import com.rawr.camera.model.WhiteBalanceMode
 import com.rawr.camera.settings.model.PhotoAspect
 import com.rawr.camera.settings.model.VideoStabilize
 import com.rawr.camera.ui.icons.Icons
+import com.rawr.camera.ui.icons.outlined.Timer
 import com.rawr.camera.ui.icons.outlined.CenterFocusStrong
 import com.rawr.camera.ui.icons.outlined.Palette
 import com.rawr.camera.ui.icons.outlined.Settings
@@ -162,7 +163,10 @@ internal fun X14uToolsPanel(
     dcp: com.rawr.camera.model.DcpQuickState? = null,
     onSelectDcp: (String?) -> Unit = {},
     /** Pano: its set (Overlap and Projection tiles first); null in the other modes. */
-    panoSet: PanoSet? = null
+    panoSet: PanoSet? = null,
+    /** Photo / Photo+: the timed burst (its tile opens the panel); null where it doesn't run. */
+    timedBurst: com.rawr.camera.burst.TimedBurstSettings.Values? = null,
+    onTimedBurst: () -> Unit = {}
 ) {
     val extras = LocalCaptureExtras.current
     val tools = extras.tools
@@ -199,6 +203,10 @@ internal fun X14uToolsPanel(
         if (video && !frontLens) {
             add(X14uTile("stab", "Stabilise", tools.stabilize != VideoStabilize.Off, X14uIcons.Stabilize,
                 value = tools.stabilize.short.ifEmpty { null }) { toggleChoice("stab") })
+        }
+        if (timedBurst != null) {
+            add(X14uTile("timed", "Timed\nburst", timedBurst.enabled, Icons.Outlined.Timer,
+                value = if (timedBurst.enabled) timedBurstShort(timedBurst) else null) { onTimedBurst() })
         }
         val histogram = state.histogramChoice()
         add(X14uTile("hist", "Histogram", histogram != HistogramChoice.Off, X14uIcons.Histogram,
