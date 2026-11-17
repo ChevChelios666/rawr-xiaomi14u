@@ -1,5 +1,6 @@
 #include "camera/ShotHandover.h"
 #include "camera/NativeCameraController.h"
+#include "camera/FaceOptions.h"
 #include "camera/JavaCameraDriver.h"
 #include "capture/BurstLimits.h"
 
@@ -765,8 +766,18 @@ struct NativeCameraController::Impl final : CameraEventSink {
     }
 
     CameraMeteringRequest meteringRequestLocked() const {
-        return focusControls.request(spotMetering.region(
-            control, deviceSession.cameraContext() ? &deviceSession.cameraContext()->geometry : nullptr));
+        const auto* geometry = deviceSession.cameraContext() ? &deviceSession.cameraContext()->geometry : nullptr;
+        auto request = focusControls.request(spotMetering.region(control, geometry));
+        // Expose for faces (Camera2 AE): with no spot of its own, AE meters the AF face (the whole face, not the eye).
+        if (!request.aeRegion && geometry && faceOptions().exposure.load(std::memory_order_relaxed) &&
+            control.exposureMode == ExposureControlMode::Auto && !control.rawrAeActive && !control.tapAfActive &&
+            control.capabilities.maxAeRegions > 0) {
+            const auto face = std::find_if(control.faceDetections.begin(), control.faceDetections.end(),
+                                           [](const auto& f) { return f.afTarget; });
+            const auto chosen = face != control.faceDetections.end() ? face : control.faceDetections.begin();
+            if (chosen != control.faceDetections.end()) request.aeRegion = faceFocusRegion(*geometry, *chosen);
+        }
+        return request;
     }
 
     void rollbackCameraStartLocked(std::unique_lock<std::mutex>& lock, const std::string& reason) {
@@ -1883,7 +1894,9 @@ struct NativeCameraController::Impl final : CameraEventSink {
         c.spotActive = control.spotAeActive && control.exposureMode == ExposureControlMode::Auto;
         c.spotX = spotMetering.point().x;
         c.spotY = spotMetering.point().y;
-        if (const auto& af = focusControls.afRegion(); af && deviceSession.cameraContext())
+        // rawr AE's matrix meter weights the AF area; a face's only with "Expose for faces" on.
+        if (const auto& af = focusControls.afRegion(); af && deviceSession.cameraContext() &&
+            (!focusControls.steeringFaces() || faceOptions().exposure.load(std::memory_order_relaxed)))
             c.focusArea = normalizedRegion(deviceSession.cameraContext()->geometry, *af);
         // The 12 MP view's AF area, for the 50 MP shot's focus measure (not replaced by the shot's own session).
         if (!shotHandover().carrying()) shotHandover().setFocusArea(c.focusArea);

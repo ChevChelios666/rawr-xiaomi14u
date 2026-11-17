@@ -38,6 +38,8 @@ class NativePreviewEngine {
     external fun setCarryWhiteBalance(on: Boolean)
     external fun setCarryViewAcrossRestart(on: Boolean)
     external fun setFocusSweep(diopters: Float)
+    /** X14U: continuous AF follows the main face / exposure is set for it (Settings → Focus and exposure). */
+    external fun setFaceOptions(focus: Boolean, exposure: Boolean)
     external fun sentFocus(): Float
     external fun setFocusProbe(on: Boolean)
     external fun focusSharpness(): Float

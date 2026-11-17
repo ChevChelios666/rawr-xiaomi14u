@@ -1,4 +1,5 @@
 #include "camera/CameraFocusControls.h"
+#include "camera/FaceOptions.h"
 
 #include <algorithm>
 #include <cmath>
@@ -98,6 +99,7 @@ FaceFocusChange CameraFocusControls::steerFaces(CameraControlState& state,
     }
     if (state.focusMode != FocusControlMode::Continuous || state.tapAfActive ||
         !state.capabilities.faceDetectSupported || !state.capabilities.faceAfSteering ||
+        !faceOptions().focus.load(std::memory_order_relaxed) ||
         state.capabilities.maxAfRegions <= 0 || !geometry || !requestReady) {
         faceSteering_ = false;
         return FaceFocusChange::None;

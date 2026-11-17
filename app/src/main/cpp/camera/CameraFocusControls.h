@@ -39,6 +39,8 @@ class CameraFocusControls {
     }
     // The current tap or face autofocus area (sensor coordinates), if any.
     const std::optional<CameraMeteringRegion>& afRegion() const { return region_; }
+    /** The AF region is a face's (continuous AF steered to it), not a tap's. */
+    bool steeringFaces() const { return faceSteering_; }
 
    private:
     TapFocusPolicy tapPolicy_;

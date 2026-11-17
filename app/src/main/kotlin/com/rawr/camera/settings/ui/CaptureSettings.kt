@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -71,6 +72,20 @@ internal fun CaptureSettings(state: SettingsUiState, dispatch: SettingsDispatch)
                 checked = state.values.oisEnabledPreference,
                 enabled = state.capabilities.oisSupported
             ) { dispatch.invoke(SetOisPreference(it)) }
+            SettingDivider()
+            // X14U: faces steer focus / exposure unless a point is tapped (FaceSettings).
+            val faces by com.rawr.camera.settings.model.FaceSettings.values.collectAsState()
+            SettingsSwitchRow(
+                title = "Focus on Faces",
+                checked = faces.focus,
+                supportingText = "Continuous AF follows the main face (its eye when seen); a tap takes over"
+            ) { com.rawr.camera.settings.model.FaceSettings.update(faces.copy(focus = it)) }
+            SettingDivider()
+            SettingsSwitchRow(
+                title = "Expose for Faces",
+                checked = faces.exposure,
+                supportingText = "Brightness set for the face; a tapped exposure point takes over"
+            ) { com.rawr.camera.settings.model.FaceSettings.update(faces.copy(exposure = it)) }
             SettingDivider()
             SettingsSwitchRow(
                 title = "Location Tagging",

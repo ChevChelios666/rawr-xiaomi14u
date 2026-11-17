@@ -332,6 +332,7 @@ class RawPreviewCoordinator(application: Application) : AutoCloseable {
     fun setCarryWhiteBalance(on: Boolean) = native.setCarryWhiteBalance(on)
     fun setCarryViewAcrossRestart(on: Boolean) = native.setCarryViewAcrossRestart(on)
     fun setFocusSweep(diopters: Float) = native.setFocusSweep(diopters)
+    fun setFaceOptions(focus: Boolean, exposure: Boolean) = native.setFaceOptions(focus, exposure)
     fun sentFocus(): Float = native.sentFocus()
     fun setFocusProbe(on: Boolean) = native.setFocusProbe(on)
     fun focusSharpness(): Float = native.focusSharpness()

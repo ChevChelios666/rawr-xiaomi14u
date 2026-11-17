@@ -1,6 +1,7 @@
 #include "camera/HalRawSynthNative.h"
 #include "geometry/HorizonLock.h"
 #include "geometry/Stabilizer.h"
+#include "camera/FaceOptions.h"
 #include "camera/ShotHandover.h"
 #include "capture/single/SynthesizedStill.h"
 #include "encoding/OutputAspect.h"
@@ -295,6 +296,12 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_rawr_camera_x14u_HalRawSynthNativ
 extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setFocusSweep(JNIEnv*, jobject,
                                                                                                    jfloat diopters) {
     rawrcam::camera::shotHandover().setFocusSweep(diopters);
+}
+extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setFaceOptions(JNIEnv*, jobject,
+                                                                                                    jboolean focus,
+                                                                                                    jboolean exposure) {
+    rawrcam::camera::faceOptions().focus.store(focus == JNI_TRUE, std::memory_order_relaxed);
+    rawrcam::camera::faceOptions().exposure.store(exposure == JNI_TRUE, std::memory_order_relaxed);
 }
 extern "C" JNIEXPORT jfloat JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_sentFocus(JNIEnv*, jobject) {
     return rawrcam::camera::shotHandover().sentFocus();
