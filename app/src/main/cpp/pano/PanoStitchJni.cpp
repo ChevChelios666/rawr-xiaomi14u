@@ -100,6 +100,7 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_rawr_camera_pano_PanoStitcherNativ
     env->GetIntArrayRegion(fdsArray, 0, jsize(fds.size()), fds.data());
     if (!rotations.empty()) env->GetIntArrayRegion(rotationsArray, 0, jsize(rotations.size()), rotations.data());
     std::string error;
+    std::string summary;
     try {
         std::vector<cv::Mat> frames;
         frames.reserve(fds.size());
@@ -132,6 +133,8 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_rawr_camera_pano_PanoStitcherNativ
             // at 1 MP with a looser match, then looser still. Working sets stitch on the first try as before.
             cv::Mat pano;
             cv::Stitcher::Status status = cv::Stitcher::ERR_NEED_MORE_IMGS;
+            int usedAttempt = 0;
+            size_t usedFrames = 0;
             for (int attempt = 0; attempt < 3; ++attempt) {
                 auto stitcher = cv::Stitcher::create(cv::Stitcher::PANORAMA);
                 if (p == 1) stitcher->setWarper(cv::makePtr<cv::PlaneWarper>());
@@ -148,13 +151,18 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_rawr_camera_pano_PanoStitcherNativ
                 status = stitcher->stitch(frames, pano);
                 __android_log_print(ANDROID_LOG_INFO, kTag, "PANO_STITCH_TRY attempt=%d frames=%zu status=%d", attempt,
                                     frames.size(), int(status));
-                if (status == cv::Stitcher::OK && !pano.empty()) break;
+                if (status == cv::Stitcher::OK && !pano.empty()) {
+                    usedAttempt = attempt;
+                    usedFrames = stitcher->component().size();
+                    break;
+                }
                 if (status != cv::Stitcher::ERR_NEED_MORE_IMGS && status != cv::Stitcher::ERR_HOMOGRAPHY_EST_FAIL) break;
             }
             frames.clear();
             if (status != cv::Stitcher::OK || pano.empty()) {
                 error = statusText(status);
             } else {
+                const int fullW = pano.cols, fullH = pano.rows;
                 if (crop == JNI_TRUE) pano = pano(innerRect(pano)).clone();
                 std::vector<uchar> jpeg;
                 if (!cv::imencode(".jpg", pano, jpeg, {cv::IMWRITE_JPEG_QUALITY, std::clamp(int(quality), 50, 100)}) ||
@@ -163,6 +171,13 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_rawr_camera_pano_PanoStitcherNativ
                 } else {
                     __android_log_print(ANDROID_LOG_INFO, kTag, "PANO_STITCHED frames=%zu size=%dx%d bytes=%zu",
                                         fds.size(), pano.cols, pano.rows, jpeg.size());
+                    // How it was made, for the panorama's EXIF (Kotlin adds how the frames were taken).
+                    static const char* kProjection[] = {"Auto", "Rectilinear", "Cylindrical", "Panini", "Spherical"};
+                    static const char* kMatch[] = {"ORB features", "SIFT features", "SIFT features, loose match"};
+                    summary = std::string(kProjection[std::clamp(p, 1, 4)]) + (projection == 0 ? " (Auto)" : "") + " projection, " +
+                              std::to_string(usedFrames) + " of " + std::to_string(fds.size()) + " frames stitched, " +
+                              kMatch[usedAttempt] +
+                              (pano.cols != fullW || pano.rows != fullH ? ", cropped" : "") + ", OpenCV " + CV_VERSION;
                 }
             }
         }
@@ -177,5 +192,6 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_rawr_camera_pano_PanoStitcherNativ
         if (fd >= 0) close(fd);
     if (outFd >= 0) close(outFd);
     if (!error.empty()) __android_log_print(ANDROID_LOG_WARN, kTag, "PANO_STITCH_FAILED %s", error.c_str());
-    return env->NewStringUTF(error.c_str());
+    // "OK|<how it was made>" on success, otherwise why it failed.
+    return env->NewStringUTF(error.empty() ? ("OK|" + summary).c_str() : error.c_str());
 }

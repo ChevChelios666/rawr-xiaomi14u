@@ -17,7 +17,7 @@ internal object PanoStitcherNative {
     private val loaded: Boolean by lazy { runCatching { System.loadLibrary("rawrcam_pano") }.isSuccess }
     val available: Boolean get() = loaded
 
-    /** Frames as file descriptors (closed natively) with their EXIF rotations; "" on success. */
+    /** Frames as file descriptors (closed natively) with their EXIF rotations; "OK|<how>" on success, else why not. */
     external fun stitch(
         fds: IntArray,
         rotations: IntArray,
@@ -177,7 +177,7 @@ internal class PanoMerger(private val context: Context) {
                 ?: return "couldn't write the file".also { resolver.delete(outUri, null, null) }
             // Composite size per frame: full size for small sets, less for big ones (memory).
             val composeMp = (90f / readable.size).coerceIn(3f, 50f)
-            val error = PanoStitcherNative.stitch(
+            val result = PanoStitcherNative.stitch(
                 readable.map { fds[it] }.toIntArray(),
                 readable.map { rotations[it] }.toIntArray(),
                 composeMp,
@@ -188,11 +188,14 @@ internal class PanoMerger(private val context: Context) {
                 spanDegrees = spanDegrees
             )
             readable.forEach { fds[it] = -1 } // closed natively
-            if (error.isNotEmpty()) {
+            if (!result.startsWith("OK|")) {
                 resolver.delete(outUri, null, null)
-                return error
+                return result.ifEmpty { "stitch failed" }
             }
-            copyExif(first.uri, outUri, frames.size)
+            // How the frames were taken: Rexture-merged ("_MF6") or single frames.
+            val merged = Regex("_MF(\\d+)\\.jpe?g$", RegexOption.IGNORE_CASE).find(first.name)?.groupValues?.get(1)
+            val taken = if (merged != null) "frames merged by Rexture ($merged each)" else "single-frame frames"
+            copyExif(first.uri, outUri, "Panorama merged on the phone: ${result.removePrefix("OK|")}, $taken")
             resolver.update(outUri, ContentValues().apply {
                 if (first.taken > 0L) put(MediaStore.Images.Media.DATE_TAKEN, first.taken)
                 put(MediaStore.Images.Media.IS_PENDING, 0)
@@ -207,7 +210,7 @@ internal class PanoMerger(private val context: Context) {
     }
 
     @Suppress("DEPRECATION") // TAG_ISO_SPEED_RATINGS: the framework ExifInterface has no newer name for 0x8827.
-    private fun copyExif(from: Uri, to: Uri, frames: Int) {
+    private fun copyExif(from: Uri, to: Uri, description: String) {
         val resolver = context.contentResolver
         runCatching {
             val source = resolver.openFileDescriptor(from, "r")?.use { ExifInterface(it.fileDescriptor) } ?: return
@@ -225,7 +228,9 @@ internal class PanoMerger(private val context: Context) {
                     ExifInterface.TAG_GPS_ALTITUDE, ExifInterface.TAG_GPS_ALTITUDE_REF, ExifInterface.TAG_SOFTWARE
                 ).forEach { tag -> source.getAttribute(tag)?.let { target.setAttribute(tag, it) } }
                 target.setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL.toString())
-                target.setAttribute(ExifInterface.TAG_IMAGE_DESCRIPTION, "Panorama merged on the phone from $frames frames")
+                // Projection (and whether Auto chose it), frames stitched of those taken, matching, crop, frame type.
+                target.setAttribute(ExifInterface.TAG_IMAGE_DESCRIPTION, description)
+                target.setAttribute(ExifInterface.TAG_USER_COMMENT, description)
                 target.saveAttributes()
             }
         }
