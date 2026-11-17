@@ -1286,7 +1286,9 @@ internal fun X14uCaptureLayout(
                             else Modifier.align(Alignment.TopCenter).padding(top = 10.dp)
                     )
                 }
-                X14uLensRow(
+                // Classic video: an open control takes the picture's foot, where the lens row is (it comes back on close).
+                val lensRowShown = !(classicVideo && !slotIdle)
+                if (lensRowShown) X14uLensRow(
                     state = state,
                     dispatch = dispatch,
                     quick = quick,
@@ -1351,7 +1353,7 @@ internal fun X14uCaptureLayout(
                         .padding(bottom = (31.dp * s - 18.dp).coerceAtLeast(4.dp), start = 7.dp, end = 7.dp)
                 )
                 // Preset badge just above the Look button: text only, grey P0, accent P1…, "*" once changed.
-                if (activePreset != null) {
+                if (activePreset != null && lensRowShown) {
                     X14uPresetBadge(
                         label = activePreset.label + if (presetChanged) "*" else "",
                         accent = !activePreset.isBaseline,
