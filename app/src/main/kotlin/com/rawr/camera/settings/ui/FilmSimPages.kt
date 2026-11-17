@@ -44,7 +44,7 @@ internal fun FilmSimDetailScreen(state: SettingsUiState, detail: FilmSimDetail, 
 
 @Composable
 private fun FilmSubPageFilm(look: FilmSimLook, dispatch: SettingsDispatch) {
-    SettingsGroup(title = "Stock", description = "The film the photo is shot on. Each stock has its own colour response, contrast and grain, from the maker's data. Negative stocks are printed on the Print page's paper; slide (reversal) stocks are seen directly.") {
+    SettingsGroup(title = "Stock", description = "The film: its colour, contrast and grain. Negatives are printed on the Print page's paper; slides aren't.") {
         FilmStockGrid(FilmSimDiscreteField.Film.options(), FilmStocks.positiveFilmIndices, look.film) {
             dispatch.invoke(SetFilmSimDiscreteValue(FilmSimDiscreteField.Film, it))
         }
@@ -66,16 +66,16 @@ private fun FilmSubPageFilm(look: FilmSimLook, dispatch: SettingsDispatch) {
             dispatch.invoke(SetFilmSimFlag(FilmSimFlag.ScanNegativeInvert, it))
         }
     }
-    SettingsGroup(title = "Exposure", description = "How much light the film gets, in stops: like rating the film faster or slower. It moves the scene along the film's curve: over-exposed negatives get denser and lower in contrast in the highlights, under-exposed ones thin and grainy.") {
+    SettingsGroup(title = "Exposure", description = "Film exposure in stops. Over: dense, soft highlights. Under: thin and grainy.") {
         FilmSpecSliders(FilmSimCatalog.numerics(FilmSimSection.Film, "exposure"), look, dispatch)
     }
     FilmSegmentedRow("Push / pull mode", FilmSimDiscreteField.PushPullMode.options(), look.filmPushPullMode) {
         dispatch.invoke(SetFilmSimDiscreteValue(FilmSimDiscreteField.PushPullMode, it))
     }
-    SettingsGroup(title = "Chemistry", description = "How the film is developed. Longer or stronger development (push) adds contrast, density and grain; shorter (pull) softens contrast.") {
+    SettingsGroup(title = "Chemistry", description = "Development. Push: more contrast and grain. Pull: softer.") {
         FilmSpecSliders(FilmSimCatalog.numerics(FilmSimSection.Film, "chemistry"), look, dispatch)
     }
-    SettingsGroup(title = "Spectral model", description = "How the camera's RGB is turned back into a light spectrum the film can respond to. The models differ mostly in saturated colours (deep blues, neon, foliage); the default suits most scenes.") {
+    SettingsGroup(title = "Spectral model", description = "How RGB becomes light for the film. Differs mainly in saturated colours.") {
         FilmChipFlowRow(FilmSimDiscreteField.SpectralMethod.options(), look.rgbToRawMethod) {
             dispatch.invoke(SetFilmSimDiscreteValue(FilmSimDiscreteField.SpectralMethod, it))
         }
@@ -88,7 +88,7 @@ private fun FilmSubPageDirCouplers(look: FilmSimLook, dispatch: SettingsDispatch
         SettingsSwitchRow(
             title = "DIR couplers",
             checked = look.dirCouplersAmount > 0f,
-            supportingText = "Development-inhibitor-releasing couplers: chemicals in colour film that hold back development in neighbouring layers and areas. They give film its extra colour saturation and edge sharpness. Off: flatter, plainer colour."
+            supportingText = "Film chemistry that adds colour saturation and edge sharpness. Off: plainer colour."
         ) {
             dispatch.invoke(
                 SetFilmSimNumericValue(
@@ -108,7 +108,7 @@ private fun FilmSubPageDirCouplers(look: FilmSimLook, dispatch: SettingsDispatch
 
 @Composable
 private fun FilmSubPageFilters(look: FilmSimLook, dispatch: SettingsDispatch) {
-    SettingsGroup(title = "Filtration", description = "Filters on the lens. UV and IR filters stop light the film would otherwise record (haze, odd foliage and fabric colours). The colour sliders work like warming or cooling filters.") {
+    SettingsGroup(title = "Filtration", description = "Lens filters. UV / IR cut haze and odd foliage colours; sliders warm or cool.") {
         SettingsSwitchRow(
             title = "UV filter",
             checked = look.cameraUvFilterEnabled
@@ -129,7 +129,7 @@ private fun FilmSubPageDiffusion(look: FilmSimLook, dispatch: SettingsDispatch) 
         SettingsSwitchRow(
             title = "Filter diffusion",
             checked = look.cameraDiffusionEnabled,
-            supportingText = "A diffusion filter on the lens (Pro-Mist, Black Mist and the like): a soft glow around highlights and gentler contrast. Family is the filter type, Diffusion its strength, Shaping how far the glow spreads."
+            supportingText = "A mist filter on the lens: glow around highlights, softer contrast."
         ) { dispatch.invoke(SetFilmSimFlag(FilmSimFlag.CameraDiffusionEnabled, it)) }
     }
     SettingsGroup(title = "Family") {
@@ -147,7 +147,7 @@ private fun FilmSubPageDiffusion(look: FilmSimLook, dispatch: SettingsDispatch) 
         SettingsSwitchRow(
             title = "Print diffusion",
             checked = look.printDiffusionEnabled,
-            supportingText = "The same kind of glow added while printing (a diffusion filter under the enlarger): it works the other way round, so dark areas bleed softly into the bright ones."
+            supportingText = "Diffusion while printing: shadows bleed softly into highlights."
         ) { dispatch.invoke(SetFilmSimFlag(FilmSimFlag.PrintDiffusionEnabled, it)) }
     }
     SettingsGroup(title = "Print family") {
@@ -173,21 +173,21 @@ private fun FilmSubPageOutput(state: SettingsUiState, dispatch: SettingsDispatch
 
 @Composable
 private fun FilmSubPagePrint(look: FilmSimLook, dispatch: SettingsDispatch) {
-    SettingsGroup(title = "Paper", description = "The photographic paper a negative is printed on; each has its own contrast and colour. Negative stocks only.") {
+    SettingsGroup(title = "Paper", description = "Print paper: its contrast and colour. Negatives only.") {
         FilmChipFlowRow(FilmSimDiscreteField.Paper.options(), look.paper) {
             dispatch.invoke(SetFilmSimDiscreteValue(FilmSimDiscreteField.Paper, it))
         }
     }
-    SettingsGroup(title = "Exposure", description = "How long the paper is exposed under the enlarger: a lighter or darker print.") {
+    SettingsGroup(title = "Exposure", description = "Print exposure: lighter or darker print.") {
         FilmSpecSliders(FilmSimCatalog.numerics(FilmSimSection.Print, "exposure"), look, dispatch)
     }
     SettingsGroup(title = "Chemistry") {
         FilmSpecSliders(FilmSimCatalog.numerics(FilmSimSection.Print, "chemistry"), look, dispatch)
     }
-    SettingsGroup(title = "Filtration", description = "The enlarger's colour head (cyan, magenta, yellow): the print's colour balance, the way labs corrected colour.") {
+    SettingsGroup(title = "Filtration", description = "Enlarger colour (C / M / Y): the print's colour balance.") {
         FilmSpecSliders(FilmSimCatalog.numerics(FilmSimSection.Print, "filtration"), look, dispatch)
     }
-    SettingsGroup(title = "Lab", description = "Printer lights: the lab's exposure for each colour of the print. Gang moves all three together; calibration sets them so a neutral grey prints neutral.") {
+    SettingsGroup(title = "Lab", description = "Per-colour print exposure. Gang: move together. Calibration: grey prints grey.") {
         FilmSpecSliders(FilmSimCatalog.numerics(FilmSimSection.Print, "lab"), look, dispatch)
         SettingDivider()
         SettingsSwitchRow(
@@ -200,10 +200,10 @@ private fun FilmSubPagePrint(look: FilmSimLook, dispatch: SettingsDispatch) {
             checked = look.printerLightCalibration
         ) { dispatch.invoke(SetFilmSimFlag(FilmSimFlag.PrinterLightCalibration, it)) }
     }
-    SettingsGroup(title = "Preflash", description = "A brief, even exposure of the paper before printing: lowers contrast and opens up the highlights.") {
+    SettingsGroup(title = "Preflash", description = "Pre-exposes the paper: lower contrast, more highlight detail.") {
         FilmSpecSliders(FilmSimCatalog.numerics(FilmSimSection.Print, "preflash"), look, dispatch)
     }
-    SettingsGroup(title = "Enlarger geometry", description = "The enlarger's magnification and lens: how much grain, blur and halation grow with the print size.") {
+    SettingsGroup(title = "Enlarger geometry", description = "Print size: how much grain, blur and halation grow.") {
         FilmSpecSliders(FilmSimCatalog.numerics(FilmSimSection.Print, "geometry"), look, dispatch)
     }
 }
@@ -214,7 +214,7 @@ private fun FilmSubPageGrain(look: FilmSimLook, dispatch: SettingsDispatch) {
         SettingsSwitchRow(
             title = "Grain",
             checked = look.grainEnabled,
-            supportingText = "Film grain from the developed dye clouds, sized to the film format. Model: how it's simulated. Sublayers: grain from several emulsion layers, for a more natural texture. Animate: fresh grain on every video frame."
+            supportingText = "Film grain sized to the format. Sublayers: more natural. Animate: new grain each video frame."
         ) { dispatch.invoke(SetFilmSimFlag(FilmSimFlag.GrainEnabled, it)) }
     }
     SettingsGroup(title = "Model") {
@@ -274,7 +274,7 @@ private fun FilmSubPageHalation(look: FilmSimLook, dispatch: SettingsDispatch) {
         SettingsSwitchRow(
             title = "Halation",
             checked = look.halationEnabled,
-            supportingText = "The red-orange glow around bright lights: light passes through the film, bounces off its back and exposes the red layer again. Scatter: light spreading inside the emulsion. Threshold: how bright a light must be to glow. Coupling: how much each colour layer takes part."
+            supportingText = "Red glow around bright lights, from light bouncing back through the film. Threshold: how bright a light must be."
         ) { dispatch.invoke(SetFilmSimFlag(FilmSimFlag.HalationEnabled, it)) }
     }
     SettingsGroup(title = "Scatter") {
@@ -309,7 +309,7 @@ private fun FilmSubPageScanner(state: SettingsUiState, dispatch: SettingsDispatc
         SettingsSwitchRow(
             title = "Scanner",
             checked = look.scannerEnabled,
-            supportingText = "Scanning the negative or print, as a lab scanner would. White and black correction set the scan's levels, Sharpness its sharpening, Glare the scanner's internal flare."
+            supportingText = "A lab scan of the film: levels, sharpening and scanner flare."
         ) { dispatch.invoke(SetFilmSimFlag(FilmSimFlag.ScannerEnabled, it)) }
         SettingDivider()
         SettingsSwitchRow(

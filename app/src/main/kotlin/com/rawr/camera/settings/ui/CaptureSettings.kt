@@ -194,7 +194,7 @@ internal fun ExposureSettings(state: SettingsUiState, dispatch: SettingsDispatch
                         "Maximum has no limit and gets noisy in the dark"
                 ) { setAe(ae.copy(digitalGain = it)) }
                 RawrAeChoice("Adaptation Speed", RawrAeSpeed.entries, ae.speed, { it.label },
-                    "How fast exposure follows a change in light. Slower: smoother in video, no pumping when something bright passes; faster: ready sooner after you point somewhere new") {
+                    "How fast exposure follows the light. Slower: smoother video") {
                     setAe(ae.copy(speed = it))
                 }
             }

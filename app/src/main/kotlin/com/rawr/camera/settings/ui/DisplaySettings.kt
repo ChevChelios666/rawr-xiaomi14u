@@ -116,25 +116,25 @@ internal fun MonitoringSettings(state: SettingsUiState, dispatch: SettingsDispat
             ) { set(loupe.copy(meter = it)) }
         }
         // X14U (Nov 17): what each overlay shows; tap ⓘ. They're turned on from the swipe-down panel.
-        SettingsGroup(title = "Overlays", description = "Turned on from the swipe-down panel on the camera screen. None of them changes the photo.") {
+        SettingsGroup(title = "Overlays", description = "Turned on in the swipe-down panel. Viewfinder only; photos are unchanged.") {
             SettingsRow(
                 title = "Focus peaking",
-                supportingText = "Edges in focus glow in the accent colour while you focus: during manual focus and for a moment after a tap to focus. Sensitivity is above."
+                supportingText = "Edges in focus glow while you focus."
             )
             SettingDivider()
             SettingsRow(
                 title = "RAW highlights",
-                supportingText = "Marks where the sensor itself clips. Those highlights are lost even in the DNG: lower EV until the marks shrink to what should clip, like lamps or the sun."
+                supportingText = "Marks where the sensor clips; lost even in the DNG. Lower EV until only lamps or the sun are marked."
             )
             SettingDivider()
             SettingsRow(
                 title = "Tonemap shadows",
-                supportingText = "Marks shadows your look crushes to black. The RAW still holds them: lift Shadows in the Look panel, or pick a flatter profile, to keep them in the JPEG."
+                supportingText = "Marks shadows the look crushes to black. The RAW still has them: lift Shadows to keep them."
             )
             SettingDivider()
             SettingsRow(
                 title = "False colour",
-                supportingText = "Paints the viewfinder by brightness, as the photo will look after your look (not the RAW). Put the subject in the zone you want, for example a face in green or yellow, and keep red off anything that should hold detail. IRE: 0 is black, 100 is white.",
+                supportingText = "Colours the viewfinder by brightness of the final photo (not the RAW). Faces in green or yellow; red means clipped.",
                 infoExtra = { FalseColourLegend() }
             )
         }
