@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -1041,65 +1040,62 @@ internal fun X14uCaptureLayout(
         val bottom = top + frame.height
         val fullHeight = maxHeight
         val shutterCenter = minOf(bottom + 175.dp * s, fullHeight - 50.dp)
-        // Video, like stock: the recording's shape at the photo frame's width, between the camera cut-out and the
-        // shutter (just below the mode names), narrowed if it would not fit. A short one (4:3, 1:1) sits where the
-        // photo frame does; a tall one (16:9 and up) starts right under the cut-out with the top bar over it.
+        // Video, like stock: the recording's shape at the photo frame's width. A short one (4:3, 1:1) sits where the
+        // photo frame does; a tall one starts right under the cut-out with the top bar over it and runs down to just
+        // above the shutter (16:9); taller still (1.85 to 2.39) it goes on under the shutter row, to 50 dp below the
+        // shutter's centre, and only then narrows (Nov 18, both styles). The controls sit on it as in Photo.
         // Muted: no meter (an empty box says nothing); the histogram moves up into its place.
         val audioMeterOn = isVideo && LocalCaptureExtras.current.tools.audioMeter && !videoControls.audio.muted
-        // Classic (Nov 18, option 3): in Video the mode band is a slim one above the shutter row (the modes, or the
-        // open control in their place, as in Minimal), the readouts sit on it and the picture fits between the top bar
-        // and them, in its bezel: nothing covers it.
         val classic = isClassicStyle()
-        val classicVideo = classic && isVideo
-        val videoBand = 60.dp
         // The readout row (Nov 18, landscape v3): from just under the picture to the slot, so turned values fit.
         val rowHeight = 56.dp * s
-        val readoutsTopVideo = shutterCenter - 46.dp - videoBand - rowHeight
         val (videoRect, videoTop) = run {
-            val upper = if (classicVideo) minOf(cutoutTop + CaptureDimens.TopBarHeight + 8.dp, top) else cutoutTop + 2.dp
-            val lower = if (classicVideo) readoutsTopVideo - 8.dp else shutterCenter - 50.dp
+            val upper = cutoutTop + 2.dp
+            val lower = shutterCenter - 50.dp
             var w = frameWidth
             var h = w * videoAspect
-            if (h > lower - upper) { h = lower - upper; w = h / videoAspect }
+            val room = if (h <= lower - upper) lower - upper else minOf(shutterCenter + 50.dp, fullHeight) - upper
+            if (h > room) { h = room; w = h / videoAspect }
             DpSize(w, h) to (if (top + h <= lower) top else upper)
         }
-        // The readout row and the slot under it (modes, or the open control); Classic video moves them (above).
-        val rowY = if (classicVideo) readoutsTopVideo else bottom + 2.dp * s
+        // The readout row and the slot under it (modes, or the open control).
+        val rowY = bottom + 2.dp * s
         // Presets open: the strip takes the readout row and the slot (the exposure row and lens row hide, as stock).
         val presetsShown = presetsOpen && !recordingLock && !panoLocked
         val slotIdle = !(burst && state.burst.running) && !timedRun.running && !presetsShown &&
             currentKey == null && panel == null
         val slotY = rowY + rowHeight
-        val slotHeight = if (classicVideo) videoBand else 76.dp * s
-        // The lens row and the badges ride on the picture's foot: in Classic video that is the (shorter) video's.
-        val overlayTop = if (classicVideo) videoTop + videoRect.height - frame.height else top
+        val slotHeight = 76.dp * s
         val layoutWidth = maxWidth
-        val edgeInset = if (classicVideo) 4.dp else 7.dp
+        // Recording: what can't be used meanwhile (lens row, Look / AE, badge, modes, top bar, the shutter row's side
+        // buttons) dims so the picture and the exposure readouts stand out (Nov 18).
+        val recordingDim = if (isVideo && videoControls.recording) .3f else 1f
         // Video whose foot runs under the slot (Minimal's tall video): the slot steps in past the bottom corner marks
         // (22 dp) so the A button and the trailing one sit clear of them (Nov 18).
         val videoFoot = videoTop + videoRect.height
         val slotInset = if (isVideo && videoFoot > slotY && videoFoot - 22.dp < slotY + slotHeight)
             maxOf(12.dp, (layoutWidth - videoRect.width) / 2 + 22.dp + 6.dp) else 12.dp
         Box(Modifier.fillMaxSize()) {
-            if (classic) {
-                val density = androidx.compose.ui.platform.LocalDensity.current
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val classicPlan = if (!classic) null else {
                 val picSize = if (isVideo) videoRect else frame
                 val picTop = if (isVideo) videoTop else top
-                val plan = with(density) {
+                with(density) {
                     val left = ((layoutWidth - picSize.width) / 2).toPx()
                     val picture = androidx.compose.ui.geometry.Rect(left, picTop.toPx(), left + picSize.width.toPx(), (picTop + picSize.height).toPx())
                     val barTop = cutoutTop.toPx()
                     val barBottom = (cutoutTop + CaptureDimens.TopBarHeight).toPx()
                     ClassicBodyPlan(
                         topBar = barTop..barBottom,
-                        bezel = barBottom..(picture.bottom + 2.dp.toPx()),
+                        // Video: the bezel ends where the photo frame's does (leather beside a picture running lower).
+                        bezel = barBottom..minOf(picture.bottom + 2.dp.toPx(), (bottom + 2.dp).toPx()),
                         picture = picture,
                         readouts = (rowY + 2.dp).toPx()..(if (presetsShown) slotY + slotHeight else rowY + rowHeight).toPx(),
                         band = if (slotIdle) slotY.toPx()..(slotY + slotHeight).toPx() else null
                     )
                 }
-                X14uClassicBody(plan, Modifier.fillMaxSize())
             }
+            classicPlan?.let { X14uClassicBody(it, Modifier.fillMaxSize()) }
             CaptureViewfinder(
                 state = state,
                 dispatch = dispatch,
@@ -1148,11 +1144,13 @@ internal fun X14uCaptureLayout(
                     }
                 }
             )
+            // Classic video: the plates the picture runs under turn to smoked glass over it.
+            if (isVideo) classicPlan?.let { X14uClassicGlass(it, Modifier.fillMaxSize()) }
             // Video: the corner marks sit on the picture's own corners, all four (the open control steps in from the
             // bottom ones instead: slotInset).
             if (isVideo) FrameBrackets(Modifier.align(Alignment.TopCenter).offset(y = videoTop).size(videoRect))
 
-            Box(Modifier.align(Alignment.TopCenter).offset(y = overlayTop).size(frame)) {
+            Box(Modifier.align(Alignment.TopCenter).offset(y = top).size(frame)) {
                 if (!isVideo) FrameBrackets(Modifier.fillMaxSize())
                 val tools = LocalCaptureExtras.current.tools
                 if (!isVideo && !pano) X14uAspectMask(tools.photoAspect, Modifier.fillMaxSize())
@@ -1365,11 +1363,8 @@ internal fun X14uCaptureLayout(
                             setZoom(stop.zoom)
                         }
                     },
-                    // Classic video (Nov 18): the picture is narrower than the photo frame, so the Look and AE knobs go out
-                    // to the screen's edges, beside it rather than on it.
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                        .then(if (classicVideo) Modifier.requiredWidth(layoutWidth) else Modifier.fillMaxWidth())
-                        .padding(bottom = (31.dp * s - 18.dp).coerceAtLeast(4.dp), start = edgeInset, end = edgeInset)
+                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().alpha(recordingDim)
+                        .padding(bottom = (31.dp * s - 18.dp).coerceAtLeast(4.dp), start = 7.dp, end = 7.dp)
                 )
                 // Preset badge just above the Look button: text only, grey P0, accent P1…, "*" once changed.
                 if (activePreset != null) {
@@ -1384,16 +1379,16 @@ internal fun X14uCaptureLayout(
                             presetsOpen = open
                         },
                         modifier = Modifier.align(Alignment.BottomStart)
-                            .offset(x = if (classicVideo) -(layoutWidth - frame.width) / 2 else 0.dp)
+                            .alpha(recordingDim)
                             // With the strip open the lens row hides and the badge takes the Look button's place.
-                            .padding(start = edgeInset, bottom = (31.dp * s - 18.dp).coerceAtLeast(4.dp) +
+                            .padding(start = 7.dp, bottom = (31.dp * s - 18.dp).coerceAtLeast(4.dp) +
                                 if (presetsShown) 12.dp else 42.dp)
                     )
                 }
             }
             CaptureTopBar(
                 state, dispatch, onOpenSettings, videoLocked = recordingLock, showLog = false,
-                modifier = Modifier.padding(top = cutoutTop),
+                modifier = Modifier.padding(top = cutoutTop).alpha(recordingDim),
                 transparent = isVideo,
                 toggles = { X14uOptionToggles(quick, lensOptions, isVideo, enabled = !recordingLock, orientation, onQuickEvent, burst || pano) },
                 toggleCount = x14uOptionToggleCount(quick, lensOptions, isVideo),
@@ -1493,7 +1488,6 @@ internal fun X14uCaptureLayout(
             }
             // Classic video: the readouts dim while recording, so the picture stands out (the shutter row stays bright).
             val rowModifier = Modifier.fillMaxWidth().offset(y = rowY).height(rowHeight)
-                .alpha(if (classicVideo && videoControls.recording) .45f else 1f)
             if (presetsShown) {
                 Box(Modifier.fillMaxWidth().offset(y = rowY).height(slotY + slotHeight - rowY)) {
                     X14uPresetStrip(
@@ -1538,8 +1532,11 @@ internal fun X14uCaptureLayout(
                 } else if (key != null && !presetsShown) {
                     X14uEditorView(editorFor(key), orientation)
                 } else if (panel == null && !presetsShown) {
-                    X14uIdleControlArea(state, dispatch, videoControls, showNumbers, enabled = !recordingLock && !panoLocked,
-                        folded = classicVideo)
+                    // The diagnostics line (tap on the timer) stays bright while the mode names dim.
+                    Box(Modifier.fillMaxSize().alpha(if (videoControls.diagnostics && showNumbers) 1f else recordingDim),
+                        contentAlignment = Alignment.Center) {
+                        X14uIdleControlArea(state, dispatch, videoControls, showNumbers, enabled = !recordingLock && !panoLocked)
+                    }
                 }
             }
             X14uShutterRow(
@@ -1550,7 +1547,8 @@ internal fun X14uCaptureLayout(
                 pano = if (!pano) null else PanoShutter(panoShoot, if (panoSet.frames > 0) panoUndo else null, panoLocked),
                 burst = burst,
                 timed = if (timedReady || timedRun.running) TimedShutter(timedPress, timedRun.running) else null,
-                videoHold = if (videoLockSettings.enabled) VideoHold(videoLockSettings.holdMs, onVideoHoldLock) { videoHolding = it } else null
+                videoHold = if (videoLockSettings.enabled) VideoHold(videoLockSettings.holdMs, onVideoHoldLock) { videoHolding = it } else null,
+                sideAlpha = recordingDim
             )
             // Tools panel, stock size and place: full width less 10 dp a side, its bottom 67 dp above the shutter's
             // centre (over the exposure row and mode strip, within thumb reach). Above everything else.
@@ -3380,7 +3378,9 @@ private fun X14uShutterRow(
     /** Video: hold the record button to record with settings locked (null: tap only). */
     videoHold: VideoHold? = null,
     /** Timed burst on: the shutter starts the run (and stops it while it goes). */
-    timed: TimedShutter? = null
+    timed: TimedShutter? = null,
+    /** The side buttons' alpha (dim while recording; the record button stays bright). */
+    sideAlpha: Float = 1f
 ) {
     val isVideo = state.captureMode == CaptureMode.Video
     val extras = LocalCaptureExtras.current
@@ -3395,7 +3395,7 @@ private fun X14uShutterRow(
         if (!onFront && state.selectedLensId.isNotEmpty()) lastBack = state.selectedLensId
     }
     Row(modifier.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.weight(1f).alpha(sideAlpha), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
             Box(contentAlignment = Alignment.Center) {
                 // Burst: the last run's frames stack behind the newest one, with their count.
                 if (burst && state.burst.lastCount > 1 && !state.burst.running) {
@@ -3470,7 +3470,7 @@ private fun X14uShutterRow(
                 stopSquare = pano?.locked == true || timed?.running == true
             )
         }
-        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+        Box(Modifier.weight(1f).alpha(sideAlpha), contentAlignment = Alignment.Center) {
             if (isVideo) {
                 val muted = videoControls.audio.muted
                 // Spread like the thumbnail and camera button on the other side.

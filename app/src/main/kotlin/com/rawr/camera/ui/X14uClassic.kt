@@ -55,7 +55,7 @@ internal fun isClassicStyle(): Boolean = LocalControlSurfaceStyle.current == Con
 /** The textures, made on first use: brushed streaks (an overlay), leather grain, the knurl of the ruler window. */
 internal object ClassicTextures {
     val brushed: ShaderBrush by lazy { tiled(brushedBitmap(512, 192, 7)) }
-    val leather: ShaderBrush by lazy { tiled(leatherBitmap(240, 12, 11)) }
+    val leather: ShaderBrush by lazy { tiled(leatherBitmap(11)) }
     val knurl: ShaderBrush by lazy { tiled(knurlBitmap(7)) }
 
     private fun tiled(image: ImageBitmap) = ShaderBrush(ImageShader(image, TileMode.Repeated, TileMode.Repeated))
@@ -94,55 +94,92 @@ internal object ClassicTextures {
     }
 
     /**
-     * Pebbled leather: a jittered grid of grains (cellular noise, wrapping at the tile's edges), each a low dome lit
-     * from the top left, dark creases between them.
+     * Pebbled leather (v2, Nov 18, after the user's mockup): small irregular grains a little wider than tall (cellular
+     * noise over a 24 x 41 grid, wrapping at the tile's edges) as a height field: rounded domes steep at the grooves,
+     * each a little higher or lower, fine grain; softened once, then lit from the top left (diffuse plus a tight
+     * highlight on the shoulders), grooves kept dark, and a few broad lighter and darker patches. Sized from the
+     * screen density so the grain is the same in dp on any phone (tuned at 2.625 px per dp).
      */
-    private fun leatherBitmap(size: Int, cell: Int, seed: Int): ImageBitmap {
-        val n = size / cell
-        val fx = FloatArray(n * n)
-        val fy = FloatArray(n * n)
-        val tone = FloatArray(n * n)
-        for (j in 0 until n) for (i in 0 until n) {
-            fx[j * n + i] = (i + .15f + .7f * unit(i, j, seed)) * cell
-            fy[j * n + i] = (j + .15f + .7f * unit(i, j, seed + 1)) * cell
-            tone[j * n + i] = unit(i, j, seed + 2)
+    private fun leatherBitmap(seed: Int): ImageBitmap {
+        val k = (android.content.res.Resources.getSystem().displayMetrics.density / 2.625f).coerceIn(.5f, 2f)
+        val nx = 24
+        val ny = 41
+        val size = (288 * k).toInt().coerceAtLeast(96)
+        val sx = size.toFloat() / nx
+        val sy = size.toFloat() / ny
+        val fx = FloatArray(nx * ny)
+        val fy = FloatArray(nx * ny)
+        val lift = FloatArray(nx * ny)
+        for (j in 0 until ny) for (i in 0 until nx) {
+            fx[j * nx + i] = (i + .1f + .8f * unit(i, j, seed)) * sx
+            fy[j * nx + i] = (j + .1f + .8f * unit(i, j, seed + 1)) * sy
+            lift[j * nx + i] = unit(i, j, seed + 2)
         }
-        val pixels = IntArray(size * size)
+        val edge = FloatArray(size * size)
+        val height = FloatArray(size * size)
         for (y in 0 until size) for (x in 0 until size) {
-            val ci = x / cell
-            val cj = y / cell
+            val ci = (x / sx).toInt()
+            val cj = (y / sy).toInt()
             var d1 = Float.MAX_VALUE
             var d2 = Float.MAX_VALUE
-            var nx = 0f
-            var ny = 0f
             var bt = 0f
             for (dj in -1..1) for (di in -1..1) {
                 val i = ci + di
                 val j = cj + dj
-                val wi = (i + n) % n
-                val wj = (j + n) % n
-                val px = fx[wj * n + wi] + (i - wi) * cell
-                val py = fy[wj * n + wi] + (j - wj) * cell
-                val dx = x - px
-                val dy = y - py
+                val wi = ((i % nx) + nx) % nx
+                val wj = ((j % ny) + ny) % ny
+                val px = fx[wj * nx + wi] + (i - wi) * sx
+                val py = fy[wj * nx + wi] + (j - wj) * sy
+                val dx = (x - px) / sx
+                val dy = (y - py) / sy
                 val d = sqrt(dx * dx + dy * dy)
                 if (d < d1) {
                     d2 = d1
                     d1 = d
-                    nx = dx
-                    ny = dy
-                    bt = tone[wj * n + wi]
+                    bt = lift[wj * nx + wi]
                 } else if (d < d2) d2 = d
             }
-            val edge = d2 - d1
-            val dome = (1f - d1 / (cell * .8f)).coerceIn(0f, 1f)
-            // Lit from the top left: the side of a grain facing it is lighter.
-            val lit = (-(nx + ny) / (cell * 1.4f)).coerceIn(-1f, 1f)
-            var v = 15f + bt * 4f + dome * 9f + lit * 7f + (unit(x, y, seed + 5) - .5f) * 3f
-            // Soft creases between the grains.
-            if (edge < 1.2f) v *= .55f + .375f * edge
-            val g = v.toInt().coerceIn(0, 255)
-            pixels[y * size + x] = (0xFF shl 24) or (g shl 16) or (g shl 8) or g
+            val e = d2 - d1
+            val t = (e / .6f).coerceIn(0f, 1f)
+            edge[y * size + x] = e
+            height[y * size + x] = sqrt(t * (2f - t)) * (.7f + .3f * bt) + (unit(x, y, seed + 7) - .5f) * .08f
+        }
+        fun at(a: FloatArray, x: Int, y: Int) = a[((y + size) % size) * size + (x + size) % size]
+        val h = FloatArray(size * size)
+        for (y in 0 until size) for (x in 0 until size) {
+            var sum = 0f
+            for (b in -1..1) for (a in -1..1) sum += at(height, x + a, y + b)
+            h[y * size + x] = sum / 9f
+        }
+        val g = FloatArray(36) { unit(it % 6, it / 6, seed + 9) }
+        val pixels = IntArray(size * size)
+        for (y in 0 until size) for (x in 0 until size) {
+            val gx = (at(h, x + 1, y) - at(h, x - 1, y)) * 3f * k
+            val gy = (at(h, x, y + 1) - at(h, x, y - 1)) * 3f * k
+            val n = sqrt(gx * gx + gy * gy + 1f)
+            val diff = (gx * .55f + gy * .65f + .52f) / n
+            val c = diff.coerceIn(0f, 1f)
+            val c2 = c * c
+            val c4 = c2 * c2
+            val spec = c4 * c4
+            val hv = h[y * size + x]
+            val groove = (edge[y * size + x] / .12f).coerceIn(0f, 1f)
+            var v = 10f + 10f * hv + 34f * (diff - .3f).coerceIn(0f, 1f) + 60f * spec
+            v *= (.2f + .8f * groove) * (.45f + .55f * (hv * 1.6f).coerceIn(0f, 1f))
+            // Broad sheen: smooth noise on a 6 x 6 grid, wrapping.
+            val xx = x.toFloat() / size * 6f
+            val yy = y.toFloat() / size * 6f
+            val x0 = xx.toInt()
+            val y0 = yy.toInt()
+            var tx = xx - x0
+            var ty = yy - y0
+            tx = tx * tx * (3f - 2f * tx)
+            ty = ty * ty * (3f - 2f * ty)
+            fun gv(i: Int, j: Int) = g[(j % 6) * 6 + i % 6]
+            val sheen = (gv(x0, y0) * (1 - tx) + gv(x0 + 1, y0) * tx) * (1 - ty) + (gv(x0, y0 + 1) * (1 - tx) + gv(x0 + 1, y0 + 1) * tx) * ty
+            v *= .8f + .4f * sheen
+            val v8 = v.toInt().coerceIn(0, 255)
+            pixels[y * size + x] = (0xFF shl 24) or (v8 shl 16) or (v8 shl 8) or v8
         }
         return Bitmap.createBitmap(pixels, size, size, Bitmap.Config.ARGB_8888).asImageBitmap()
     }
@@ -397,5 +434,29 @@ internal fun X14uClassicBody(plan: ClassicBodyPlan, modifier: Modifier) {
                 pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx()))
             )
         }
+    })
+}
+
+/**
+ * Classic video: where a plate (top bar, readouts, mode band) crosses the picture running under it, the plate turns to
+ * smoked glass over it: its colour at half strength, the brushing faint, and its light top edge.
+ */
+@Composable
+internal fun X14uClassicGlass(plan: ClassicBodyPlan, modifier: Modifier) {
+    Box(modifier.drawBehind {
+        val p = plan.picture
+        fun glass(range: ClosedFloatingPointRange<Float>, color: Color) {
+            val top = maxOf(range.start, p.top)
+            val bottom = minOf(range.endInclusive, p.bottom)
+            if (bottom <= top) return
+            val o = Offset(p.left, top)
+            val sz = Size(p.width, bottom - top)
+            drawRect(color.copy(alpha = .5f), o, sz)
+            drawRect(ClassicTextures.brushed, o, sz, alpha = .6f)
+            if (range.start >= p.top) drawRect(Color.White.copy(alpha = .07f), o, Size(p.width, 1.dp.toPx()))
+        }
+        glass(plan.topBar, ClassicColors.MetalTop)
+        glass(plan.readouts, ClassicColors.Metal)
+        plan.band?.let { glass(it, ClassicColors.MetalDark) }
     })
 }
