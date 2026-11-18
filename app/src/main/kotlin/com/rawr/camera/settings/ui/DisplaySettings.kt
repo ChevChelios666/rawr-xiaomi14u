@@ -190,7 +190,7 @@ internal fun ControlStyleSettings(state: SettingsUiState, dispatch: SettingsDisp
             SettingDivider()
             SettingsSelectionRow(
                 title = "Minimal",
-                supportingText = "Black, as before.",
+                supportingText = "Simply black.",
                 selected = state.values.controlSurfaceStyle != ControlSurfaceStyle.Classic,
                 onClick = {
                     haptics.detent()
