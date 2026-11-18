@@ -97,10 +97,11 @@ internal object ClassicTextures {
     }
 
     /**
-     * Grained leather (v5, Nov 18, after the user's mockup): irregular plates about 8.5 x 6 dp split by a network of
+     * Grained leather (v6, Nov 18, after the user's mockup): irregular plates about 8.5 x 6 dp split by a network of
      * creases (cellular noise over a 13 x 18 grid, its lookup warped so the creases wander, wrapping at the tile's
      * edges), a raised lip along each crease, each plate gently domed, crinkle over everything (two octaves of periodic
-     * value noise at 1.3 and 0.65 dp), softened once; lit from the top left (diffuse plus soft glints), creases dark, a
+     * value noise at 1.3 and 0.65 dp), softened twice; lit from the top left (diffuse plus soft glints), creases shallow and
+     * only a little darker (v5 read as a stone wall), a
      * few broad lighter and darker patches. Sized in dp from the screen density, so it looks the same on any phone.
      */
     private fun leatherBitmap(seed: Int): ImageBitmap {
@@ -153,19 +154,23 @@ internal object ClassicTextures {
                 } else if (d < d2) d2 = d
             }
             val e = d2 - d1
-            val c = smooth((e / .13f).coerceIn(0f, 1f))
+            val c = smooth((e / .22f).coerceIn(0f, 1f))
             val lipT = (e - .11f) / .07f
             val lip = exp(-lipT * lipT)
             crease[o] = c
-            height[o] = .45f * c + .22f * lip + .3f * (1f - d1 * d1).coerceIn(0f, 1f) + .06f * bt + .22f * fine[o] + .1f * finer[o]
+            height[o] = .3f * c + .12f * lip + .3f * (1f - d1 * d1).coerceIn(0f, 1f) + .06f * bt + .22f * fine[o] + .1f * finer[o]
         }
-        // Softened once (3 x 3, wrapping): the user found the grain too sharp.
-        val soft = FloatArray(w * h)
-        for (y in 0 until h) for (x in 0 until w) {
-            var sum = 0f
-            for (b in -1..1) for (a in -1..1) sum += height[((y + b + h) % h) * w + (x + a + w) % w]
-            soft[y * w + x] = sum / 9f
+        // Softened twice (3 x 3, wrapping): the user found the grain too sharp.
+        fun blur(src: FloatArray): FloatArray {
+            val out = FloatArray(w * h)
+            for (y in 0 until h) for (x in 0 until w) {
+                var sum = 0f
+                for (b in -1..1) for (a in -1..1) sum += src[((y + b + h) % h) * w + (x + a + w) % w]
+                out[y * w + x] = sum / 9f
+            }
+            return out
         }
+        val soft = blur(blur(height))
         val sheen = valueNoise(w, h, 4, 4, seed + 9)
         val k = 4f * density / 3.5f
         val pixels = IntArray(w * h)
@@ -179,7 +184,7 @@ internal object ClassicTextures {
             val c2 = c1 * c1
             val c4 = c2 * c2
             var v = 14f + 10f * soft[o] + 30f * (diff - .45f).coerceIn(0f, 1f) + 70f * c4 * c2
-            v *= .5f + .5f * crease[o]
+            v *= .8f + .2f * crease[o]
             v *= 1f + .35f * sheen[o]
             val v8 = v.toInt().coerceIn(0, 255)
             pixels[o] = (0xFF shl 24) or (v8 shl 16) or (v8 shl 8) or v8
