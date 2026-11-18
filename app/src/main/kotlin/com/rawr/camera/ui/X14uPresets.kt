@@ -38,6 +38,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -88,6 +91,65 @@ internal fun X14uPresetBadge(
             maxLines = 1,
             modifier = Modifier.uprightLayoutInLandscape(orientation)
         )
+    }
+}
+
+/**
+ * The active preset under the shutter row (Nov 19): its number and name ("*" once changed) on a small nameplate,
+ * brushed metal in Classic / Bronze, a dark pill in Minimal. Tap = the preset strip. In landscape only the number,
+ * turned with the phone.
+ */
+@Composable
+internal fun X14uPresetPlate(
+    label: String,
+    name: String,
+    accent: Boolean,
+    enabled: Boolean,
+    orientation: Orientation,
+    onTap: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val classic = isClassicStyle()
+    val shape = RoundedCornerShape(if (classic) 5.dp else 12.dp)
+    val engraved = if (classic) ClassicColors.Engraved else Color.White
+    val landscape = orientation == Orientation.Landscape
+    Row(
+        modifier
+            .height(26.dp)
+            .widthIn(min = 44.dp, max = 180.dp)
+            .clip(shape)
+            .then(
+                if (classic) Modifier.drawBehind {
+                    drawMetalPlate(Offset.Zero, size, ClassicColors.metal(0x2A))
+                } else Modifier.background(Color.White.copy(alpha = .09f))
+            )
+            .clickable(enabled = enabled, onClick = onTap)
+            .padding(horizontal = 10.dp)
+            .testTag("x14u_preset_badge")
+            .semantics { contentDescription = "Preset $label $name. Tap for presets." },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Text(
+            label,
+            fontFamily = PresetMono,
+            fontSize = dpText(12.5f),
+            fontWeight = FontWeight.Medium,
+            color = if (accent) CaptureColors.Accent else engraved.copy(alpha = .7f),
+            maxLines = 1,
+            modifier = Modifier.uprightLayoutInLandscape(orientation)
+        )
+        if (!landscape && name.isNotBlank()) {
+            Spacer(Modifier.width(8.dp))
+            Text(
+                name,
+                fontFamily = X14uFont,
+                fontSize = dpText(12.5f),
+                color = engraved.copy(alpha = .9f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 

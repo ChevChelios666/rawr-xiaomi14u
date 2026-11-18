@@ -36,11 +36,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.rawr.camera.architecture.CaptureDispatch
-import com.rawr.camera.architecture.SetFocusMode
 import com.rawr.camera.model.BurstUiState
-import com.rawr.camera.model.CaptureUiState
-import com.rawr.camera.model.FocusMode
 import com.rawr.camera.model.Orientation
 
 /**
@@ -142,39 +138,12 @@ internal fun X14uBurstShutter(
  */
 @Composable
 internal fun X14uBurstToggles(
-    state: CaptureUiState,
-    dispatch: CaptureDispatch,
     enabled: Boolean,
     pillModifier: Modifier
 ) {
     val format by com.rawr.camera.burst.BurstSettings.format.collectAsState()
-    val focus = state.focus.mode
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-        // Always lit (each is a choice): the icon says which.
-        CompactSidePill(
-            icon = when (focus) {
-                FocusMode.Af -> X14uIcons.FocusFollow
-                FocusMode.AfLock -> X14uIcons.FocusLock
-                FocusMode.Mf -> X14uIcons.FocusManual
-            },
-            label = when (focus) {
-                FocusMode.Af -> "AF-C"
-                FocusMode.AfLock -> "AF-L"
-                FocusMode.Mf -> "MF"
-            },
-            active = true,
-            testTag = "capture_x14u_burst_focus",
-            contentDescription = when (focus) {
-                FocusMode.Af -> "Focus follows the subject during the burst. Tap to hold it."
-                FocusMode.AfLock -> "Focus held for the burst. Tap to follow the subject."
-                FocusMode.Mf -> "Manual focus. Tap for focus that follows the subject."
-            },
-            onClick = {
-                if (enabled) dispatch(SetFocusMode(if (focus == FocusMode.Af) FocusMode.AfLock else FocusMode.Af))
-            },
-            minWidth = SidePillWidth,
-            modifier = pillModifier
-        )
+        // Focus is the Pro row's F cell in Burst (Nov 19); this keeps the file format.
         // Always lit (each is a choice): one sheet = JPEG, two = JPEG + DNG, sensor pattern = RAW only.
         CompactSidePill(
             icon = when (format) {

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -250,9 +251,25 @@ internal fun X14uToolsPanel(
     }
     val rows = tiles.chunked(4)
     val shape = RoundedCornerShape(14.dp)
+    // Classic / Bronze (Nov 19): smoked glass in a thin metal rim, engraved grooves between the tiles, the open
+    // tile's choices in a recessed window as the rulers. Minimal: the plain dark sheet.
+    val classic = isClassicStyle()
+    val ink = if (classic) ClassicColors.KnobText else Color.White
+    val groove: @Composable (vertical: Boolean) -> Unit = { vertical ->
+        if (classic) {
+            if (vertical) Row(Modifier.height(tileHeight).padding(vertical = 8.dp)) {
+                Box(Modifier.width(1.dp).fillMaxHeight().background(Color.Black.copy(alpha = .85f)))
+                Box(Modifier.width(1.dp).fillMaxHeight().background(Color.White.copy(alpha = .06f)))
+            } else Column(Modifier.fillMaxWidth().padding(horizontal = 6.dp)) {
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Color.Black.copy(alpha = .85f)))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = .06f)))
+            }
+        } else if (vertical) Box(Modifier.width(0.5.dp).height(tileHeight).background(Color.White.copy(alpha = .08f)))
+        else Box(Modifier.fillMaxWidth().height(0.5.dp).background(Color.White.copy(alpha = .08f)))
+    }
     Column(
         modifier
-            .background(Color(0xF2282421), shape)
+            .then(if (classic) Modifier.classicPanel() else Modifier.background(Color(0xF2282421), shape))
             .pointerInput(Unit) { detectTapGestures { } }
             .pointerInput(Unit) {
                 var travel = 0f
@@ -309,7 +326,10 @@ internal fun X14uToolsPanel(
                 else -> Triple(WbPresets.map { it.label }, WbPresets.indexOf(wb)) { i: Int -> dispatch(SetWhiteBalanceMode(WbPresets[i])) }
             }
             Row(
-                Modifier.fillMaxWidth().height(tileHeight).horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
+                Modifier.fillMaxWidth().height(tileHeight)
+                    .then(if (classic) Modifier.padding(horizontal = 8.dp, vertical = if (orientation == Orientation.Landscape) 6.dp else 16.dp).classicWindow(knurlWidth = 10.dp)
+                        .padding(horizontal = 13.dp) else Modifier)
+                    .horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
@@ -322,7 +342,7 @@ internal fun X14uToolsPanel(
                         fontSize = dpText(if (orientation == Orientation.Landscape) 13f else 16f),
                         maxLines = 1,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        color = if (on) CaptureColors.Accent else Color.White.copy(alpha = .9f),
+                        color = if (on) CaptureColors.Accent else ink.copy(alpha = .9f),
                         // Landscape: each choice turns as a whole (long names end in … within the row's height).
                         modifier = Modifier
                             .uprightLayoutInLandscape(orientation)
@@ -345,8 +365,8 @@ internal fun X14uToolsPanel(
             if (r == choiceRowIndex) choiceRow() else Row(Modifier.fillMaxWidth()) {
                 (0 until 4).forEach { c ->
                     val tile = row.getOrNull(c)
-                    // Vertical hairlines between columns, matching the horizontal ones between rows.
-                    if (c > 0) Box(Modifier.width(0.5.dp).height(tileHeight).background(Color.White.copy(alpha = .08f)))
+                    // Vertical hairlines (Classic: grooves) between columns, matching the ones between rows.
+                    if (c > 0) groove(true)
                     Box(Modifier.weight(1f).height(tileHeight)) {
                         if (tile != null) X14uTileView(tile, open = tile.key == choice, orientation = orientation) {
                             haptics.selection()
@@ -355,16 +375,18 @@ internal fun X14uToolsPanel(
                     }
                 }
             }
-            if (r < shownRows.size - 1) Box(Modifier.fillMaxWidth().height(0.5.dp).background(Color.White.copy(alpha = .08f)))
+            if (r < shownRows.size - 1) groove(false)
         }
     }
 }
 
 @Composable
 private fun X14uTileView(tile: X14uTile, open: Boolean, orientation: Orientation, onTap: () -> Unit) {
+    val classic = isClassicStyle()
+    val ink = if (classic) ClassicColors.KnobText else Color.White
     val color = when {
         open || tile.on -> CaptureColors.Accent
-        else -> Color.White.copy(alpha = .92f)
+        else -> ink.copy(alpha = .92f)
     }
     Box(
         Modifier
@@ -391,10 +413,15 @@ private fun X14uTileView(tile: X14uTile, open: Boolean, orientation: Orientation
                 lineHeight = dpText(if (landscape) 13f else 15f),
                 maxLines = 2,
                 textAlign = TextAlign.Center,
-                color = if (tile.on || open) CaptureColors.Accent else Color.White.copy(alpha = .75f),
+                color = if (tile.on || open) CaptureColors.Accent else ink.copy(alpha = .75f),
                 modifier = Modifier.padding(top = 7.dp, start = 4.dp, end = 4.dp)
             )
         }
+        // Classic: an on tile also gets an index dot at its foot, as the A·M·S·I drum's marks.
+        if (classic && tile.on) Box(
+            Modifier.align(Alignment.BottomCenter).padding(bottom = 6.dp).size(4.dp)
+                .background(CaptureColors.Accent, androidx.compose.foundation.shape.CircleShape)
+        )
     }
 }
 

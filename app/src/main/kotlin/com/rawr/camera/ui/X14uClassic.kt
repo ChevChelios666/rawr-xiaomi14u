@@ -406,6 +406,28 @@ internal fun DrawScope.drawHueWheel(center: Offset, radius: Float, dim: Boolean)
 }
 
 /**
+ * Classic / Bronze sheets over the body (the swipe-down tools panel, Nov 19): smoked glass in a thin brushed rim, a
+ * shadow under the rim's top edge; the content draws over it.
+ */
+internal fun Modifier.classicPanel(): Modifier = drawWithContent {
+    val rim = 3.dp.toPx()
+    drawRoundRect(
+        Brush.verticalGradient(listOf(0x4A, 0x2A, 0x16).map { ClassicColors.metal(it) }),
+        cornerRadius = CornerRadius(14.dp.toPx())
+    )
+    val pane = Size(size.width - rim * 2, size.height - rim * 2)
+    drawRoundRect(
+        if (ClassicColors.bronze) Color(0xEB0C0906) else Color(0xEB090908),
+        Offset(rim, rim), pane, CornerRadius(11.dp.toPx())
+    )
+    drawRect(
+        Brush.verticalGradient(listOf(Color.Black.copy(alpha = .55f), Color.Transparent), rim, rim + 10.dp.toPx()),
+        Offset(rim, rim), Size(pane.width, 10.dp.toPx())
+    )
+    drawContent()
+}
+
+/**
  * The ruler's window, after the user's mockup: a metal rim, then a recess where the scale turns on a drum (shaded
  * darker toward both ends, as a cylinder), knurled rollers at the ends, a soft shadow under the rim at the top, a
  * faint reflection on the glass and a hairline catch-light along the bottom.

@@ -521,7 +521,8 @@ internal fun X14uCaptureLayout(
             kotlinx.coroutines.delay(250L)
         }
     }
-    val simplePhoto = !isVideo && (!LocalCaptureExtras.current.proUi || pano)
+    // Photo's own row (S · A · I); Pro, Pano and Burst use the Pro row (Nov 19).
+    val simplePhoto = !isVideo && !LocalCaptureExtras.current.proUi && !pano && !burst
     // Lens pill memory: the focal length last in use per mode (digital ones too) comes back when the screen starts,
     // and a hidden lens is never landed on at its own focal length (start, mode change, a lens picked elsewhere): the
     // nearest focal length on the pill takes its place. Pinch and the ruler are left alone.
@@ -652,6 +653,12 @@ internal fun X14uCaptureLayout(
         panoDropSingle()
         panoSet.end(panoState, dispatch)
     }
+    // Each frame keeps a small copy of the viewfinder for the strip under it.
+    val panoShootNow: () -> Unit = {
+        panoSet.shoot(panoMotion(), dispatch)
+        val n = panoSet.frames
+        preview.snapshot { bitmap -> panoSet.putThumb(n, bitmap) }
+    }
     // The shutter starts a set (frame 1 after the locks settle) and stops it; the frames between take themselves.
     val panoShoot: () -> Unit = shoot@{
         if (recordingLock || panoSet.arming) return@shoot
@@ -659,10 +666,10 @@ internal fun X14uCaptureLayout(
         panoSet.start(panoState, dispatch, com.rawr.camera.settings.model.ZoomChain.factorOf(panoState.selectedLensId) ?: 1f)
         panoScope.launch {
             kotlinx.coroutines.delay(400L)
-            if (panoSet.arming) panoSet.shoot(panoMotion(), dispatch)
+            if (panoSet.arming) panoShootNow()
         }
     }
-    val panoFrame: () -> Unit = { if (panoSet.frames > 0) panoSet.shoot(panoMotion(), dispatch) }
+    val panoFrame: () -> Unit = { if (panoSet.frames > 0) panoShootNow() }
     val panoUndo: () -> Unit = { panoSet.undo(panoState, dispatch)?.let(panoExtras.onPanoUndo) }
     // The grip's full press does what the shutter does here (start / stop a timed burst, a Pano frame).
     val gripShutter by rememberUpdatedState(
@@ -928,26 +935,9 @@ internal fun X14uCaptureLayout(
                 }
                 owners.mapNotNull { k -> all.firstOrNull { it.key == k } } + all.filter { it.key == "f" }
             } else all
-            // Pano: its own settings in the row (sweep, overlap, shape, stop at), a divider, then the exposure cells
-            // (EV in A) and F. The A·M·S·I pill and S / ISO stay out: frame 1 locks them for the set.
-            // Option A (Nov 16): MODE (A·M·S·I) after the divider, then that mode's cells as in Photo (A: EV, S: S EV,
-            // I: ISO EV, M: S ISO) and F. Overlap and projection are tiles in the swipe-down panel.
-            // F only on a lens with an aperture choice (1x): elsewhere its fixed f-number just took room (Nov 17), so
-            // those lenses' rows keep the normal text size.
-            val hasAperture = apertureRow(lensOptions) >= 0
-            cells = if (pano) panoCells(panoSet) +
-                (listOf(X14uCell(PANO_MODE_KEY, state.exposureControl.mode.shortLabel, "MODE", groupStart = true)) +
-                    photoCells.filter { hasAperture || it.key != "f" })
-                    .map { if (panoLocked) it.copy(enabled = false) else it }
-            else photoCells
+            cells = photoCells
             editorFor = { key ->
-                if (key == PANO_MODE_KEY) {
-                    val modes = PHOTO_EXPOSURE_MODES.map { it.first }.filter { it in state.capabilities.supportedExposureModes }
-                    X14uEditor.Chips(modes.map { it.shortLabel }, modes.indexOf(state.exposureControl.mode), enabled = !panoLocked) { i ->
-                        if (modes[i] != state.exposureControl.mode) dispatch(SetExposureMode(modes[i]))
-                    }
-                } else if (key.startsWith("pano.")) panoEditor(key, panoSet)
-                else if (key == ZOOM_KEY) zoomRuler(zoom, zoomChain, setZoom)
+                if (key == ZOOM_KEY) zoomRuler(zoom, zoomChain, setZoom)
                 else if (key == PHOTO_FOCUS_KEY) photoFocusEditor(state, dispatch, onMfTouch)
                 else if (key == "f" && fiftyMp && apertureRow(lensOptions) >= 0) X14uEditor.Message("f/2 while 50 MP is on")
                 else exposureEditor(key, state, dispatch, lensOptions, recordingLock, onQuickEvent, wbTint, { wbTint = !wbTint }, onMfTouch)
@@ -1107,6 +1097,11 @@ internal fun X14uCaptureLayout(
         val rowY = bottom + 2.dp * s
         // Presets open: the strip takes the readout row and the slot (the exposure row and lens row hide, as stock).
         val presetsShown = presetsOpen && !recordingLock && !panoLocked
+        // Pano set (Nov 19): the panorama forming takes the readout row and the slot.
+        val panoStripShown = pano && panoSet.frames > 0
+        // The preset nameplate goes under the shutter row when there's room (Nov 19), else above the Look button.
+        val plateCenter = minOf(shutterCenter + 58.dp, fullHeight - 24.dp)
+        val plateBelow = plateCenter - 13.dp >= shutterCenter + 40.dp
         val slotIdle = !(burst && state.burst.running) && !timedRun.running && !presetsShown &&
             currentKey == null && panel == null
         val slotY = rowY + rowHeight
@@ -1135,7 +1130,7 @@ internal fun X14uCaptureLayout(
                         // Video: the bezel ends where the photo frame's does (leather beside a picture running lower).
                         bezel = barBottom..minOf(picture.bottom + 2.dp.toPx(), (bottom + 2.dp).toPx()),
                         picture = picture,
-                        readouts = (rowY + 2.dp).toPx()..(if (presetsShown) slotY + slotHeight else rowY + rowHeight).toPx(),
+                        readouts = (rowY + 2.dp).toPx()..(if (presetsShown || panoStripShown) slotY + slotHeight else rowY + rowHeight).toPx(),
                         band = if (slotIdle) slotY.toPx()..(slotY + slotHeight).toPx() else null
                     )
                 }
@@ -1369,8 +1364,9 @@ internal fun X14uCaptureLayout(
                     modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().alpha(recordingDim)
                         .padding(bottom = (31.dp * s - 18.dp).coerceAtLeast(4.dp), start = 7.dp, end = 7.dp)
                 )
-                // Preset badge just above the Look button: text only, grey P0, accent P1…, "*" once changed.
-                if (activePreset != null) {
+                // Preset badge just above the Look button: text only, grey P0, accent P1…, "*" once changed (only
+                // where there's no room for the nameplate under the shutter row).
+                if (activePreset != null && !plateBelow) {
                     X14uPresetBadge(
                         label = activePreset.label + if (presetChanged) "*" else "",
                         accent = !activePreset.isBaseline,
@@ -1505,7 +1501,10 @@ internal fun X14uCaptureLayout(
                         onMove = presetActions::move
                     )
                 }
-            } else if (panel == null && simplePhoto && !pano) {
+            } else if (panoStripShown) {
+                // Pano set: the panorama forming takes the readout row and the modes (both locked meanwhile).
+                X14uPanoStrip(panoSet, orientation, Modifier.fillMaxWidth().offset(y = rowY).height(slotY + slotHeight - rowY))
+            } else if (panel == null && simplePhoto) {
                 // Shutter and ISO the camera picks (both in A, ISO in S, shutter in I) show dim in their places; tapping
                 // one switches to S or I with its editor open.
                 val live = exposureCells(state, quick, lensOptions, fiftyMp)
@@ -1532,6 +1531,8 @@ internal fun X14uCaptureLayout(
                     X14uBurstCounter(state.burst, orientation)
                 } else if (timedRun.running) {
                     X14uTimedCounter(timedRun, timedNow, orientation)
+                } else if (panoStripShown) {
+                    Unit
                 } else if (key != null && !presetsShown) {
                     X14uEditorView(editorFor(key), orientation)
                 } else if (panel == null && !presetsShown) {
@@ -1553,6 +1554,23 @@ internal fun X14uCaptureLayout(
                 videoHold = if (videoLockSettings.enabled) VideoHold(videoLockSettings.holdMs, onVideoHoldLock) { videoHolding = it } else null,
                 sideAlpha = recordingDim
             )
+            if (activePreset != null && plateBelow) {
+                Box(Modifier.fillMaxWidth().offset(y = plateCenter - 13.dp).height(26.dp), contentAlignment = Alignment.Center) {
+                    X14uPresetPlate(
+                        label = activePreset.label + if (presetChanged) "*" else "",
+                        name = activePreset.name,
+                        accent = !activePreset.isBaseline,
+                        enabled = !recordingLock && !panoLocked,
+                        orientation = orientation,
+                        onTap = {
+                            val open = !presetsOpen
+                            closeAll()
+                            presetsOpen = open
+                        },
+                        modifier = Modifier.alpha(recordingDim)
+                    )
+                }
+            }
             // Tools panel, stock size and place: full width less 10 dp a side, its bottom 67 dp above the shutter's
             // centre (over the exposure row and mode strip, within thumb reach). Above everything else.
             Box(
@@ -2499,38 +2517,6 @@ private fun exposureEditor(
     }
     "wb" -> wbRuler(state, dispatch, wbTint, onToggleWbTint)
     else -> focusRuler(state, dispatch, onMfTouch)
-}
-
-private const val PANO_MODE_KEY = "pano.mode"
-
-/**
- * Pano's cells (Nov 16 mockup, option A): SWEEP (Wide), SHAPE, STOP AT (Wide); during a set FRAMES first and the
- * settings dimmed (frame 1 locked them). Each opens its choices where the mode strip is. Overlap is a panel tile.
- */
-private fun panoCells(set: PanoSet): List<X14uCell> {
-    val wide = set.shape == PanoShape.Wide
-    val locked = set.inSet
-    return buildList {
-        if (locked) add(X14uCell("pano.frames", if (set.finite) "${set.frames}/${set.targets.size}" else "${set.frames}", "FRAMES"))
-        if (wide) add(X14uCell("pano.dir", set.screenDirection.arrow, "SWEEP", enabled = !locked))
-        if (!locked) add(X14uCell("pano.shape", set.shape.label, "SHAPE"))
-        if (wide) add(X14uCell("pano.stop", if (set.stopAt == 0) "Free" else "${set.stopAt}°", "STOP AT", enabled = !locked))
-    }
-}
-
-private val PANO_STOPS = listOf(90, 180, 360, 0)
-
-private fun panoEditor(key: String, set: PanoSet): X14uEditor = when (key) {
-    "pano.dir" -> X14uEditor.Chips(PanoDirection.entries.map { set.onScreen(it).arrow }, set.direction.ordinal,
-        enabled = !set.inSet) { i -> set.direction = PanoDirection.entries[i] }
-    "pano.overlap" -> X14uEditor.Chips(listOf("20%", "30%", "40%"), listOf(20, 30, 40).indexOf(set.overlap).coerceAtLeast(0),
-        enabled = !set.inSet) { i -> set.overlap = listOf(20, 30, 40)[i] }
-    "pano.shape" -> X14uEditor.Chips(PanoShape.entries.map { it.label }, set.shape.ordinal, enabled = !set.inSet) { i ->
-        set.shape = PanoShape.entries[i]
-    }
-    "pano.stop" -> X14uEditor.Chips(PANO_STOPS.map { if (it == 0) "Free" else "$it°" },
-        PANO_STOPS.indexOf(set.stopAt).coerceAtLeast(0), enabled = !set.inSet) { i -> set.stopAt = PANO_STOPS[i] }
-    else -> X14uEditor.Message(if (set.finite) "${set.frames} of ${set.targets.size} frames" else "${set.frames} frames")
 }
 
 private fun exposureRuler(parameter: ExposureParameter, state: CaptureUiState, dispatch: CaptureDispatch): X14uEditor {
@@ -3605,7 +3591,7 @@ private fun X14uShutterRow(
                     )
                 }
             } else if (burst) {
-                X14uBurstToggles(state, dispatch, enabled = !state.burst.running, pillModifier = turn)
+                X14uBurstToggles(enabled = !state.burst.running, pillModifier = turn)
             } else {
                 // Locked during a pano set: every frame keeps frame 1's merge and look.
                 Box(Modifier.fillMaxWidth().alpha(if (pano?.locked == true) .45f else 1f)) {
