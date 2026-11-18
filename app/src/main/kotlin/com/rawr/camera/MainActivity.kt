@@ -453,7 +453,8 @@ class MainActivity : ComponentActivity() {
     private fun openGalleryImage(uri: Uri) {
         val intent =
             Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "image/jpeg")
+                // A video (Nov 18: the newest capture can be one) opens as a video.
+                setDataAndType(uri, runCatching { contentResolver.getType(uri) }.getOrNull()?.takeIf { it.startsWith("video/") } ?: "image/jpeg")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
         try {

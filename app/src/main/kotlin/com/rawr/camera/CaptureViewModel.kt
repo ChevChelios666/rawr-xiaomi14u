@@ -10,6 +10,7 @@ import com.rawr.camera.architecture.SyncToneControls
 import com.rawr.camera.integration.DeviceLensDefaults
 import com.rawr.camera.settings.model.effectiveLensProfiles
 import com.rawr.camera.settings.model.selectOption
+import com.rawr.camera.settings.model.withRunAsRowsOff
 import com.rawr.camera.settings.model.runAsTarget
 import com.rawr.camera.integration.NativeCaptureScreenController
 import com.rawr.camera.integration.RawPreviewCoordinator
@@ -931,8 +932,11 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             f?.let { lens.name to it }
         }.toMap()
 
-    val viewfinderQuick: StateFlow<ViewfinderQuickState> = settingsEditor.state
-        .map { it.withLensOverrides().toViewfinderQuickState(DeviceLensDefaults.lenses).copy(nativeApertures = nativeApertures(it)) }
+    val viewfinderQuick: StateFlow<ViewfinderQuickState> = kotlinx.coroutines.flow.combine(settingsEditor.state, panoFlow, burstFlow) { s, pano, burst ->
+        // Pano / Burst: the lens options as those modes run them ("50 mp" off, so the aperture is free).
+        val values = if (pano || burst) s.copy(lensProfiles = s.lensProfiles?.withRunAsRowsOff()) else s
+        values.withLensOverrides(runAs = !pano && !burst).toViewfinderQuickState(DeviceLensDefaults.lenses).copy(nativeApertures = nativeApertures(s))
+    }
         .distinctUntilChanged()
         .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly,
             latestSettings.toViewfinderQuickState(DeviceLensDefaults.lenses))
@@ -1018,8 +1022,10 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             viewModelScope,
             // Burst runs single frames: no multiframe ring, merge-count noise limit or HDR+ Bracketed headroom
             // (that one darkens the viewfinder the burst frames come from) carried over from Photo.
-            kotlinx.coroutines.flow.combine(effectiveValues, burstFlow) { values, burst ->
-                if (burst) values.copy(experimentalMultiframeEnabled = false) else values
+            kotlinx.coroutines.flow.combine(effectiveValues, burstFlow, panoFlow) { values, burst, pano ->
+                val shots = if (burst) values.copy(experimentalMultiframeEnabled = false) else values
+                // Pano and Burst shoot 12 MP frames: a "50 mp" pick from Photo is off there (its aperture lock too).
+                if (burst || pano) shots.copy(lensProfiles = shots.lensProfiles?.withRunAsRowsOff()) else shots
             },
             { latestSettings }, previewCoordinator, controller
         )
@@ -1037,6 +1043,11 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         validateAccess = cameraLocation::validateAccess,
         admitGps = { if (latestSettings.locationTagging) cameraLocation.snapshot() else null },
         onSaved = { recorder ->
+            // The new video becomes the gallery thumbnail (Nov 18: videos never showed there).
+            viewModelScope.launch {
+                kotlinx.coroutines.delay(600)
+                refreshLatestGalleryImage()
+            }
             if (recordingOptions.inspectOutput) {
                 recordingOptions = recordingOptions.copy(inspectOutput = false)
                 recordingBackend.inspectSaved(recorder)
@@ -1347,7 +1358,12 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             })
         is CaptureQuickEvent.SelectLensOption -> lensProfiles?.let { lenses ->
             copy(lensProfiles = lenses.map { lens ->
-                if (lens.name == event.lensId) lens.selectOption(event.row, event.choice) else lens
+                if (lens.name != event.lensId) lens
+                // Pano / Burst run "50 mp" off: an aperture picked there doesn't turn Photo's 50 mp off.
+                else if (panoFlow.value || burstFlow.value) lens.copy(options = lens.options.mapIndexed { i, o ->
+                    if (i == event.row && event.choice in o.choices.indices) o.copy(selected = event.choice) else o
+                })
+                else lens.selectOption(event.row, event.choice)
             })
         } ?: this
         else -> this

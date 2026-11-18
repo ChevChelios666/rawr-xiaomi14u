@@ -14,11 +14,42 @@ class GalleryMediaStore(private val context: Context) {
     }
 
     /**
+     * X14U: the newest Rawr capture of either kind: [findLatestRawrPhoto] or the newest RAWR_ video, whichever was
+     * added last (Nov 18: videos never showed as the thumbnail).
+     */
+    fun findLatestRawrImage(): Uri? {
+        val photo = findLatestRawrPhoto()
+        val video = findLatestRawrVideo() ?: return photo
+        if (photo == null) return video.first
+        return if (video.second > addedSeconds(photo)) video.first else photo
+    }
+
+    /** The newest RAWR_ video (MP4 or MOV, published) and when it was added (seconds). */
+    private fun findLatestRawrVideo(): Pair<Uri, Long>? {
+        val collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        val name = MediaStore.Video.Media.DISPLAY_NAME
+        return runCatching {
+            context.contentResolver.query(
+                collection,
+                arrayOf(MediaStore.Video.Media._ID, MediaStore.Video.Media.DATE_ADDED),
+                "($name LIKE ? OR $name LIKE ?) AND ${MediaStore.Video.Media.IS_PENDING} = 0",
+                arrayOf("RAWR_%.mp4", "RAWR_%.mov"),
+                "${MediaStore.Video.Media.DATE_ADDED} DESC, ${MediaStore.Video.Media._ID} DESC"
+            )?.use { c -> if (c.moveToFirst()) Uri.withAppendedPath(collection, c.getLong(0).toString()) to c.getLong(1) else null }
+        }.getOrNull()
+    }
+
+    private fun addedSeconds(uri: Uri): Long = runCatching {
+        context.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.DATE_ADDED), null, null, null)
+            ?.use { c -> if (c.moveToFirst()) c.getLong(0) else 0L } ?: 0L
+    }.getOrDefault(0L)
+
+    /**
      * Newest Rawr capture: the remembered JPEG, else the newest RAWR_ JPEG or
      * DNG (a DNG-only capture still gets a thumbnail). A JPEG published with
      * the same name as the newest DNG is preferred; it decodes faster.
      */
-    fun findLatestRawrImage(): Uri? {
+    private fun findLatestRawrPhoto(): Uri? {
         val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
         val projection = arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DISPLAY_NAME)
         // Burst frames carry Pixel-style names ("00040IMG_00040_BURST…") so Google Photos stacks them.

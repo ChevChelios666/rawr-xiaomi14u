@@ -651,11 +651,20 @@ internal fun X14uCaptureLayout(
     val panoScope = androidx.compose.runtime.rememberCoroutineScope()
     val panoExtras = LocalCaptureExtras.current
     val panoState by rememberUpdatedState(state)
+    val panoContext = androidx.compose.ui.platform.LocalContext.current
+    // A set needs two frames (Nov 18): one stopped after frame 1 drops that frame (it isn't a panorama) and says so.
+    val panoDropSingle: () -> Unit = {
+        if (panoSet.frames == 1) {
+            panoExtras.onPanoUndo(panoSet.frameTag(1))
+            android.widget.Toast.makeText(panoContext, "A panorama needs 2 frames or more: frame removed", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
     val panoDone: () -> Unit = {
         // A finished set (stop or complete) is merged on the phone when that's on (Settings → JPEG).
         if (panoSet.frames >= 2) {
             panoExtras.onPanoMerge(panoSet.tag, panoSet.frames, panoSet.startedAtMillis, panoSet.spanDegrees)
         }
+        panoDropSingle()
         panoSet.end(panoState, dispatch)
     }
     // The shutter starts a set (frame 1 after the locks settle) and stops it; the frames between take themselves.
@@ -683,7 +692,12 @@ internal fun X14uCaptureLayout(
         onDispose { com.rawr.camera.integration.GripEvents.shutterOverride = null }
     }
     // Leaving Pano (another mode, Video) ends the set, keeping its frames.
-    LaunchedEffect(pano) { if (!pano && panoSet.inSet) panoSet.end(panoState, dispatch) }
+    LaunchedEffect(pano) {
+        if (!pano && panoSet.inSet) {
+            panoDropSingle()
+            panoSet.end(panoState, dispatch)
+        }
+    }
     // Photo, Pro and Video each remember their own exposure mode (A·M·S·I) and white balance: switching mode saves
     // the one left and restores the one entered (a mode not visited yet keeps the current ones; Photo starts on A).
     val uiMode = when { isVideo -> "video"; simplePhoto -> "photo"; else -> "pro" }

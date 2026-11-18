@@ -57,6 +57,15 @@ fun LensProfile.selectOption(row: Int, choice: Int): LensProfile {
     })
 }
 
+/**
+ * X14U: the lenses with every row that has a run-as choice ("50 mp") back on its first choice (off), for Pano and
+ * Burst, which shoot 12 MP frames: the 50 mp pick in Photo then doesn't lock their aperture (or DCG) there.
+ */
+fun List<LensProfile>.withRunAsRowsOff(): List<LensProfile> = map { lens ->
+    if (lens.options.none { row -> row.choices.any { it.runAs != null } }) lens
+    else lens.copy(options = lens.options.map { row -> if (row.choices.any { it.runAs != null }) row.copy(selected = 0) else row })
+}
+
 /** Rows whose chosen choice locks [row], for [picks]. */
 fun List<LensOption>.lockersOf(row: Int, picks: List<Int>): Set<Int> {
     if (row !in indices) return emptySet()
