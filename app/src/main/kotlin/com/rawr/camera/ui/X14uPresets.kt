@@ -12,6 +12,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -105,7 +111,8 @@ internal fun X14uPresetStrip(
 ) {
     val haptics = LocalCaptureHaptics.current
     val accent = CaptureColors.Accent
-    val cardWidth = 92.dp
+    val cardWidth = 104.dp
+    val cardFill = if (isClassicStyle()) Color(0xEB0A0A0A) else X14uPanelStyle.Track
     val gap = 7.dp
     val stepPx = with(LocalDensity.current) { (cardWidth + gap).toPx() }
     // Local order while a card is dragged; the stored order follows on release.
@@ -118,26 +125,44 @@ internal fun X14uPresetStrip(
     val applyNow by rememberUpdatedState(onApply)
     val detailsNow by rememberUpdatedState(onDetails)
     val moveNow by rememberUpdatedState(onMove)
-    Column(Modifier.fillMaxWidth().testTag("x14u_preset_strip"), horizontalAlignment = Alignment.CenterHorizontally) {
+    // Nov 18 (as stock): the strip takes the readout row and the slot, a header on top (title, or "P1 changed ·
+    // Update · Revert"; + saves a new one) and taller cards with what each holds. ··· on every card opens its details
+    // without applying it.
+    val engraved = if (isClassicStyle()) ClassicColors.Engraved else Color.White
+    Column(Modifier.fillMaxSize().testTag("x14u_preset_strip")) {
         val active = presets.active
-        if (changed && active != null) {
-            Row(Modifier.height(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("${active.label} changed", fontFamily = X14uFont, fontSize = dpText(12f), color = Color.White.copy(alpha = .7f))
-                Spacer(Modifier.width(12.dp))
-                Text("Update", fontFamily = X14uFont, fontSize = dpText(12.5f), color = accent,
-                    modifier = Modifier.clickable(enabled = enabled) { haptics.selection(); onUpdate() }.padding(horizontal = 4.dp))
-                Text(" · ", fontFamily = X14uFont, fontSize = dpText(12f), color = Color.White.copy(alpha = .4f))
-                Text("Revert", fontFamily = X14uFont, fontSize = dpText(12.5f), color = Color.White.copy(alpha = .85f),
-                    modifier = Modifier.clickable(enabled = enabled) { haptics.selection(); onRevert() }.padding(horizontal = 4.dp))
+        Box(Modifier.fillMaxWidth().height(36.dp).padding(horizontal = 12.dp)) {
+            if (changed && active != null) {
+                Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${active.label} changed", fontFamily = X14uFont, fontSize = dpText(13f), color = engraved.copy(alpha = .75f))
+                    Spacer(Modifier.width(14.dp))
+                    Text("Update", fontFamily = X14uFont, fontSize = dpText(13.5f), color = accent,
+                        modifier = Modifier.clickable(enabled = enabled) { haptics.selection(); onUpdate() }.padding(horizontal = 4.dp, vertical = 6.dp))
+                    Text(" · ", fontFamily = X14uFont, fontSize = dpText(13f), color = Color.White.copy(alpha = .4f))
+                    Text("Revert", fontFamily = X14uFont, fontSize = dpText(13.5f), color = engraved.copy(alpha = .9f),
+                        modifier = Modifier.clickable(enabled = enabled) { haptics.selection(); onRevert() }.padding(horizontal = 4.dp, vertical = 6.dp))
+                }
+            } else {
+                Text("Presets", fontFamily = X14uFont, fontSize = dpText(15f), color = engraved,
+                    modifier = Modifier.align(Alignment.Center))
             }
-            Spacer(Modifier.height(2.dp))
+            if (!presets.full) Box(
+                Modifier.align(Alignment.CenterEnd).size(40.dp, 36.dp)
+                    .clickable(enabled = enabled) { haptics.selection(); onSaveNew() }
+                    .testTag("x14u_preset_save")
+                    .semantics { contentDescription = "Save the current settings as a new preset" },
+                contentAlignment = Alignment.Center
+            ) {
+                Text("+", fontFamily = X14uFont, fontSize = dpText(24f), color = engraved)
+            }
         }
         Row(
             Modifier
                 .fillMaxWidth()
+                .weight(1f)
                 .horizontalScroll(rememberScrollState(), enabled = dragId == null)
                 // Room for the selected card's outline (it was clipped at the strip's edges in the mockup).
-                .padding(horizontal = 8.dp, vertical = 3.dp),
+                .padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(gap)
         ) {
             order.forEach { id ->
@@ -155,11 +180,13 @@ internal fun X14uPresetStrip(
                                 scaleX = k
                                 scaleY = k
                             }
-                            .size(cardWidth, 50.dp)
-                            .background(X14uPanelStyle.Track, RoundedCornerShape(12.dp))
+                            .width(cardWidth)
+                            .heightIn(max = 84.dp)
+                            .fillMaxHeight()
+                            .background(cardFill, RoundedCornerShape(12.dp))
                             .then(
-                                if (selected) Modifier.border(1.dp, accent, RoundedCornerShape(12.dp))
-                                else Modifier.border(1.dp, Color.White.copy(alpha = .12f), RoundedCornerShape(12.dp))
+                                if (selected) Modifier.border(1.2.dp, accent, RoundedCornerShape(12.dp))
+                                else Modifier.border(1.dp, Color.White.copy(alpha = .13f), RoundedCornerShape(12.dp))
                             )
                             .pointerInput(id, enabled) {
                                 if (!enabled) return@pointerInput
@@ -205,49 +232,54 @@ internal fun X14uPresetStrip(
                                     }
                                 )
                             })
-                            .padding(horizontal = 7.dp, vertical = 5.dp)
+                            .padding(start = 9.dp, end = 4.dp, top = 6.dp, bottom = 7.dp)
                     ) {
                         // The card's number goes by where it is now (also while it is dragged).
                         Text(
                             "P${order.indexOf(id)}",
                             fontFamily = PresetMono,
-                            fontSize = dpText(12f),
-                            color = if (selected) accent else Color.White.copy(alpha = .85f),
+                            fontSize = dpText(12.5f),
+                            color = if (selected) accent else engraved.copy(alpha = .85f),
                             modifier = Modifier.align(Alignment.TopStart)
                         )
-                        if (selected) Text("···", fontSize = dpText(12f), color = Color.White.copy(alpha = .7f),
-                            modifier = Modifier.align(Alignment.TopEnd))
+                        // ···: this card's details without applying it (as stock).
+                        Box(
+                            Modifier.align(Alignment.TopEnd).offset(y = (-6).dp).size(34.dp, 28.dp)
+                                .clickable(enabled = enabled) { haptics.selection(); detailsNow(item) }
+                                .semantics { contentDescription = "${item.label} ${item.name} details" },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("···", fontSize = dpText(13f), color = engraved.copy(alpha = .7f))
+                        }
+                        Column(Modifier.align(Alignment.CenterStart).padding(top = 6.dp, end = 4.dp)) {
+                            presetCardLines(item).forEach { line ->
+                                Text(line, fontFamily = X14uFont, fontSize = dpText(10.5f), lineHeight = dpText(13f),
+                                    color = Color.White.copy(alpha = .5f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
                         Text(
                             item.name,
                             fontFamily = X14uFont,
-                            fontSize = dpText(12f),
-                            color = Color.White,
+                            fontSize = dpText(13f),
+                            color = engraved,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.align(Alignment.BottomStart)
+                            modifier = Modifier.align(Alignment.BottomStart).padding(end = 4.dp)
                         )
-                    }
-                }
-            }
-            if (!presets.full) {
-                Box(
-                    Modifier
-                        .size(58.dp, 50.dp)
-                        .background(X14uPanelStyle.Track, RoundedCornerShape(12.dp))
-                        .border(1.dp, Color.White.copy(alpha = .12f), RoundedCornerShape(12.dp))
-                        .clickable(enabled = enabled) { haptics.selection(); onSaveNew() }
-                        .testTag("x14u_preset_save"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("+", fontSize = dpText(17f), color = Color.White)
-                        Text("Save", fontFamily = X14uFont, fontSize = dpText(11f), color = Color.White.copy(alpha = .7f))
                     }
                 }
             }
         }
     }
 }
+
+/** Two short lines for a card: the first two groups it holds, look and film first. */
+private fun presetCardLines(item: PresetItem): List<String> =
+    listOf(PresetGroup.Look, PresetGroup.Film, PresetGroup.Exposure, PresetGroup.Processing, PresetGroup.WhiteBalance, PresetGroup.Lens)
+        .filter { it in item.groups }
+        .map { presetGroupText(it, item.camera, item.summary) }
+        .filter { it != "—" }
+        .take(2)
 
 @Composable
 private fun NameField(value: String, onValue: (String) -> Unit, onDone: () -> Unit, modifier: Modifier = Modifier) {
@@ -341,6 +373,8 @@ internal fun X14uPresetSaveSheet(
 @Composable
 internal fun X14uPresetDetailsSheet(
     item: PresetItem,
+    /** The preset in use: "Update" saves the live settings into it; any other offers "Replace" (asked first). */
+    active: Boolean,
     full: Boolean,
     onUpdate: () -> Unit,
     onRename: (String) -> Unit,
@@ -353,6 +387,7 @@ internal fun X14uPresetDetailsSheet(
     var renaming by remember(item.id) { mutableStateOf(false) }
     var name by remember(item.id) { mutableStateOf(item.name) }
     var confirm by remember(item.id) { mutableStateOf(false) }
+    var confirmReplace by remember(item.id) { mutableStateOf(false) }
     val all = PresetGroup.entries
     X14uSheet(item.name, onClose, modifier.testTag("x14u_preset_details"), lead = item.label) {
         if (renaming) {
@@ -374,6 +409,13 @@ internal fun X14uPresetDetailsSheet(
                 if (it == 1) onRename(name) else name = item.name
                 renaming = false
             })
+            confirmReplace -> {
+                X14uSheetLabel("Replace ${item.label} ${item.name} with the current settings?")
+                X14uSegments(listOf("Cancel", "Replace"), selected = null, emphasis = 1, onSelect = {
+                    if (it == 1) onUpdate()
+                    confirmReplace = false
+                })
+            }
             confirm -> {
                 X14uSheetLabel(if (item.isBaseline) "Put P0 back to the app's defaults?" else "Delete ${item.label} ${item.name}?")
                 X14uSegments(listOf("Cancel", if (item.isBaseline) "App defaults" else "Delete"), selected = null,
@@ -383,12 +425,12 @@ internal fun X14uPresetDetailsSheet(
                     })
             }
             else -> X14uSegments(
-                labels = listOf("Update", "Rename", "Duplicate", if (item.isBaseline) "Defaults" else "Delete"),
+                labels = listOf(if (active) "Update" else "Replace", "Rename", "Duplicate", if (item.isBaseline) "Defaults" else "Delete"),
                 selected = null, emphasis = 0,
                 enabled = { it != 2 || !full },
                 onSelect = { i ->
                     when (i) {
-                        0 -> onUpdate()
+                        0 -> if (active) onUpdate() else confirmReplace = true
                         1 -> renaming = true
                         2 -> onDuplicate()
                         else -> confirm = true

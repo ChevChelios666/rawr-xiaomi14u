@@ -22,7 +22,9 @@ internal object ExposureFormat {
     fun formatShutterNs(ns: Long): String {
         val seconds = ns / 1_000_000_000.0
         return if (seconds < 0.5) {
-            "1/${(1.0 / seconds).roundToInt().coerceAtLeast(1)}"
+            // Five-digit speeds as thousands ("1/33k", not "1/32769"): they read badly and don't fit a turned cell.
+            val denominator = (1.0 / seconds).roundToInt().coerceAtLeast(1)
+            if (denominator >= 10_000) "1/${(denominator / 1000.0).roundToInt()}k" else "1/$denominator"
         } else if (seconds < 10.0) {
             "%.1fs".format(seconds).replace(".0s", "s")
         } else {

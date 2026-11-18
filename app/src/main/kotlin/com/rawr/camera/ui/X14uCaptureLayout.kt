@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -146,6 +147,13 @@ internal enum class X14uPanel { Look, Exposure }
 
 private val Amber = Color(0xFFFFB74D)
 internal val X14uFont = FontFamily.Default
+
+/** Readout values: the system's condensed face (narrow digits, like stock), so turned values fit the row in landscape. */
+private val X14uReadoutFont: FontFamily = FontFamily(
+    androidx.compose.ui.text.font.Typeface(
+        android.graphics.Typeface.create("sans-serif-condensed", android.graphics.Typeface.NORMAL)
+    )
+)
 
 /** Text size in dp (immune to the system font scale). */
 @Composable
@@ -1044,7 +1052,9 @@ internal fun X14uCaptureLayout(
         val classic = isClassicStyle()
         val classicVideo = classic && isVideo
         val videoBand = 60.dp
-        val readoutsTopVideo = shutterCenter - 46.dp - videoBand - 48.dp * s
+        // The readout row (Nov 18, landscape v3): from just under the picture to the slot, so turned values fit.
+        val rowHeight = 56.dp * s
+        val readoutsTopVideo = shutterCenter - 46.dp - videoBand - rowHeight
         val (videoRect, videoTop) = run {
             val upper = if (classicVideo) minOf(cutoutTop + CaptureDimens.TopBarHeight + 8.dp, top) else cutoutTop + 2.dp
             val lower = if (classicVideo) readoutsTopVideo - 8.dp else shutterCenter - 50.dp
@@ -1054,10 +1064,12 @@ internal fun X14uCaptureLayout(
             DpSize(w, h) to (if (top + h <= lower) top else upper)
         }
         // The readout row and the slot under it (modes, or the open control); Classic video moves them (above).
-        val rowY = if (classicVideo) readoutsTopVideo else bottom + 6.dp * s
-        val slotIdle = !(burst && state.burst.running) && !timedRun.running && !(presetsOpen && !recordingLock && !panoLocked) &&
+        val rowY = if (classicVideo) readoutsTopVideo else bottom + 2.dp * s
+        // Presets open: the strip takes the readout row and the slot (the exposure row and lens row hide, as stock).
+        val presetsShown = presetsOpen && !recordingLock && !panoLocked
+        val slotIdle = !(burst && state.burst.running) && !timedRun.running && !presetsShown &&
             currentKey == null && panel == null
-        val slotY = if (classicVideo) rowY + 48.dp * s else bottom + 58.dp * s
+        val slotY = rowY + rowHeight
         val slotHeight = if (classicVideo) videoBand else 76.dp * s
         // The lens row and the badges ride on the picture's foot: in Classic video that is the (shorter) video's.
         val overlayTop = if (classicVideo) videoTop + videoRect.height - frame.height else top
@@ -1082,7 +1094,7 @@ internal fun X14uCaptureLayout(
                         topBar = barTop..barBottom,
                         bezel = barBottom..(picture.bottom + 2.dp.toPx()),
                         picture = picture,
-                        readouts = (rowY + 2.dp).toPx()..(rowY + 48.dp * s).toPx(),
+                        readouts = (rowY + 2.dp).toPx()..(if (presetsShown) slotY + slotHeight else rowY + rowHeight).toPx(),
                         band = if (slotIdle) slotY.toPx()..(slotY + slotHeight).toPx() else null
                     )
                 }
@@ -1292,7 +1304,7 @@ internal fun X14uCaptureLayout(
                             else Modifier.align(Alignment.TopCenter).padding(top = 10.dp)
                     )
                 }
-                X14uLensRow(
+                if (!presetsShown) X14uLensRow(
                     state = state,
                     dispatch = dispatch,
                     quick = quick,
@@ -1373,7 +1385,9 @@ internal fun X14uCaptureLayout(
                         },
                         modifier = Modifier.align(Alignment.BottomStart)
                             .offset(x = if (classicVideo) -(layoutWidth - frame.width) / 2 else 0.dp)
-                            .padding(start = edgeInset, bottom = (31.dp * s - 18.dp).coerceAtLeast(4.dp) + 42.dp)
+                            // With the strip open the lens row hides and the badge takes the Look button's place.
+                            .padding(start = edgeInset, bottom = (31.dp * s - 18.dp).coerceAtLeast(4.dp) +
+                                if (presetsShown) 12.dp else 42.dp)
                     )
                 }
             }
@@ -1449,6 +1463,7 @@ internal fun X14uCaptureLayout(
                     if (item == null) presetSheet = null
                     else X14uPresetDetailsSheet(
                         item = item,
+                        active = item.id == presetsUi.activeId,
                         full = presetsUi.full,
                         onUpdate = {
                             presetActions.update(item.id, presetCameraNow())
@@ -1477,9 +1492,23 @@ internal fun X14uCaptureLayout(
                 }
             }
             // Classic video: the readouts dim while recording, so the picture stands out (the shutter row stays bright).
-            val rowModifier = Modifier.fillMaxWidth().offset(y = rowY).height(48.dp * s)
+            val rowModifier = Modifier.fillMaxWidth().offset(y = rowY).height(rowHeight)
                 .alpha(if (classicVideo && videoControls.recording) .45f else 1f)
-            if (panel == null && simplePhoto && !pano) {
+            if (presetsShown) {
+                Box(Modifier.fillMaxWidth().offset(y = rowY).height(slotY + slotHeight - rowY)) {
+                    X14uPresetStrip(
+                        presets = presetsUi,
+                        changed = presetChanged,
+                        enabled = true,
+                        onApply = applyPreset,
+                        onDetails = { presetSheet = it.id },
+                        onSaveNew = { presetSheet = PRESET_SAVE },
+                        onUpdate = { activePreset?.let { presetActions.update(it.id, presetCameraNow()) } },
+                        onRevert = { activePreset?.let(applyPreset) },
+                        onMove = presetActions::move
+                    )
+                }
+            } else if (panel == null && simplePhoto && !pano) {
                 // A: what auto exposure picked, dim either side of EV; tapping one switches to S or I with its editor open.
                 val live = if (state.exposureControl.mode == ExposureMode.Auto) {
                     exposureCells(state, quick, lensOptions, fiftyMp).filter { it.key == "ss" || it.key == "iso" }
@@ -1506,21 +1535,9 @@ internal fun X14uCaptureLayout(
                     X14uBurstCounter(state.burst, orientation)
                 } else if (timedRun.running) {
                     X14uTimedCounter(timedRun, timedNow, orientation)
-                } else if (presetsOpen && !recordingLock && !panoLocked) {
-                    X14uPresetStrip(
-                        presets = presetsUi,
-                        changed = presetChanged,
-                        enabled = true,
-                        onApply = applyPreset,
-                        onDetails = { presetSheet = it.id },
-                        onSaveNew = { presetSheet = PRESET_SAVE },
-                        onUpdate = { activePreset?.let { presetActions.update(it.id, presetCameraNow()) } },
-                        onRevert = { activePreset?.let(applyPreset) },
-                        onMove = presetActions::move
-                    )
-                } else if (key != null) {
+                } else if (key != null && !presetsShown) {
                     X14uEditorView(editorFor(key), orientation)
-                } else if (panel == null) {
+                } else if (panel == null && !presetsShown) {
                     X14uIdleControlArea(state, dispatch, videoControls, showNumbers, enabled = !recordingLock && !panoLocked,
                         folded = classicVideo)
                 }
@@ -2131,12 +2148,16 @@ private fun X14uCellView(
             },
         contentAlignment = Alignment.Center
     ) {
-        // Panel cells stay as they are in landscape; the exposure row turns upright (user's choice).
-        Column(if (upright) Modifier.uprightInLandscape(orientation) else Modifier,
+        // Panel cells stay as they are in landscape; the exposure row turns upright (user's choice). Turned, the value
+        // is measured at its own length (not the cell's width, which would clip it) and runs along the row's height.
+        val turned = upright && orientation == Orientation.Landscape
+        Column(if (!upright) Modifier else Modifier.then(if (turned) Modifier.wrapContentSize(unbounded = true) else Modifier)
+            .uprightInLandscape(orientation),
             horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 cell.value,
-                fontFamily = X14uFont,
+                fontFamily = X14uReadoutFont,
+                softWrap = false,
                 fontSize = dpText(if (compact) 14f else 16f),
                 lineHeight = dpText(if (compact) 16f else 19f),
                 maxLines = 1,
@@ -2223,9 +2244,10 @@ private fun X14uLiveValue(cell: X14uCell, orientation: Orientation, enabled: Boo
             .semantics { contentDescription = "Auto ${cell.label} ${cell.value}. Tap to set it yourself." },
         contentAlignment = Alignment.Center
     ) {
-        Column(Modifier.uprightInLandscape(orientation), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(cell.value, fontFamily = X14uFont, fontSize = dpText(14f), lineHeight = dpText(17f), maxLines = 1,
-                overflow = TextOverflow.Clip, color = Color.White.copy(alpha = .38f))
+        Column(Modifier.then(if (orientation == Orientation.Landscape) Modifier.wrapContentSize(unbounded = true) else Modifier)
+            .uprightInLandscape(orientation), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(cell.value, fontFamily = X14uReadoutFont, fontSize = dpText(14f), lineHeight = dpText(17f), maxLines = 1,
+                softWrap = false, overflow = TextOverflow.Clip, color = Color.White.copy(alpha = .38f))
             Text(cell.label, fontFamily = X14uFont, fontSize = dpText(10f), lineHeight = dpText(12f), maxLines = 1,
                 color = Color.White.copy(alpha = .25f))
         }
@@ -2821,7 +2843,7 @@ private fun X14uEditorView(editor: X14uEditor, orientation: Orientation) {
             // Keyed by the scale so swapping rulers (WB Kelvin <-> tint) starts the new one fresh.
             // Classic: the ruler behind a glass window with knurled ends (the user's mockup).
             androidx.compose.runtime.key(editor.count, editor.spacing) {
-                X14uRuler(editor, orientation,
+                X14uRuler(editor,
                     if (classic) Modifier.weight(1f).padding(vertical = 6.dp).classicWindow() else Modifier.weight(1f))
             }
             if (editor.trailing != null) {
@@ -2971,7 +2993,7 @@ private fun X14uChoiceChips(
  * Drag left for higher values; a fast swipe moves several steps per step of travel. Double tap resets.
  */
 @Composable
-private fun X14uRuler(editor: X14uEditor.Ruler, orientation: Orientation, modifier: Modifier) {
+private fun X14uRuler(editor: X14uEditor.Ruler, modifier: Modifier) {
     val count = editor.count
     if (count <= 0) return
     val haptics = LocalCaptureHaptics.current
@@ -2998,7 +3020,8 @@ private fun X14uRuler(editor: X14uEditor.Ruler, orientation: Orientation, modifi
                 else -> Color.White
             },
             maxLines = 1,
-            modifier = Modifier.align(Alignment.TopCenter).padding(top = 4.dp).uprightInLandscape(orientation)
+            // Upright in landscape too, like the ticks and labels (as stock): turned, it ran over the needle.
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 4.dp)
         )
         Canvas(
             Modifier
@@ -3060,6 +3083,9 @@ private fun X14uRuler(editor: X14uEditor.Ruler, orientation: Orientation, modifi
             val drumRadius = drumHalf / kotlin.math.sin(1.25f)
             val visible = if (drum) (drumRadius * 1.25f / stepPx).toInt() + 2 else (size.width / 2f / stepPx).toInt() + 2
             val clearOfValue = 34.dp.toPx()
+            // Labels go down after the ticks, nearest the needle first; one that would touch a label already placed is
+            // left out (the Classic drum crowds them toward the ends).
+            val labels = ArrayList<Triple<Float, Float, androidx.compose.ui.text.TextLayoutResult>>()
             for (i in (shown - visible).coerceAtLeast(0)..(shown + visible).coerceAtMost(count - 1)) {
                 val along = (i - shown) * stepPx + offset
                 val angle = along / drumRadius
@@ -3080,12 +3106,21 @@ private fun X14uRuler(editor: X14uEditor.Ruler, orientation: Orientation, modifi
                 if (abs(x - cx) > clearOfValue) editor.label(i)?.let { text ->
                     val layout = measurer.measure(text, labelStyle)
                     if (drum && abs(x - cx) + layout.size.width / 2f > drumHalf) return@let
-                    drawText(
-                        layout,
-                        color = Color.White.copy(alpha = (if (enabled) .5f else .2f) * fade),
-                        topLeft = Offset(x - layout.size.width / 2f, labelY)
-                    )
+                    labels.add(Triple(x, fade, layout))
                 }
+            }
+            val placed = ArrayList<Pair<Float, Float>>()
+            val labelGap = 6.dp.toPx()
+            labels.sortBy { abs(it.first - cx) }
+            for ((x, fade, layout) in labels) {
+                val half = layout.size.width / 2f
+                if (placed.any { (px, ph) -> abs(x - px) < half + ph + labelGap }) continue
+                placed.add(x to half)
+                drawText(
+                    layout,
+                    color = Color.White.copy(alpha = (if (enabled) .5f else .2f) * fade),
+                    topLeft = Offset(x - half, labelY)
+                )
             }
             if (editor.endIcons) {
                 val iconY = tickBottom - 26.dp.toPx()
@@ -3094,10 +3129,7 @@ private fun X14uRuler(editor: X14uEditor.Ruler, orientation: Orientation, modifi
                 drawMountain(Offset(size.width - iconInset - 12.dp.toPx(), iconY), Color.White.copy(alpha = .6f))
             }
             // The needle starts under the value printed above it (Nov 18: in the shorter Classic windows it ran into it).
-            // Landscape turns the value about its centre, so its width stands upright.
-            val value = measurer.measure(editor.valueText, valueStyle).size
-            val valueBottom = 4.dp.toPx() + 2.dp.toPx() +
-                if (orientation == Orientation.Landscape) (value.height + value.width) / 2f else value.height.toFloat()
+            val valueBottom = 4.dp.toPx() + 2.dp.toPx() + measurer.measure(editor.valueText, valueStyle).size.height
             val needleTop = maxOf(tickBottom - 25.dp.toPx(), valueBottom).coerceAtMost(tickBottom - 8.dp.toPx())
             drawLine(
                 CaptureColors.Accent,
