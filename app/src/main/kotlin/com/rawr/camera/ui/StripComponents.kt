@@ -402,7 +402,7 @@ internal fun CompactSidePill(
     minWidth: androidx.compose.ui.unit.Dp = CaptureDimens.CompactPillMinWidth
 ) {
     val haptics = LocalCaptureHaptics.current
-    // X14U Classic: a metal button with the icon and its label engraved on the cap (the user's mockup).
+    // X14U Classic: a metal button with only its label engraved on the cap (Nov 18: text, no icon).
     val classic = isClassicStyle()
     val contentColor = when {
         active -> CaptureColors.Accent
@@ -448,14 +448,14 @@ internal fun CompactSidePill(
             verticalArrangement = Arrangement.Center,
             modifier = Modifier.padding(horizontal = if (classic) 2.dp else 8.dp, vertical = 4.dp)
         ) {
-            Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(if (classic) 17.dp else 20.dp))
+            if (!classic) Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(20.dp))
             Text(
                 label,
                 color = contentColor,
                 fontFamily = CaptureMono,
                 fontWeight = FontWeight.Bold,
-                fontSize = 7.sp,
-                letterSpacing = .5.sp,
+                fontSize = if (classic) 9.sp else 7.sp,
+                letterSpacing = if (classic) .3.sp else .5.sp,
                 maxLines = 1
             )
         }

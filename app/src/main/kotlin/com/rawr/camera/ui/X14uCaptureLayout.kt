@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -72,6 +73,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.rawr.camera.architecture.CaptureDispatch
 import com.rawr.camera.architecture.CaptureFilmEvent
 import com.rawr.camera.architecture.CaptureQuickEvent
@@ -1060,6 +1062,12 @@ internal fun X14uCaptureLayout(
         // The lens row and the badges ride on the picture's foot: in Classic video that is the (shorter) video's.
         val overlayTop = if (classicVideo) videoTop + videoRect.height - frame.height else top
         val layoutWidth = maxWidth
+        val edgeInset = if (classicVideo) 4.dp else 7.dp
+        // Video whose foot runs under the slot (Minimal's tall video): the slot steps in past the bottom corner marks
+        // (22 dp) so the A button and the trailing one sit clear of them (Nov 18).
+        val videoFoot = videoTop + videoRect.height
+        val slotInset = if (isVideo && videoFoot > slotY && videoFoot - 22.dp < slotY + slotHeight)
+            maxOf(12.dp, (layoutWidth - videoRect.width) / 2 + 22.dp + 6.dp) else 12.dp
         Box(Modifier.fillMaxSize()) {
             if (classic) {
                 val density = androidx.compose.ui.platform.LocalDensity.current
@@ -1128,11 +1136,9 @@ internal fun X14uCaptureLayout(
                     }
                 }
             )
-            // Video: the corner marks sit on the picture's own corners.
-            // The bottom marks only where the picture's foot is clear of the controls (Nov 18: in Minimal the tall video
-            // runs under the readouts, and its bottom left mark sat on the open control's A button).
-            if (isVideo) FrameBrackets(Modifier.align(Alignment.TopCenter).offset(y = videoTop).size(videoRect),
-                bottom = videoTop + videoRect.height <= rowY)
+            // Video: the corner marks sit on the picture's own corners, all four (the open control steps in from the
+            // bottom ones instead: slotInset).
+            if (isVideo) FrameBrackets(Modifier.align(Alignment.TopCenter).offset(y = videoTop).size(videoRect))
 
             Box(Modifier.align(Alignment.TopCenter).offset(y = overlayTop).size(frame)) {
                 if (!isVideo) FrameBrackets(Modifier.fillMaxSize())
@@ -1347,8 +1353,11 @@ internal fun X14uCaptureLayout(
                             setZoom(stop.zoom)
                         }
                     },
-                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                        .padding(bottom = (31.dp * s - 18.dp).coerceAtLeast(4.dp), start = 7.dp, end = 7.dp)
+                    // Classic video (Nov 18): the picture is narrower than the photo frame, so the Look and AE knobs go out
+                    // to the screen's edges, beside it rather than on it.
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                        .then(if (classicVideo) Modifier.requiredWidth(layoutWidth) else Modifier.fillMaxWidth())
+                        .padding(bottom = (31.dp * s - 18.dp).coerceAtLeast(4.dp), start = edgeInset, end = edgeInset)
                 )
                 // Preset badge just above the Look button: text only, grey P0, accent P1…, "*" once changed.
                 if (activePreset != null) {
@@ -1363,7 +1372,8 @@ internal fun X14uCaptureLayout(
                             presetsOpen = open
                         },
                         modifier = Modifier.align(Alignment.BottomStart)
-                            .padding(start = 7.dp, bottom = (31.dp * s - 18.dp).coerceAtLeast(4.dp) + 42.dp)
+                            .offset(x = if (classicVideo) -(layoutWidth - frame.width) / 2 else 0.dp)
+                            .padding(start = edgeInset, bottom = (31.dp * s - 18.dp).coerceAtLeast(4.dp) + 42.dp)
                     )
                 }
             }
@@ -1487,7 +1497,7 @@ internal fun X14uCaptureLayout(
                     upright = panel == null, onTap = onCellTap)
             }
             Box(
-                Modifier.fillMaxWidth().offset(y = slotY).height(slotHeight).padding(horizontal = 12.dp),
+                Modifier.fillMaxWidth().offset(y = slotY).height(slotHeight).padding(horizontal = slotInset),
                 contentAlignment = Alignment.Center
             ) {
                 val key = currentKey
@@ -1575,7 +1585,7 @@ private fun lookTabs(film: Boolean): List<String> = buildList {
 }
 
 @Composable
-private fun FrameBrackets(modifier: Modifier, bottom: Boolean = true) {
+private fun FrameBrackets(modifier: Modifier) {
     Canvas(modifier) {
         val l = 22.dp.toPx()
         val w = 1.5.dp.toPx()
@@ -1583,7 +1593,6 @@ private fun FrameBrackets(modifier: Modifier, bottom: Boolean = true) {
         val corners = listOf(Offset(0f, 0f) to Offset(1f, 1f), Offset(size.width, 0f) to Offset(-1f, 1f),
             Offset(0f, size.height) to Offset(1f, -1f), Offset(size.width, size.height) to Offset(-1f, -1f))
         corners.forEach { (p, d) ->
-            if (!bottom && d.y < 0f) return@forEach
             val o = Offset(p.x + d.x * w / 2, p.y + d.y * w / 2)
             drawLine(c, o, Offset(o.x + d.x * l, o.y), w)
             drawLine(c, o, Offset(o.x, o.y + d.y * l), w)
@@ -1674,6 +1683,8 @@ private fun X14uRoundButton(
     /** Turn the icon upright in landscape (shutter row); the lens row's round buttons don't. */
     turn: Boolean = true,
     face: ClassicFace = ClassicFace.Knob,
+    /** Classic: this word engraved on the knob instead of the icon (Nov 18: Classic buttons are text, the camera switch alone an icon). */
+    classicLabel: String? = null,
     onClick: () -> Unit
 ) {
     val haptics = LocalCaptureHaptics.current
@@ -1710,7 +1721,16 @@ private fun X14uRoundButton(
         contentAlignment = Alignment.Center
     ) {
         // Classic: the colour wheel is the Look button's face (no icon); the dial keeps a small one.
-        if (!classic || face != ClassicFace.HueWheel) Icon(
+        if (classic && classicLabel != null) Text(
+            classicLabel,
+            color = if (enabled) ClassicColors.Engraved.copy(alpha = .75f) else Color.White.copy(alpha = .25f),
+            fontFamily = CaptureMono,
+            fontWeight = FontWeight.Bold,
+            fontSize = 9.sp,
+            letterSpacing = .3.sp,
+            maxLines = 1,
+            modifier = if (turn) Modifier.uprightInLandscape(orientation) else Modifier
+        ) else if (!classic || face != ClassicFace.HueWheel) Icon(
             icon,
             contentDescription = null,
             tint = when {
@@ -2962,6 +2982,7 @@ private fun X14uRuler(editor: X14uEditor.Ruler, orientation: Orientation, modifi
     val latest by rememberUpdatedState(editor)
     val shown = if (dragging) gestureIndex else editor.index.coerceIn(0, count - 1)
     val labelStyle = TextStyle(fontFamily = X14uFont, fontSize = dpText(10f))
+    val valueStyle = TextStyle(fontFamily = X14uFont, fontSize = dpText(14f))
     val enabled = editor.enabled
     // Classic: the scale printed on a drum turning behind the window: marks crowd and fade toward the ends.
     val drum = isClassicStyle()
@@ -3033,8 +3054,10 @@ private fun X14uRuler(editor: X14uEditor.Ruler, orientation: Orientation, modifi
             val labelY = 6.dp.toPx()
             val tickBottom = size.height - 10.dp.toPx()
             val offset = if (dragging) -residual.coerceIn(-stepPx, stepPx) else 0f
-            // The drum: a mark [d] along the scale shows at R sin(d / R), up to 1.25 rad either side.
-            val drumRadius = size.width / 2f / kotlin.math.sin(1.25f)
+            // The drum: a mark [d] along the scale shows at R sin(d / R), up to 1.25 rad either side, between the knurled
+            // ends (30 dp each inside the 3 dp rim, plus a margin): nothing printed reaches them (Nov 18).
+            val drumHalf = if (drum) size.width / 2f - 37.dp.toPx() else size.width / 2f
+            val drumRadius = drumHalf / kotlin.math.sin(1.25f)
             val visible = if (drum) (drumRadius * 1.25f / stepPx).toInt() + 2 else (size.width / 2f / stepPx).toInt() + 2
             val clearOfValue = 34.dp.toPx()
             for (i in (shown - visible).coerceAtLeast(0)..(shown + visible).coerceAtMost(count - 1)) {
@@ -3056,6 +3079,7 @@ private fun X14uRuler(editor: X14uEditor.Ruler, orientation: Orientation, modifi
                 )
                 if (abs(x - cx) > clearOfValue) editor.label(i)?.let { text ->
                     val layout = measurer.measure(text, labelStyle)
+                    if (drum && abs(x - cx) + layout.size.width / 2f > drumHalf) return@let
                     drawText(
                         layout,
                         color = Color.White.copy(alpha = (if (enabled) .5f else .2f) * fade),
@@ -3065,12 +3089,19 @@ private fun X14uRuler(editor: X14uEditor.Ruler, orientation: Orientation, modifi
             }
             if (editor.endIcons) {
                 val iconY = tickBottom - 26.dp.toPx()
-                drawFlower(Offset(10.dp.toPx(), iconY), Color.White.copy(alpha = .6f))
-                drawMountain(Offset(size.width - 12.dp.toPx(), iconY), Color.White.copy(alpha = .6f))
+                val iconInset = if (drum) cx - drumHalf + 6.dp.toPx() else 0f
+                drawFlower(Offset(iconInset + 10.dp.toPx(), iconY), Color.White.copy(alpha = .6f))
+                drawMountain(Offset(size.width - iconInset - 12.dp.toPx(), iconY), Color.White.copy(alpha = .6f))
             }
+            // The needle starts under the value printed above it (Nov 18: in the shorter Classic windows it ran into it).
+            // Landscape turns the value about its centre, so its width stands upright.
+            val value = measurer.measure(editor.valueText, valueStyle).size
+            val valueBottom = 4.dp.toPx() + 2.dp.toPx() +
+                if (orientation == Orientation.Landscape) (value.height + value.width) / 2f else value.height.toFloat()
+            val needleTop = maxOf(tickBottom - 25.dp.toPx(), valueBottom).coerceAtMost(tickBottom - 8.dp.toPx())
             drawLine(
                 CaptureColors.Accent,
-                Offset(cx, tickBottom - 25.dp.toPx()),
+                Offset(cx, needleTop),
                 Offset(cx, tickBottom + 2.dp.toPx()),
                 strokeWidth = 2.dp.toPx()
             )
@@ -3359,7 +3390,8 @@ private fun X14uShutterRow(
                     orientation,
                     enabled = enabled && pano.onUndo != null,
                     size = 48.dp,
-                    iconScale = .56f
+                    iconScale = .56f,
+                    classicLabel = "UNDO"
                 ) { pano.onUndo?.invoke() }
             } else X14uRoundButton(
                 X14uIcons.CameraSwitch,
