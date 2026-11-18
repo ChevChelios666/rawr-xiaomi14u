@@ -154,11 +154,9 @@ object GripUsbReader {
                         if (code != 0) add(code)
                     }
                 }
-                if (act) for (code in keys - heldKeys2) when (code) {
-                    418 -> GripEvents.lensSteps.tryEmit(1)
-                    419 -> GripEvents.lensSteps.tryEmit(-1)
-                    232 -> GripEvents.actions.tryEmit(GripEvents.Action.Record)
-                }
+                if (act && 232 in keys && 232 !in heldKeys2) GripEvents.actions.tryEmit(GripEvents.Action.Record)
+                // The lever: a step on a new press, or smooth zoom while held (GripEvents.lever).
+                if (act) GripEvents.lever(if (418 in keys) 1 else if (419 in keys) -1 else 0)
                 if (act && 232 in heldKeys2 && 232 !in keys) GripEvents.actions.tryEmit(GripEvents.Action.RecordRelease)
                 heldKeys2 = keys
             }
@@ -194,6 +192,7 @@ object GripUsbReader {
         claimed = emptyList()
         heldKeys = emptySet()
         heldKeys2 = emptySet()
+        GripEvents.zoomHeld.value = 0
         runCatching { conn?.close() }
         ButtonTest.note("USB: stopped, the grip is back to normal")
     }

@@ -13,6 +13,16 @@ import kotlinx.coroutines.flow.update
 object GripEvents {
     /** Zoom lever: the lens pill one step (+1 longer, -1 wider). */
     val lensSteps = kotlinx.coroutines.flow.MutableSharedFlow<Int>(extraBufferCapacity = 4)
+    /** Zoom lever held: +1 tele, -1 wide, 0 let go (smooth zoom). */
+    val zoomHeld = kotlinx.coroutines.flow.MutableStateFlow(0)
+    /** Set by the capture screen while the lever zooms smoothly (Photo / Pro with Smooth zoom): no lens steps then. */
+    @Volatile var leverZooms: Boolean = false
+
+    /** The lever pressed (+1 / -1) or let go (0): a lens step on a new press unless it zooms smoothly. */
+    fun lever(direction: Int) {
+        if (direction != 0 && zoomHeld.value != direction && !leverZooms) lensSteps.tryEmit(direction)
+        zoomHeld.value = direction
+    }
     /** Dial: clicks (+ / -) for the control chosen in Settings. */
     val dialSteps = kotlinx.coroutines.flow.MutableSharedFlow<Int>(extraBufferCapacity = 16)
     /** ShutterRelease: the full press let go (ends a burst). RecordRelease: the red button let go (hold-to-lock). */

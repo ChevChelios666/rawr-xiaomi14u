@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -51,8 +52,13 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.key
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -158,10 +164,9 @@ private val X14uReadoutFont: FontFamily = FontFamily(
 @Composable
 internal fun dpText(value: Float): TextUnit = with(LocalDensity.current) { value.dp.toSp() }
 
-/** The mode selector: Pro (new screen, photos), Photo (classic Rawr screen), Video (new screen). */
-/** Photo+ (enum Pro) sits behind Photo: swipe up on the viewfinder, or tap the lit Photo label, to switch. */
+/** The capture modes on the strip (Nov 19: Pro is a mode of its own next to Photo; the order is the user's). */
 internal enum class X14uMode(val label: String) {
-    Photo("Photo"), Pro("Photo+"), Video("Video"), Burst("Burst"), Pano("Pano")
+    Photo("Photo"), Pro("Pro"), Video("Video"), Burst("Burst"), Pano("Pano")
 }
 
 internal fun currentX14uMode(state: CaptureUiState, proUi: Boolean, pano: Boolean = false, burst: Boolean = false): X14uMode = when {
@@ -377,7 +382,7 @@ internal fun X14uCaptureLayout(
     var showNumbers by remember { mutableStateOf(false) }
     // WB editor: Kelvin ruler, or tint after TINT.
     var wbTint by remember { mutableStateOf(false) }
-    // Digital zoom (Photo / Photo+, rear lenses): a total zoom across the lens chain; the longest lens not above it
+    // Digital zoom (Photo / Pro, rear lenses): a total zoom across the lens chain; the longest lens not above it
     // runs and the rest is a centred crop (viewfinder, metering, JPEG, DNG default crop).
     val zoomChain = LocalCaptureExtras.current.tools.zoomChain
     val chainLens = zoomChain.firstOrNull { it.first == state.selectedLensId }
@@ -425,7 +430,7 @@ internal fun X14uCaptureLayout(
             mfTouch = System.nanoTime()
         }
     }
-    // The loupe is a Photo / Photo+ / Pano aid: it closes on a mode change (one opened in Video doesn't wait there).
+    // The loupe is a Photo / Pro / Pano aid: it closes on a mode change (one opened in Video doesn't wait there).
     LaunchedEffect(state.captureMode) {
         loupeOpen = false
         loupeAt = null
@@ -442,26 +447,6 @@ internal fun X14uCaptureLayout(
     // Video crop panel (top bar crop chip).
     var cropOpen by remember { mutableStateOf(false) }
     var toolsChoice by remember { mutableStateOf<String?>(null) }
-    val extrasNow = LocalCaptureExtras.current
-    // Swipe-up mode change: the new mode's name shows briefly on the viewfinder.
-    var modeFlash by remember { mutableStateOf<String?>(null) }
-    // One-time hint in Photo: "Swipe up for Photo+" for 3 s (counted; gone for good once switched).
-    var stillsHintVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(simplePhotoForHint(state, extrasNow.proUi), extrasNow.stillsHint) {
-        if (simplePhotoForHint(state, extrasNow.proUi) && extrasNow.stillsHint) {
-            kotlinx.coroutines.delay(600L)
-            stillsHintVisible = true
-            extrasNow.onStillsHintShown()
-            kotlinx.coroutines.delay(3000L)
-        }
-        stillsHintVisible = false
-    }
-    LaunchedEffect(modeFlash) {
-        if (modeFlash != null) {
-            kotlinx.coroutines.delay(900L)
-            modeFlash = null
-        }
-    }
     LaunchedEffect(isVideo, recordingLock) { if (!isVideo || recordingLock) cropOpen = false }
     // Video digital focal length: kept only while its lens is in use (a lens chosen another way starts uncropped).
     val videoStopButtons = LocalCaptureExtras.current.tools.lensButtons
@@ -602,7 +587,7 @@ internal fun X14uCaptureLayout(
     }
     val panoSet = remember { PanoSet() }
     val panoMotion = rememberPanoMotion(pano)
-    // Timed burst (Nov 17): with it on, the shutter in Photo / Photo+ starts a run (a photo every interval, focus and
+    // Timed burst (Nov 17): with it on, the shutter in Photo / Pro starts a run (a photo every interval, focus and
     // WB locked, exposure too when asked); the shutter stops it. While it runs the row is locked like a pano set.
     val timedSettings by com.rawr.camera.burst.TimedBurstSettings.values.collectAsState()
     val timedRun = remember { TimedRun() }
@@ -631,7 +616,7 @@ internal fun X14uCaptureLayout(
         hostView.keepScreenOn = timedRun.running
         onDispose { hostView.keepScreenOn = false }
     }
-    // Leaving Photo / Photo+, turning it off or leaving the screen ends a run.
+    // Leaving Photo / Pro, turning it off or leaving the screen ends a run.
     LaunchedEffect(timedReady, screenStarted.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
         if (timedRun.running && (!timedReady || !screenStarted.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED))) {
             timedRun.end(timedState, dispatch)
@@ -806,7 +791,8 @@ internal fun X14uCaptureLayout(
     val presetCameraMatches: (com.rawr.camera.settings.model.PresetCamera) -> Boolean = match@{ c ->
         c.exposure?.let { e ->
             val mode = ExposureMode.entries.firstOrNull { it.name == e.mode }
-            if (mode != null && mode in state.capabilities.supportedExposureModes) {
+            // Photo and Pano don't run M (it counts as matching there).
+            if (mode != null && mode in state.capabilities.supportedExposureModes && !(simplePhoto && mode == ExposureMode.Manual)) {
                 val ec = state.exposureControl
                 if (mode != ec.mode) return@match false
                 val owners = ownersOf(mode)
@@ -876,6 +862,7 @@ internal fun X14uCaptureLayout(
         c.exposure?.let { e ->
             val mode = ExposureMode.entries.firstOrNull { it.name == e.mode } ?: return@let
             if (mode !in state.capabilities.supportedExposureModes) return@let
+            if (simplePhoto && mode == ExposureMode.Manual) return@let
             if (mode != state.exposureControl.mode) dispatch(SetExposureMode(mode))
             val owners = ownersOf(mode)
             val caps = state.capabilities
@@ -917,6 +904,12 @@ internal fun X14uCaptureLayout(
     LaunchedEffect(simplePhoto) {
         if (simplePhoto && state.focus.mode != FocusMode.Af) dispatch(SetFocusMode(FocusMode.Af))
     }
+    // Photo and Pano run S · A · I (Nov 19): full manual is the Pro mode, so M left over (a preset, Pro's last mode)
+    // turns to A.
+    LaunchedEffect(simplePhoto, state.exposureControl.mode) {
+        if (simplePhoto && state.exposureControl.mode == ExposureMode.Manual &&
+            ExposureMode.Auto in state.capabilities.supportedExposureModes) dispatch(SetExposureMode(ExposureMode.Auto))
+    }
 
     // Cells and editors for what is showing.
     val cells: List<X14uCell>
@@ -949,7 +942,7 @@ internal fun X14uCaptureLayout(
             else photoCells
             editorFor = { key ->
                 if (key == PANO_MODE_KEY) {
-                    val modes = ExposureMode.entries.filter { it in state.capabilities.supportedExposureModes }
+                    val modes = PHOTO_EXPOSURE_MODES.map { it.first }.filter { it in state.capabilities.supportedExposureModes }
                     X14uEditor.Chips(modes.map { it.shortLabel }, modes.indexOf(state.exposureControl.mode), enabled = !panoLocked) { i ->
                         if (modes[i] != state.exposureControl.mode) dispatch(SetExposureMode(modes[i]))
                     }
@@ -1015,6 +1008,44 @@ internal fun X14uCaptureLayout(
                     editorFor = { key -> configEditor(key, q, actions) }
                 }
             }
+        }
+    }
+    // Grip zoom lever with Smooth zoom (Nov 19, Photo / Pro): held, it zooms steadily (a doubling about every 1.2 s)
+    // through the lenses as the zoom ruler does, with the ruler open to show where it is; it closes 1.5 s after the
+    // lever is let go (if the lever opened it). Elsewhere, or with Lens steps, the lever steps along the pill.
+    val leverContext = LocalContext.current
+    remember(leverContext) { com.rawr.camera.settings.model.GripLeverSettings.init(leverContext) }
+    val leverZooms = zoomOn && !recordingLock &&
+        com.rawr.camera.settings.model.GripLeverSettings.mode == com.rawr.camera.settings.model.GripLeverSettings.Mode.Zoom
+    androidx.compose.runtime.DisposableEffect(leverZooms) {
+        com.rawr.camera.integration.GripEvents.leverZooms = leverZooms
+        onDispose { com.rawr.camera.integration.GripEvents.leverZooms = false }
+    }
+    val leverHeld by com.rawr.camera.integration.GripEvents.zoomHeld.collectAsState()
+    val zoomNow by rememberUpdatedState(zoom)
+    val setZoomNow by rememberUpdatedState(setZoom)
+    var leverOpened by remember { mutableStateOf(false) }
+    LaunchedEffect(leverHeld, leverZooms) {
+        if (!leverZooms) return@LaunchedEffect
+        if (leverHeld == 0) {
+            if (leverOpened) {
+                kotlinx.coroutines.delay(1500L)
+                if (selected == ZOOM_KEY) selected = null
+                leverOpened = false
+            }
+            return@LaunchedEffect
+        }
+        if (selected != ZOOM_KEY) {
+            panel = null
+            selected = ZOOM_KEY
+            leverOpened = true
+        }
+        var last = androidx.compose.runtime.withFrameNanos { it }
+        while (true) {
+            val now = androidx.compose.runtime.withFrameNanos { it }
+            val seconds = (now - last) / 1e9f
+            last = now
+            setZoomNow(zoomNow * Math.pow(2.0, (leverHeld * seconds / 1.2f).toDouble()).toFloat())
         }
     }
     // Photography Kit dial (read over USB): clicks move the chosen control's ruler or choices, which open to show it.
@@ -1149,12 +1180,6 @@ internal fun X14uCaptureLayout(
                     when {
                         direction > 0 -> openTools(true)
                         toolsOpen -> openTools(false)
-                        // Swipe up: Photo <-> Pro (stills only, not while recording).
-                        !isVideo && !recordingLock && !pano && !burst -> {
-                            closeAll()
-                            extrasNow.onSetProUi(!extrasNow.proUi)
-                            modeFlash = if (extrasNow.proUi) "PHOTO" else "PHOTO+"
-                        }
                     }
                 }
             )
@@ -1239,7 +1264,7 @@ internal fun X14uCaptureLayout(
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
-                // Photo / Photo+ only: in Video the viewfinder runs past this frame (16:9), so the loupe would sit off.
+                // Photo / Pro only: in Video the viewfinder runs past this frame (16:9), so the loupe would sit off.
                 if (loupeOpen && !isVideo) {
                     val target = state.focus.target
                     X14uFocusLoupe(
@@ -1258,42 +1283,6 @@ internal fun X14uCaptureLayout(
                             }
                         },
                         modifier = Modifier.fillMaxSize()
-                    )
-                }
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = stillsHintVisible && !toolsOpen,
-                    enter = androidx.compose.animation.fadeIn(),
-                    exit = androidx.compose.animation.fadeOut(),
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 64.dp)
-                ) {
-                    Row(
-                        Modifier
-                            .uprightLayoutInLandscape(orientation)
-                            .background(Color.Black.copy(alpha = .6f), RoundedCornerShape(16.dp))
-                            .padding(horizontal = 12.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(X14uIcons.ChevronUp, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Swipe up for Photo+", fontFamily = X14uFont, fontSize = dpText(13f), color = Color.White)
-                    }
-                }
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = modeFlash != null,
-                    enter = androidx.compose.animation.fadeIn(),
-                    exit = androidx.compose.animation.fadeOut(),
-                    modifier = Modifier.align(Alignment.Center)
-                ) {
-                    Text(
-                        modeFlash ?: "",
-                        fontFamily = X14uFont,
-                        fontWeight = FontWeight.Medium,
-                        fontSize = dpText(20f),
-                        color = Color.White,
-                        modifier = Modifier
-                            .uprightLayoutInLandscape(orientation)
-                            .background(Color.Black.copy(alpha = .45f), RoundedCornerShape(10.dp))
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
                     )
                 }
                 if (isVideo && videoHolding && !videoControls.recording) {
@@ -1349,7 +1338,7 @@ internal fun X14uCaptureLayout(
                     buttons = lensSet,
                     mmLabels = LocalCaptureExtras.current.tools.lensButtons.mmLabels,
                     zoomChain = zoomChain,
-                    // Digital focal lengths: photo (and Photo+) through the zoom, video through the crop; not in Pano.
+                    // Digital focal lengths: photo (and Pro) through the zoom, video through the crop; not in Pano.
                     stopsAvailable = !pano && (zoomOn || (isVideo && chainLens != null)),
                     totalZoom = if (zoomOn) zoom else null,
                     onResetPanel = { target ->
@@ -1517,10 +1506,10 @@ internal fun X14uCaptureLayout(
                     )
                 }
             } else if (panel == null && simplePhoto && !pano) {
-                // A: what auto exposure picked, dim either side of EV; tapping one switches to S or I with its editor open.
-                val live = if (state.exposureControl.mode == ExposureMode.Auto) {
-                    exposureCells(state, quick, lensOptions, fiftyMp).filter { it.key == "ss" || it.key == "iso" }
-                } else emptyList()
+                // Shutter and ISO the camera picks (both in A, ISO in S, shutter in I) show dim in their places; tapping
+                // one switches to S or I with its editor open.
+                val live = exposureCells(state, quick, lensOptions, fiftyMp)
+                    .filter { (it.key == "ss" || it.key == "iso") && cells.none { c -> c.key == it.key } }
                 X14uPhotoRow(cells, live, currentKey, state, dispatch, enabled = !recordingLock && !panoLocked, modifier = rowModifier,
                     onTap = onCellTap) { key ->
                     val mode = if (key == "ss") ExposureMode.ShutterPriority else ExposureMode.IsoPriority
@@ -1602,9 +1591,6 @@ internal fun X14uCaptureLayout(
         }
     }
 }
-
-private fun simplePhotoForHint(state: CaptureUiState, proUi: Boolean): Boolean =
-    state.captureMode != CaptureMode.Video && !proUi
 
 private fun lookTabs(film: Boolean): List<String> = buildList {
     add("PROFILE")
@@ -2218,19 +2204,20 @@ private fun X14uPhotoRow(
 ) {
     val orientation = state.orientation
     val aperture = cells.firstOrNull { it.key == "f" }
-    val liveShutter = live.firstOrNull { it.key == "ss" }
-    val liveIso = live.firstOrNull { it.key == "iso" }
+    // Fixed places (Nov 19): shutter · EV · ISO, each set by you (a cell) or picked by the camera (dim).
     Row(modifier.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         X14uAmsiPill(state, dispatch, enabled)
         Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
             Row(Modifier.fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                if (liveShutter != null) X14uLiveValue(liveShutter, orientation, enabled, onLiveTap)
-                cells.filter { it.key != "f" }.forEach { cell ->
-                    X14uCellView(cell, cell.key == selectedKey, orientation, compact = false,
-                        modifier = Modifier.width(66.dp).fillMaxHeight(), upright = true, onTap = onTap)
+                listOf("ss", "ev", "iso").forEach { k ->
+                    val cell = cells.firstOrNull { it.key == k }
+                    val dim = live.firstOrNull { it.key == k }
+                    if (cell != null) {
+                        X14uCellView(cell, cell.key == selectedKey, orientation, compact = false,
+                            modifier = Modifier.width(66.dp).fillMaxHeight(), upright = true, onTap = onTap)
+                    } else if (dim != null) X14uLiveValue(dim, orientation, enabled, onLiveTap)
                 }
-                if (liveIso != null) X14uLiveValue(liveIso, orientation, enabled, onLiveTap)
             }
         }
         Box(Modifier.size(1.dp, 22.dp).background(Color.White.copy(alpha = .15f)))
@@ -2266,57 +2253,187 @@ private fun X14uLiveValue(cell: X14uCell, orientation: Orientation, enabled: Boo
     }
 }
 
-/** A · M · S · I: auto, manual, shutter priority, ISO priority. Modes the camera can't run are greyed. */
+/**
+ * Photo's exposure modes (Nov 19): S · A · I, auto in the middle (full manual is the Pro mode). Modes the camera can't
+ * run are greyed. Pano's MODE chips use the same list.
+ */
+private val PHOTO_EXPOSURE_MODES = listOf(
+    ExposureMode.ShutterPriority to "S", ExposureMode.Auto to "A", ExposureMode.IsoPriority to "I"
+)
+
+/** S · A · I: a pill in Minimal, a drum in a window in Classic and Bronze ([X14uAmsiDrum]). */
 @Composable
 private fun X14uAmsiPill(state: CaptureUiState, dispatch: CaptureDispatch, enabled: Boolean) {
+    if (isClassicStyle()) {
+        X14uAmsiDrum(state, dispatch, enabled)
+        return
+    }
     val haptics = LocalCaptureHaptics.current
     val supported = state.capabilities.supportedExposureModes
     val current = state.exposureControl.mode
-    // Classic: engraved letters on the plate (no pill), the mode in use lit with a dot under it, like a dial's index.
-    val classic = isClassicStyle()
     Row(
         Modifier.height(40.dp)
-            .then(if (classic) Modifier else Modifier.background(Color.White.copy(alpha = .08f), RoundedCornerShape(20.dp)))
+            .background(Color.White.copy(alpha = .08f), RoundedCornerShape(20.dp))
             .padding(horizontal = 3.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        listOf(ExposureMode.Auto to "A", ExposureMode.Manual to "M", ExposureMode.ShutterPriority to "S", ExposureMode.IsoPriority to "I")
-            .forEach { (mode, letter) ->
-                val on = mode == current
-                val usable = enabled && mode in supported
-                Box(
-                    Modifier
-                        .size(32.dp, 34.dp)
-                        .background(if (on && !classic) CaptureColors.Accent.copy(alpha = .22f) else Color.Transparent, RoundedCornerShape(17.dp))
-                        .captureClickable(shape = RoundedCornerShape(17.dp), enabled = usable) {
-                            if (!on) {
-                                haptics.selection()
-                                dispatch(SetExposureMode(mode))
-                            }
+        PHOTO_EXPOSURE_MODES.forEach { (mode, letter) ->
+            val on = mode == current
+            val usable = enabled && mode in supported
+            Box(
+                Modifier
+                    .size(32.dp, 34.dp)
+                    .background(if (on) CaptureColors.Accent.copy(alpha = .22f) else Color.Transparent, RoundedCornerShape(17.dp))
+                    .captureClickable(shape = RoundedCornerShape(17.dp), enabled = usable) {
+                        if (!on) {
+                            haptics.selection()
+                            dispatch(SetExposureMode(mode))
                         }
-                        .semantics {
-                            contentDescription = "Exposure mode $letter"
-                            role = Role.RadioButton
-                            selected = on
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        letter,
-                        fontFamily = X14uFont,
-                        fontWeight = if (on) FontWeight.Medium else FontWeight.Normal,
-                        fontSize = dpText(15f),
-                        color = when {
-                            on -> CaptureColors.Accent
-                            usable -> if (classic) ClassicColors.Engraved.copy(alpha = .8f) else Color.White.copy(alpha = .75f)
-                            else -> Color.White.copy(alpha = .25f)
-                        },
-                        modifier = Modifier.uprightInLandscape(state.orientation)
-                    )
-                    if (on && classic) Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 2.dp).size(3.dp)
-                        .background(CaptureColors.Accent, CircleShape))
+                    }
+                    .semantics {
+                        contentDescription = "Exposure mode $letter"
+                        role = Role.RadioButton
+                        selected = on
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    letter,
+                    fontFamily = X14uFont,
+                    fontWeight = if (on) FontWeight.Medium else FontWeight.Normal,
+                    fontSize = dpText(15f),
+                    color = when {
+                        on -> CaptureColors.Accent
+                        usable -> Color.White.copy(alpha = .75f)
+                        else -> Color.White.copy(alpha = .25f)
+                    },
+                    modifier = Modifier.uprightInLandscape(state.orientation)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Classic / Bronze (Nov 19, approved mockup): S · A · I printed on a drum behind a window with knurled ends, as the
+ * rulers. The mode in use sits at the index marks; its neighbours turn away toward the ends (only what fits between
+ * the knurls is printed, so nothing is cut). Drag it sideways to turn it a mode at a time, or tap a letter. Modes the
+ * camera can't run are greyed and skipped.
+ */
+@Composable
+private fun X14uAmsiDrum(state: CaptureUiState, dispatch: CaptureDispatch, enabled: Boolean) {
+    val haptics = LocalCaptureHaptics.current
+    val measurer = rememberTextMeasurer()
+    val supported = state.capabilities.supportedExposureModes
+    val current = state.exposureControl.mode
+    val selectedIndex = PHOTO_EXPOSURE_MODES.indexOfFirst { it.first == current }.coerceAtLeast(0)
+    var drag by remember { mutableStateOf(0f) }
+    var dragging by remember { mutableStateOf(false) }
+    val latestIndex by rememberUpdatedState(selectedIndex)
+    val supportedNow by rememberUpdatedState(supported)
+    val orientation = state.orientation
+    val knurl = 14.dp
+    val lit = dpText(17f)
+    val plain = dpText(14f)
+    // The next usable mode from [from] in [direction], or null at the end.
+    fun next(from: Int, direction: Int): Int? {
+        var i = from + direction
+        while (i in PHOTO_EXPOSURE_MODES.indices) {
+            if (PHOTO_EXPOSURE_MODES[i].first in supportedNow) return i
+            i += direction
+        }
+        return null
+    }
+    val choose: (Int) -> Unit = { i ->
+        val mode = PHOTO_EXPOSURE_MODES[i].first
+        if (mode != state.exposureControl.mode && mode in supportedNow) {
+            haptics.detent()
+            dispatch(SetExposureMode(mode))
+        }
+    }
+    val chooseNow by rememberUpdatedState(choose)
+    Box(
+        Modifier
+            .size(114.dp, 44.dp)
+            .classicWindow(knurlWidth = knurl)
+            .semantics {
+                contentDescription = "Exposure mode ${PHOTO_EXPOSURE_MODES[selectedIndex].second}. Drag or tap a letter to change."
+            }
+    ) {
+        Canvas(
+            Modifier
+                .fillMaxSize()
+                .pointerInput(enabled) {
+                    if (!enabled) return@pointerInput
+                    detectTapGestures { tap ->
+                        // A tap on a letter left or right of the index chooses it (one step that way).
+                        val dx = tap.x - size.width / 2f
+                        if (abs(dx) > 12.dp.toPx()) next(latestIndex, if (dx > 0) 1 else -1)?.let(chooseNow)
+                    }
+                }
+                .pointerInput(enabled) {
+                    if (!enabled) return@pointerInput
+                    val step = 30.dp.toPx()
+                    detectHorizontalDragGestures(
+                        onDragStart = { dragging = true; drag = 0f },
+                        onDragEnd = { dragging = false; drag = 0f },
+                        onDragCancel = { dragging = false; drag = 0f }
+                    ) { change, delta ->
+                        change.consume()
+                        drag += delta
+                        // Dragging left turns the drum toward the letter on the right, as the rulers.
+                        if (abs(drag) >= step * .6f) {
+                            val direction = if (drag < 0) 1 else -1
+                            val target = next(latestIndex, direction)
+                            if (target != null) {
+                                chooseNow(target)
+                                drag += direction * step
+                            } else drag = drag.coerceIn(-step * .6f, step * .6f)
+                        }
+                    }
+                }
+        ) {
+            val cx = size.width / 2f
+            val cy = size.height / 2f
+            // Printable half-width: inside the 3 dp rim and the knurls, with a margin; the drum turns marks away up
+            // to 1.25 rad, as the ruler's drum.
+            val half = cx - (3.dp + knurl + 4.dp).toPx()
+            val radius = half / kotlin.math.sin(1.25f)
+            val spacing = 30.dp.toPx()
+            val offset = if (dragging) drag.coerceIn(-spacing, spacing) else 0f
+            PHOTO_EXPOSURE_MODES.forEachIndexed { i, (mode, letter) ->
+                val along = (i - selectedIndex) * spacing + offset
+                val angle = along / radius
+                if (abs(angle) > 1.25f) return@forEachIndexed
+                val x = cx + radius * kotlin.math.sin(angle)
+                val depth = kotlin.math.cos(angle)
+                val on = i == selectedIndex
+                val usable = enabled && mode in supported
+                val style = TextStyle(
+                    fontFamily = X14uFont,
+                    fontWeight = if (on) FontWeight.Medium else FontWeight.Normal,
+                    fontSize = (if (on) lit else plain) * (.7f + .3f * depth)
+                )
+                val layout = measurer.measure(letter, style)
+                val w = layout.size.width / 2f
+                if (abs(x - cx) + w > half) return@forEachIndexed
+                val color = when {
+                    on && !dragging -> CaptureColors.Accent
+                    usable -> ClassicColors.Engraved
+                    else -> Color.White.copy(alpha = .3f)
+                }
+                val turn = if (orientation == Orientation.Landscape) 90f else 0f
+                rotate(turn, Offset(x, cy)) {
+                    drawText(layout, color = color.copy(alpha = color.alpha * depth.coerceIn(.3f, 1f)),
+                        topLeft = Offset(x - w, cy - layout.size.height / 2f))
                 }
             }
+            // Index marks at the centre, top and bottom (the accent, as the ruler's needle).
+            val mark = 5.dp.toPx()
+            val inset = 5.dp.toPx()
+            drawLine(CaptureColors.Accent, Offset(cx, inset), Offset(cx, inset + mark), 1.5.dp.toPx())
+            drawLine(CaptureColors.Accent, Offset(cx, size.height - inset - mark), Offset(cx, size.height - inset), 1.5.dp.toPx())
+        }
     }
 }
 
@@ -3201,9 +3318,10 @@ private fun X14uIdleControlArea(
     val extras = LocalCaptureExtras.current
     val classic = isClassicStyle()
     val current = currentX14uMode(state, extras.proUi, extras.pano, extras.burst)
-    // The strip shows the stills mode last used (Photo or Photo+; swipe up on the viewfinder switches), Video, Burst
-    // and Pano.
-    val stripModes = listOf(if (extras.proUi) X14uMode.Pro else X14uMode.Photo, X14uMode.Video, X14uMode.Burst, X14uMode.Pano)
+    // Every mode, in the user's order (long-press one and drag it to move it, as the preset cards).
+    val modeContext = LocalContext.current
+    remember(modeContext) { X14uModeOrder.init(modeContext) }
+    val stripModes = X14uModeOrder.modes
     var dismissed by remember { mutableStateOf<VideoTakeSummary?>(null) }
     val take = video.lastTake
     LaunchedEffect(take) {
@@ -3222,7 +3340,7 @@ private fun X14uIdleControlArea(
             Column(
                 Modifier
                     .fillMaxSize()
-                    .pointerInput(enabled, current) {
+                    .pointerInput(enabled, current, stripModes) {
                         if (!enabled) return@pointerInput
                         detectHorizontalDragGestures(
                             onDragStart = { travel = 0f },
@@ -3252,47 +3370,9 @@ private fun X14uIdleControlArea(
                     Box(Modifier.size(20.dp, 3.dp).background(Color.White.copy(alpha = .3f), RoundedCornerShape(2.dp)))
                     Spacer(Modifier.height(10.dp))
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(30.dp), verticalAlignment = Alignment.CenterVertically) {
-                    stripModes.forEach { mode ->
-                        val isSelected = current == mode
-                        val stills = mode == X14uMode.Photo || mode == X14uMode.Pro
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            mode.label,
-                            fontFamily = X14uFont,
-                            fontSize = dpText(15f),
-                            color = when {
-                                isSelected -> if (enabled) CaptureColors.Accent else CaptureColors.Accent.copy(alpha = .4f)
-                                classic -> ClassicColors.Engraved.copy(alpha = if (enabled) .85f else .25f)
-                                else -> Color.White.copy(alpha = if (enabled) .85f else .25f)
-                            },
-                            modifier = Modifier
-                                .captureClickable(shape = CaptureTextRippleShape, enabled = enabled) {
-                                    haptics.selection()
-                                    when {
-                                        !isSelected -> selectX14uMode(mode, state, dispatch, extras)
-                                        // Tapping the lit Photo / Photo+ label flips to the other.
-                                        stills -> extras.onSetProUi(!extras.proUi)
-                                    }
-                                }
-                                .semantics {
-                                    role = Role.Tab
-                                    this.selected = isSelected
-                                }
-                                .padding(horizontal = 6.dp, vertical = 4.dp)
-                        )
-                        // Two dots under the stills label: Photo · Photo+ (there is a second stills mode).
-                        if (stills) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            listOf(false, true).forEach { plus ->
-                                val lit = extras.proUi == plus
-                                Box(Modifier.size(4.dp).background(
-                                    if (lit && isSelected) CaptureColors.Accent else Color.White.copy(alpha = if (lit) .55f else .25f),
-                                    CircleShape
-                                ))
-                            }
-                        }
-                        }
-                    }
+                X14uModeRow(stripModes, current, enabled, classic) { mode ->
+                    haptics.selection()
+                    selectX14uMode(mode, state, dispatch, extras)
                 }
             }
         }
@@ -3618,5 +3698,104 @@ internal class X14uVideoLock {
         saved = null
         chips = emptyList()
         active = false
+    }
+}
+
+/**
+ * The mode names in even slots (Nov 19). Tap = that mode. Long-press and drag = move it along the strip (the others make
+ * room); the order is kept (X14uModeOrder).
+ */
+@Composable
+private fun X14uModeRow(
+    modes: List<X14uMode>,
+    current: X14uMode,
+    enabled: Boolean,
+    classic: Boolean,
+    onSelect: (X14uMode) -> Unit
+) {
+    val haptics = LocalCaptureHaptics.current
+    val slot = 66.dp
+    val stepPx = with(LocalDensity.current) { slot.toPx() }
+    val order = remember(modes) { modes.toMutableStateList() }
+    var dragMode by remember { mutableStateOf<X14uMode?>(null) }
+    var dragDx by remember { mutableStateOf(0f) }
+    val modesNow by rememberUpdatedState(modes)
+    val selectNow by rememberUpdatedState(onSelect)
+    val currentNow by rememberUpdatedState(current)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        order.forEach { mode ->
+            key(mode) {
+                val isSelected = current == mode
+                val dragging = dragMode == mode
+                Box(
+                    Modifier
+                        .zIndex(if (dragging) 1f else 0f)
+                        .graphicsLayer {
+                            translationX = if (dragging) dragDx else 0f
+                            val k = if (dragging) 1.12f else 1f
+                            scaleX = k
+                            scaleY = k
+                        }
+                        .width(slot)
+                        .height(36.dp)
+                        .pointerInput(mode, enabled) {
+                            if (!enabled) return@pointerInput
+                            detectTapGestures { if (mode != currentNow) selectNow(mode) }
+                        }
+                        .then(if (!enabled) Modifier else Modifier.pointerInput(mode) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = {
+                                    haptics.selection()
+                                    dragMode = mode
+                                    dragDx = 0f
+                                },
+                                onDrag = { change, amount ->
+                                    change.consume()
+                                    dragDx += amount.x
+                                    val i = order.indexOf(mode)
+                                    if (dragDx > stepPx / 2 && i < order.lastIndex) {
+                                        order.add(i + 1, order.removeAt(i))
+                                        dragDx -= stepPx
+                                        haptics.selection()
+                                    } else if (dragDx < -stepPx / 2 && i > 0) {
+                                        order.add(i - 1, order.removeAt(i))
+                                        dragDx += stepPx
+                                        haptics.selection()
+                                    }
+                                },
+                                onDragEnd = {
+                                    dragMode = null
+                                    dragDx = 0f
+                                    if (order.toList() != modesNow) X14uModeOrder.set(order.toList())
+                                },
+                                onDragCancel = {
+                                    dragMode = null
+                                    dragDx = 0f
+                                    order.clear()
+                                    order.addAll(modesNow)
+                                }
+                            )
+                        })
+                        .semantics {
+                            role = Role.Tab
+                            this.selected = isSelected
+                            contentDescription = mode.label + ". Long-press and drag to move."
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        mode.label,
+                        fontFamily = X14uFont,
+                        fontSize = dpText(15f),
+                        maxLines = 1,
+                        color = when {
+                            isSelected -> if (enabled) CaptureColors.Accent else CaptureColors.Accent.copy(alpha = .4f)
+                            classic -> ClassicColors.Engraved.copy(alpha = if (enabled) .85f else .25f)
+                            else -> Color.White.copy(alpha = if (enabled) .85f else .25f)
+                        }
+                    )
+                }
+            }
+        }
     }
 }

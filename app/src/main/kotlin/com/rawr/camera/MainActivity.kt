@@ -520,7 +520,7 @@ class MainActivity : ComponentActivity() {
             }
             KeyEvent.KEYCODE_ZOOM_IN, KeyEvent.KEYCODE_ZOOM_OUT -> {
                 if (started && event.repeatCount == 0) {
-                    com.rawr.camera.integration.GripEvents.lensSteps.tryEmit(if (keyCode == KeyEvent.KEYCODE_ZOOM_IN) 1 else -1)
+                    com.rawr.camera.integration.GripEvents.lever(if (keyCode == KeyEvent.KEYCODE_ZOOM_IN) 1 else -1)
                 }
             }
             else -> return super.onKeyDown(keyCode, event)
@@ -533,7 +533,11 @@ class MainActivity : ComponentActivity() {
             shutterReleased()
             true
         }
-        KeyEvent.KEYCODE_FOCUS, KeyEvent.KEYCODE_ZOOM_IN, KeyEvent.KEYCODE_ZOOM_OUT -> true
+        KeyEvent.KEYCODE_ZOOM_IN, KeyEvent.KEYCODE_ZOOM_OUT -> {
+            com.rawr.camera.integration.GripEvents.lever(0)
+            true
+        }
+        KeyEvent.KEYCODE_FOCUS -> true
         else -> super.onKeyUp(keyCode, event)
     }
 

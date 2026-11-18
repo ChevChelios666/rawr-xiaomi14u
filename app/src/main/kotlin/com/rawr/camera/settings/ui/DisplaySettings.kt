@@ -81,6 +81,17 @@ internal fun DisplayControlsSettings(state: SettingsUiState, dispatch: SettingsD
                 checked = state.values.gripDialReverse,
                 onCheckedChange = { dispatch.invoke(com.rawr.camera.settings.architecture.SetGripDialReverse(it)) }
             )
+            SettingDivider()
+            // Nov 19: the lever steps along the lens pill, or zooms smoothly while held (Photo and Pro).
+            val leverContext = androidx.compose.ui.platform.LocalContext.current
+            androidx.compose.runtime.remember(leverContext) { com.rawr.camera.settings.model.GripLeverSettings.init(leverContext) }
+            DropdownChoiceRow(
+                title = "Zoom lever",
+                selected = com.rawr.camera.settings.model.GripLeverSettings.mode,
+                values = com.rawr.camera.settings.model.GripLeverSettings.Mode.entries.toList(),
+                label = { it.label },
+                onSelect = { com.rawr.camera.settings.model.GripLeverSettings.select(it) }
+            )
         }
     }
 }
