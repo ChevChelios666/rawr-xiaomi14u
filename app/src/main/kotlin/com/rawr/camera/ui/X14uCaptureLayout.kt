@@ -1738,7 +1738,7 @@ private fun X14uRoundButton(
         // Classic: the colour wheel is the Look button's face (no icon); the dial keeps a small one.
         if (classic && classicLabel != null) Text(
             classicLabel,
-            color = if (enabled) ClassicColors.Engraved.copy(alpha = .75f) else Color.White.copy(alpha = .25f),
+            color = if (enabled) ClassicColors.KnobText.copy(alpha = if (ClassicColors.bronze) .95f else .75f) else Color.White.copy(alpha = .25f),
             fontFamily = CaptureMono,
             fontWeight = FontWeight.Bold,
             fontSize = 9.sp,
@@ -1752,7 +1752,7 @@ private fun X14uRoundButton(
                 !enabled -> Color.White.copy(alpha = .25f)
                 open && !classic -> Color.Black
                 open || highlighted -> CaptureColors.Accent
-                classic -> ClassicColors.Engraved.copy(alpha = .9f)
+                classic -> ClassicColors.KnobText.copy(alpha = .9f)
                 else -> Color.White.copy(alpha = .9f)
             },
             modifier = Modifier.size(size * (if (classic && face == ClassicFace.Dial) iconScale * .7f else iconScale))
@@ -2882,7 +2882,11 @@ private fun X14uTextRoundButton(text: String, active: Boolean, orientation: Orie
     ) {
         Text(
             text, fontFamily = X14uFont, fontWeight = FontWeight.Medium, fontSize = dpText(if (text.length > 2) 9.5f else 12f),
-            maxLines = 1, color = if (active) CaptureColors.Accent else Color.White.copy(alpha = .85f)
+            maxLines = 1, color = when {
+                active -> CaptureColors.Accent
+                classic -> ClassicColors.KnobText.copy(alpha = .9f)
+                else -> Color.White.copy(alpha = .85f)
+            }
         )
     }
 }
@@ -2910,7 +2914,11 @@ private fun X14uAutoButton(active: Boolean, enabled: Boolean, orientation: Orien
             "A",
             fontFamily = X14uFont,
             fontSize = dpText(15f),
-            color = if (active) CaptureColors.Accent else Color.White,
+            color = when {
+                active -> CaptureColors.Accent
+                classic -> ClassicColors.KnobText
+                else -> Color.White
+            },
             modifier = Modifier.uprightInLandscape(orientation)
         )
     }

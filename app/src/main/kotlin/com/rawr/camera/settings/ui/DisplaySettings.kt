@@ -43,7 +43,11 @@ internal fun DisplayControlsSettings(state: SettingsUiState, dispatch: SettingsD
             SettingDivider()
             SettingsRow(
                 "Control Style",
-                if (state.values.controlSurfaceStyle == ControlSurfaceStyle.Classic) "Classic" else "Minimal",
+                when (state.values.controlSurfaceStyle) {
+                    ControlSurfaceStyle.Classic -> "Classic"
+                    ControlSurfaceStyle.Bronze -> "Bronze"
+                    else -> "Minimal"
+                },
                 testTag = SettingsTestTags.row("DisplayControls", "control_style"),
                 onClick = {
                     dispatch.invoke(OpenSection(SettingsSection.ControlStyle))
@@ -189,9 +193,20 @@ internal fun ControlStyleSettings(state: SettingsUiState, dispatch: SettingsDisp
             )
             SettingDivider()
             SettingsSelectionRow(
+                title = "Bronze",
+                supportingText = "The camera body in bronze and brown leather.",
+                selected = state.values.controlSurfaceStyle == ControlSurfaceStyle.Bronze,
+                onClick = {
+                    haptics.detent()
+                    dispatch.invoke(SetControlSurfaceStyle(ControlSurfaceStyle.Bronze))
+                }
+            )
+            SettingDivider()
+            SettingsSelectionRow(
                 title = "Minimal",
                 supportingText = "Simply black.",
-                selected = state.values.controlSurfaceStyle != ControlSurfaceStyle.Classic,
+                selected = state.values.controlSurfaceStyle != ControlSurfaceStyle.Classic &&
+                    state.values.controlSurfaceStyle != ControlSurfaceStyle.Bronze,
                 onClick = {
                     haptics.detent()
                     dispatch.invoke(SetControlSurfaceStyle(ControlSurfaceStyle.Basic))

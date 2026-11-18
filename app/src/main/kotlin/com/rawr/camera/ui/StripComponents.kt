@@ -406,7 +406,7 @@ internal fun CompactSidePill(
     val classic = isClassicStyle()
     val contentColor = when {
         active -> CaptureColors.Accent
-        classic -> ClassicColors.Engraved.copy(alpha = .75f)
+        classic -> ClassicColors.KnobText.copy(alpha = if (ClassicColors.bronze) .95f else .75f)
         else -> Color.White.copy(alpha = .55f)
     }
     // Bare toggle styling (mirrors LensSelector): icon + label only, no card.

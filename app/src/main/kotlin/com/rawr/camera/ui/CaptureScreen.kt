@@ -41,10 +41,15 @@ fun CaptureScreen(
 ) {
     val haptics = rememberCaptureHaptics()
     // X14U: the Classic style's accent (orange) everywhere the accent is read.
-    androidx.compose.runtime.SideEffect { CaptureColors.classic = state.controlSurfaceStyle == com.rawr.camera.model.ControlSurfaceStyle.Classic }
+    androidx.compose.runtime.SideEffect {
+        val style = state.controlSurfaceStyle
+        CaptureColors.classic = style == com.rawr.camera.model.ControlSurfaceStyle.Classic || style == com.rawr.camera.model.ControlSurfaceStyle.Bronze
+        ClassicColors.bronze = style == com.rawr.camera.model.ControlSurfaceStyle.Bronze
+    }
     // X14U Classic: every label engraved into the metal: a fine light edge under each letter, where the cut catches
     // the light (texts with their own style, e.g. the viewfinder's drop shadow, keep it).
-    val classicStyle = state.controlSurfaceStyle == com.rawr.camera.model.ControlSurfaceStyle.Classic
+    val classicStyle = state.controlSurfaceStyle == com.rawr.camera.model.ControlSurfaceStyle.Classic ||
+        state.controlSurfaceStyle == com.rawr.camera.model.ControlSurfaceStyle.Bronze
     val engraveEdge = with(androidx.compose.ui.platform.LocalDensity.current) { 1.dp.toPx() }
     val baseText = androidx.compose.material3.LocalTextStyle.current
     val textStyle = if (!classicStyle) baseText else baseText.merge(

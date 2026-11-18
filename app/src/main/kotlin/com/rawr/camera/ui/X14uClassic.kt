@@ -5,6 +5,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -37,23 +42,57 @@ import kotlin.math.sqrt
  * Only drawing: layout and behaviour are the Minimal style's. Textures are made once, in code (no image assets).
  */
 internal object ClassicColors {
+    /**
+     * Bronze (Nov 18, the user's third style): the same body in bronze metal and brown leather, silver lettering on
+     * the knobs, a brighter orange, and the shutter's ring red only while pressed or busy. Set by CaptureScreen.
+     */
+    var bronze by mutableStateOf(false)
+
     /** The mockup's orange (selected values, lit mode); replaces the coral accent in this style. */
-    val Accent = Color(0xFFE8763E)
-    /** Top bar labels: warm, like engraving filled with copper paint. */
-    val Copper = Color(0xFFC08A62)
-    val Engraved = Color(0xFFD9D2C7)
-    val EngravedDim = Color(0xFF8D877E)
+    val Accent: Color get() = if (bronze) Color(0xFFFF8A3D) else Color(0xFFE8763E)
+    /** Top bar labels: warm, like engraving filled with copper paint (pale gold on bronze). */
+    val Copper: Color get() = if (bronze) Color(0xFFE6C898) else Color(0xFFC08A62)
+    val Engraved: Color get() = if (bronze) Color(0xFFF0E4D0) else Color(0xFFD9D2C7)
+    val EngravedDim: Color get() = if (bronze) Color(0xFFB29C80) else Color(0xFF8D877E)
+    /** Lettering on the knobs: engraved, silver on bronze (it stands out against the metal). */
+    val KnobText: Color get() = if (bronze) Color(0xFFD4D7DB) else Engraved
     /** Plates: the top bar a step lighter than the body plates, the mode band a step darker. */
-    val MetalTop = Color(0xFF262625)
-    val Metal = Color(0xFF1E1E1D)
-    val MetalDark = Color(0xFF181817)
+    val MetalTop: Color get() = metal(0x26)
+    val Metal: Color get() = metal(0x1E)
+    val MetalDark: Color get() = metal(0x18)
     val Groove = Color(0xFF050505)
     val Red = Color(0xFFC23A2E)
     val Glass = Color(0xFF0A0A0A)
+
+    /**
+     * A metal tone by its grey level (the Classic drawing is in greys): grey itself in Classic; in Bronze a gradient
+     * map from dark bronze to pale bronze.
+     */
+    fun metal(level: Int, alpha: Float = 1f): Color {
+        val v = level.coerceIn(0, 255)
+        if (!bronze) return Color(v, v, v, (alpha * 255).toInt().coerceIn(0, 255))
+        val t = ((v - 4) / 110f).coerceIn(0f, 1f).let { Math.pow(it.toDouble(), .8).toFloat() }
+        fun mix(a: Int, b: Int) = (a + (b - a) * t).toInt().coerceIn(0, 255)
+        return Color(mix(30, 205), mix(22, 170), mix(15, 125), (alpha * 255).toInt().coerceIn(0, 255))
+    }
+
+    /** The shutter's ring: red in Classic; in Bronze red only while pressed or busy, dark bronze otherwise. */
+    fun shutterRing(active: Boolean): Color = if (!bronze || active) Red else Color(0xFF3A2A1C)
+
+    /** The leather's colour over the grey grain: near black (Classic), brown (Bronze). */
+    val leatherFilter: ColorFilter
+        get() = if (bronze) tint(1.30f, .86f, .58f) else tint(.82f, .82f, .84f)
+
+    private fun tint(r: Float, g: Float, b: Float) = ColorFilter.colorMatrix(
+        ColorMatrix(floatArrayOf(r, 0f, 0f, 0f, 0f, 0f, g, 0f, 0f, 0f, 0f, 0f, b, 0f, 0f, 0f, 0f, 0f, 1f, 0f))
+    )
+
+    /** Knurls and other grey textures over bronze: the same bronze gradient (roughly, by colour scale). */
+    val textureFilter: ColorFilter? get() = if (bronze) tint(1.55f, 1.25f, .9f) else null
 }
 
 @Composable
-internal fun isClassicStyle(): Boolean = LocalControlSurfaceStyle.current == ControlSurfaceStyle.Classic
+internal fun isClassicStyle(): Boolean = LocalControlSurfaceStyle.current.let { it == ControlSurfaceStyle.Classic || it == ControlSurfaceStyle.Bronze }
 
 /** The textures, made on first use: brushed streaks (an overlay), leather grain, the knurl of the ruler window. */
 internal object ClassicTextures {
@@ -97,18 +136,19 @@ internal object ClassicTextures {
     }
 
     /**
-     * Grained leather (v7, Nov 18, matched to the user's mockup): grains about 8 x 4.6 dp (cellular noise over a
-     * 14 x 24 grid, its lookup warped so the borders wander, wrapping at the tile's edges); each grain's border is a
-     * raised, wrinkled rim (not a dark joint), each grain gently domed, crinkle over everything (periodic value noise
-     * at 1.1 and 0.55 dp), softened once; lit from above as in the mockup, so the rims catch the light and their
-     * undersides fall into shade; a few broad lighter and darker patches. Sized in dp from the screen density.
+     * Grained leather (v6, Nov 18, after the user's mockup): irregular plates about 8.5 x 6 dp split by a network of
+     * creases (cellular noise over a 13 x 18 grid, its lookup warped so the creases wander, wrapping at the tile's
+     * edges), a raised lip along each crease, each plate gently domed, crinkle over everything (two octaves of periodic
+     * value noise at 1.3 and 0.65 dp), softened twice; lit from the top left (diffuse plus soft glints), creases shallow and
+     * only a little darker (v5 read as a stone wall), a
+     * few broad lighter and darker patches. Sized in dp from the screen density, so it looks the same on any phone.
      */
     private fun leatherBitmap(seed: Int): ImageBitmap {
         val density = android.content.res.Resources.getSystem().displayMetrics.density.coerceIn(1f, 5f)
-        val nx = 14
-        val ny = 24
-        val w = (nx * 8f * density).roundToInt()
-        val h = (ny * 4.6f * density).roundToInt()
+        val nx = 13
+        val ny = 18
+        val w = (nx * 8.5f * density).roundToInt()
+        val h = (ny * 6f * density).roundToInt()
         val sx = w.toFloat() / nx
         val sy = h.toFloat() / ny
         val fx = FloatArray(nx * ny)
@@ -121,10 +161,11 @@ internal object ClassicTextures {
         }
         val warpX = valueNoise(w, h, nx * 2, ny * 2, seed + 20)
         val warpY = valueNoise(w, h, nx * 2, ny * 2, seed + 21)
-        val gw = (w / (1.1f * density)).roundToInt()
-        val gh = (h / (1.1f * density)).roundToInt()
+        val gw = (w / (1.3f * density)).roundToInt()
+        val gh = (h / (1.3f * density)).roundToInt()
         val fine = valueNoise(w, h, gw, gh, seed + 30)
         val finer = valueNoise(w, h, gw * 2, gh * 2, seed + 31)
+        val crease = FloatArray(w * h)
         val height = FloatArray(w * h)
         for (y in 0 until h) for (x in 0 until w) {
             val o = y * w + x
@@ -151,17 +192,24 @@ internal object ClassicTextures {
                     bt = lift[wj * nx + wi]
                 } else if (d < d2) d2 = d
             }
-            val r = (d2 - d1) / .09f
-            val ridge = exp(-r * r) * (.7f + .6f * (fine[o] + .5f))
-            height[o] = .45f * ridge + .45f * (1f - d1 * d1).coerceIn(0f, 1f) + .06f * bt + .2f * fine[o] + .12f * finer[o]
+            val e = d2 - d1
+            val c = smooth((e / .22f).coerceIn(0f, 1f))
+            val lipT = (e - .11f) / .07f
+            val lip = exp(-lipT * lipT)
+            crease[o] = c
+            height[o] = .3f * c + .12f * lip + .3f * (1f - d1 * d1).coerceIn(0f, 1f) + .06f * bt + .22f * fine[o] + .1f * finer[o]
         }
-        // Softened once (3 x 3, wrapping).
-        val soft = FloatArray(w * h)
-        for (y in 0 until h) for (x in 0 until w) {
-            var sum = 0f
-            for (b in -1..1) for (a in -1..1) sum += height[((y + b + h) % h) * w + (x + a + w) % w]
-            soft[y * w + x] = sum / 9f
+        // Softened twice (3 x 3, wrapping): the user found the grain too sharp.
+        fun blur(src: FloatArray): FloatArray {
+            val out = FloatArray(w * h)
+            for (y in 0 until h) for (x in 0 until w) {
+                var sum = 0f
+                for (b in -1..1) for (a in -1..1) sum += src[((y + b + h) % h) * w + (x + a + w) % w]
+                out[y * w + x] = sum / 9f
+            }
+            return out
         }
+        val soft = blur(blur(height))
         val sheen = valueNoise(w, h, 4, 4, seed + 9)
         val k = 4f * density / 3.5f
         val pixels = IntArray(w * h)
@@ -170,10 +218,12 @@ internal object ClassicTextures {
             val gx = (soft[y * w + (x + 1) % w] - soft[y * w + (x - 1 + w) % w]) * k
             val gy = (soft[((y + 1) % h) * w + x] - soft[((y - 1 + h) % h) * w + x]) * k
             val n = sqrt(gx * gx + gy * gy + 1f)
-            val diff = (gx * .25f + gy * .8f + .55f) / n
+            val diff = (gx * .55f + gy * .6f + .58f) / n
             val c1 = diff.coerceIn(0f, 1f)
             val c2 = c1 * c1
-            var v = 9f + 14f * soft[o] + 42f * (diff - .4f).coerceIn(0f, 1f) + 70f * c2 * c2 * c2
+            val c4 = c2 * c2
+            var v = 14f + 10f * soft[o] + 30f * (diff - .45f).coerceIn(0f, 1f) + 70f * c4 * c2
+            v *= .8f + .2f * crease[o]
             v *= 1f + .35f * sheen[o]
             val v8 = v.toInt().coerceIn(0, 255)
             pixels[o] = (0xFF shl 24) or (v8 shl 16) or (v8 shl 8) or v8
@@ -237,12 +287,12 @@ internal fun DrawScope.drawMetalPlate(topLeft: Offset, size: Size, base: Color, 
 
 internal fun DrawScope.drawLeather(topLeft: Offset, size: Size) {
     if (size.width <= 0f || size.height <= 0f) return
-    drawRect(ClassicTextures.leather, topLeft, size)
+    drawRect(ClassicTextures.leather, topLeft, size, colorFilter = ClassicColors.leatherFilter)
 }
 
 /** Conical brushing of a round metal cap: highlights at the 1:30 and 7:30 positions, fine turned rings. */
 private fun DrawScope.drawCap(center: Offset, radius: Float, light: Float = 1f) {
-    fun g(v: Int) = Color((v * light).toInt().coerceIn(0, 255), (v * light).toInt().coerceIn(0, 255), (v * light).toInt().coerceIn(0, 255))
+    fun g(v: Int) = ClassicColors.metal((v * light).toInt())
     drawCircle(
         Brush.sweepGradient(listOf(g(42), g(104), g(38), g(22), g(96), g(36), g(42)), center),
         radius, center
@@ -268,20 +318,20 @@ private fun DrawScope.drawCap(center: Offset, radius: Float, light: Float = 1f) 
  * collar and cap (the shutter's red one). Returns the cap's radius (for what goes on it).
  */
 internal fun DrawScope.drawMetalKnob(center: Offset, radius: Float, ring: Color? = null, pressed: Boolean = false): Float {
-    drawCircle(Color(0xFF040404), radius, center)
+    drawCircle(ClassicColors.metal(4), radius, center)
     drawCircle(
         Brush.sweepGradient(
-            listOf(Color(0xFF4E4E4D), Color(0xFF141414), Color(0xFF62625F), Color(0xFF181818), Color(0xFF4E4E4D)), center
+            listOf(0x4E, 0x14, 0x62, 0x18, 0x4E).map { ClassicColors.metal(it) }, center
         ),
         radius * .93f, center
     )
     var cap = radius * .86f
-    drawCircle(Color(0xFF080808), cap, center)
+    drawCircle(ClassicColors.metal(8), cap, center)
     if (ring != null) {
         drawCircle(ring, cap - .5.dp.toPx(), center)
         drawCircle(Color.Black.copy(alpha = .35f), cap - .5.dp.toPx(), center, style = Stroke(1.dp.toPx()))
         cap -= 3.5.dp.toPx()
-        drawCircle(Color(0xFF080808), cap, center)
+        drawCircle(ClassicColors.metal(8), cap, center)
     }
     cap -= 1.5.dp.toPx()
     drawCap(center, cap, if (pressed) .8f else 1f)
@@ -306,7 +356,7 @@ internal fun ClassicKnob(
 
 /** The small knurled dial (exposure, right of the lens row): a ridged rim with engraved ticks around a metal cap. */
 internal fun DrawScope.drawKnurledDial(center: Offset, radius: Float) {
-    drawCircle(Color(0xFF040404), radius, center)
+    drawCircle(ClassicColors.metal(4), radius, center)
     val ridges = 48
     for (k in 0 until ridges) {
         val a = Math.toRadians(k * 360.0 / ridges)
@@ -314,13 +364,13 @@ internal fun DrawScope.drawKnurledDial(center: Offset, radius: Float) {
         val sinA = kotlin.math.sin(a).toFloat()
         val lit = .25f + .2f * kotlin.math.cos(a + Math.PI * .75).toFloat()
         drawLine(
-            Color(0xFF8A8A88).copy(alpha = lit.coerceIn(.05f, .5f)),
+            ClassicColors.metal(0x8A, lit.coerceIn(.05f, .5f)),
             Offset(center.x + cos * radius * .8f, center.y + sinA * radius * .8f),
             Offset(center.x + cos * radius * .97f, center.y + sinA * radius * .97f),
             strokeWidth = .8.dp.toPx()
         )
     }
-    drawCircle(Color(0xFF0A0A0A), radius * .78f, center)
+    drawCircle(ClassicColors.metal(10), radius * .78f, center)
     drawCap(center, radius * .74f, .85f)
     // Engraved scale on the cap's edge.
     for (k in 0 until 24) {
@@ -338,9 +388,9 @@ internal fun DrawScope.drawKnurledDial(center: Offset, radius: Float) {
 
 /** A colour wheel set in a metal ring (the Look button). */
 internal fun DrawScope.drawHueWheel(center: Offset, radius: Float, dim: Boolean) {
-    drawCircle(Color(0xFF040404), radius, center)
+    drawCircle(ClassicColors.metal(4), radius, center)
     drawCircle(
-        Brush.sweepGradient(listOf(Color(0xFF3C3C3B), Color(0xFF151515), Color(0xFF4A4A48), Color(0xFF161616), Color(0xFF3C3C3B)), center),
+        Brush.sweepGradient(listOf(0x3C, 0x15, 0x4A, 0x16, 0x3C).map { ClassicColors.metal(it) }, center),
         radius * .93f, center
     )
     val wheel = radius * .7f
@@ -366,9 +416,9 @@ internal fun Modifier.classicWindow(knurlWidth: Dp = 30.dp): Modifier = drawWith
     val outer = CornerRadius(7.dp.toPx())
     val inner = CornerRadius(5.dp.toPx())
     // The rim: brushed metal with a light top edge and a dark lower one.
-    drawRoundRect(Color(0xFF040404), cornerRadius = outer)
+    drawRoundRect(ClassicColors.metal(4), cornerRadius = outer)
     drawRoundRect(
-        Brush.verticalGradient(listOf(Color(0xFF4A4A48), Color(0xFF2A2A29), Color(0xFF161615))),
+        Brush.verticalGradient(listOf(0x4A, 0x2A, 0x16).map { ClassicColors.metal(it) }),
         Offset(1f, 1f), Size(size.width - 2f, size.height - 2f), outer
     )
     val inset = 3.dp.toPx()
@@ -386,7 +436,7 @@ internal fun Modifier.classicWindow(knurlWidth: Dp = 30.dp): Modifier = drawWith
     // Knurled rollers at the ends, rounded like the drum: lit in the middle, dark at the top and bottom.
     val k = knurlWidth.toPx().coerceAtMost(pane.width / 4f)
     listOf(inset, inset + pane.width - k).forEach { x ->
-        drawRect(ClassicTextures.knurl, Offset(x, inset), Size(k, pane.height))
+        drawRect(ClassicTextures.knurl, Offset(x, inset), Size(k, pane.height), colorFilter = ClassicColors.textureFilter)
         drawRect(
             Brush.verticalGradient(
                 0f to Color.Black.copy(alpha = .75f), .35f to Color.Black.copy(alpha = .05f), .6f to Color.Transparent, 1f to Color.Black.copy(alpha = .8f),

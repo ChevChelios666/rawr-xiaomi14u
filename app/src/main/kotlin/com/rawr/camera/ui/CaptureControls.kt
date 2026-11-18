@@ -467,7 +467,8 @@ internal fun Shutter(
             }
             .then(
                 if (classic) Modifier.drawBehind {
-                    drawMetalKnob(center, size.minDimension / 2f, ring = ClassicColors.Red, pressed = pressed)
+                    drawMetalKnob(center, size.minDimension / 2f,
+                        ring = ClassicColors.shutterRing(pressed || exposing || countingDown || stopSquare), pressed = pressed)
                     if (exposing) drawCircle(Color.Black.copy(alpha = .45f), size.minDimension / 2f * .72f, center)
                 } else Modifier.border(2.dp, Color.White.copy(alpha = .86f), CircleShape)
             )
@@ -609,10 +610,10 @@ internal fun Thumbnail(state: CaptureUiState, imageUri: Uri?, onClick: () -> Uni
         modifier.size(if (classic) CaptureDimens.Thumbnail + 8.dp else CaptureDimens.Thumbnail)
             .then(if (classic) Modifier.drawBehind {
                 val corner = androidx.compose.ui.geometry.CornerRadius(15.dp.toPx())
-                drawRoundRect(Color(0xFF040404), cornerRadius = corner)
+                drawRoundRect(ClassicColors.metal(4), cornerRadius = corner)
                 drawRoundRect(
                     androidx.compose.ui.graphics.Brush.sweepGradient(
-                        listOf(Color(0xFF4A4A48), Color(0xFF1A1A1A), Color(0xFF55554F), Color(0xFF1C1C1C), Color(0xFF4A4A48)), center
+                        listOf(0x4A, 0x1A, 0x55, 0x1C, 0x4A).map { ClassicColors.metal(it) }, center
                     ),
                     topLeft = Offset(1.dp.toPx(), 1.dp.toPx()),
                     size = androidx.compose.ui.geometry.Size(size.width - 2.dp.toPx(), size.height - 2.dp.toPx()),
