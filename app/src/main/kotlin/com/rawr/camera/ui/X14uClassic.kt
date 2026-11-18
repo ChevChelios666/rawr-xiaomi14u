@@ -97,18 +97,18 @@ internal object ClassicTextures {
     }
 
     /**
-     * Grained leather (v4, Nov 18, after the user's mockup): irregular plates about 7 x 5 dp split by a network of thin
-     * creases (cellular noise over a 16 x 22 grid, its lookup warped so the creases wander, wrapping at the tile's
-     * edges), a raised lip along each crease, each plate gently domed, fine crinkle over everything (two octaves of
-     * periodic value noise at 1 and 0.5 dp); lit from the top left (diffuse plus glints), creases dark, a few broad
-     * lighter and darker patches. Sized in dp from the screen density, so it looks the same on any phone.
+     * Grained leather (v5, Nov 18, after the user's mockup): irregular plates about 8.5 x 6 dp split by a network of
+     * creases (cellular noise over a 13 x 18 grid, its lookup warped so the creases wander, wrapping at the tile's
+     * edges), a raised lip along each crease, each plate gently domed, crinkle over everything (two octaves of periodic
+     * value noise at 1.3 and 0.65 dp), softened once; lit from the top left (diffuse plus soft glints), creases dark, a
+     * few broad lighter and darker patches. Sized in dp from the screen density, so it looks the same on any phone.
      */
     private fun leatherBitmap(seed: Int): ImageBitmap {
         val density = android.content.res.Resources.getSystem().displayMetrics.density.coerceIn(1f, 5f)
-        val nx = 16
-        val ny = 22
-        val w = (nx * 7f * density).roundToInt()
-        val h = (ny * 5f * density).roundToInt()
+        val nx = 13
+        val ny = 18
+        val w = (nx * 8.5f * density).roundToInt()
+        val h = (ny * 6f * density).roundToInt()
         val sx = w.toFloat() / nx
         val sy = h.toFloat() / ny
         val fx = FloatArray(nx * ny)
@@ -121,8 +121,10 @@ internal object ClassicTextures {
         }
         val warpX = valueNoise(w, h, nx * 2, ny * 2, seed + 20)
         val warpY = valueNoise(w, h, nx * 2, ny * 2, seed + 21)
-        val fine = valueNoise(w, h, (w / density).roundToInt(), (h / density).roundToInt(), seed + 30)
-        val finer = valueNoise(w, h, (w / density).roundToInt() * 2, (h / density).roundToInt() * 2, seed + 31)
+        val gw = (w / (1.3f * density)).roundToInt()
+        val gh = (h / (1.3f * density)).roundToInt()
+        val fine = valueNoise(w, h, gw, gh, seed + 30)
+        val finer = valueNoise(w, h, gw * 2, gh * 2, seed + 31)
         val crease = FloatArray(w * h)
         val height = FloatArray(w * h)
         for (y in 0 until h) for (x in 0 until w) {
@@ -152,24 +154,31 @@ internal object ClassicTextures {
             }
             val e = d2 - d1
             val c = smooth((e / .13f).coerceIn(0f, 1f))
-            val lipT = (e - .1f) / .06f
+            val lipT = (e - .11f) / .07f
             val lip = exp(-lipT * lipT)
             crease[o] = c
-            height[o] = .45f * c + .24f * lip + .3f * (1f - d1 * d1).coerceIn(0f, 1f) + .06f * bt + .18f * fine[o] + .1f * finer[o]
+            height[o] = .45f * c + .22f * lip + .3f * (1f - d1 * d1).coerceIn(0f, 1f) + .06f * bt + .22f * fine[o] + .1f * finer[o]
+        }
+        // Softened once (3 x 3, wrapping): the user found the grain too sharp.
+        val soft = FloatArray(w * h)
+        for (y in 0 until h) for (x in 0 until w) {
+            var sum = 0f
+            for (b in -1..1) for (a in -1..1) sum += height[((y + b + h) % h) * w + (x + a + w) % w]
+            soft[y * w + x] = sum / 9f
         }
         val sheen = valueNoise(w, h, 4, 4, seed + 9)
         val k = 4f * density / 3.5f
         val pixels = IntArray(w * h)
         for (y in 0 until h) for (x in 0 until w) {
             val o = y * w + x
-            val gx = (height[y * w + (x + 1) % w] - height[y * w + (x - 1 + w) % w]) * k
-            val gy = (height[((y + 1) % h) * w + x] - height[((y - 1 + h) % h) * w + x]) * k
+            val gx = (soft[y * w + (x + 1) % w] - soft[y * w + (x - 1 + w) % w]) * k
+            val gy = (soft[((y + 1) % h) * w + x] - soft[((y - 1 + h) % h) * w + x]) * k
             val n = sqrt(gx * gx + gy * gy + 1f)
             val diff = (gx * .55f + gy * .6f + .58f) / n
             val c1 = diff.coerceIn(0f, 1f)
             val c2 = c1 * c1
             val c4 = c2 * c2
-            var v = 14f + 10f * height[o] + 30f * (diff - .45f).coerceIn(0f, 1f) + 85f * c4 * c4
+            var v = 14f + 10f * soft[o] + 30f * (diff - .45f).coerceIn(0f, 1f) + 70f * c4 * c2
             v *= .5f + .5f * crease[o]
             v *= 1f + .35f * sheen[o]
             val v8 = v.toInt().coerceIn(0, 255)
