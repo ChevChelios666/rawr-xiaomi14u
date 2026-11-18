@@ -12,6 +12,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -25,6 +26,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.rawr.camera.model.ControlSurfaceStyle
 import kotlin.math.abs
+import kotlin.math.exp
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -94,32 +97,40 @@ internal object ClassicTextures {
     }
 
     /**
-     * Pebbled leather (v2, Nov 18, after the user's mockup): small irregular grains a little wider than tall (cellular
-     * noise over a 24 x 41 grid, wrapping at the tile's edges) as a height field: rounded domes steep at the grooves,
-     * each a little higher or lower, fine grain; softened once, then lit from the top left (diffuse plus a tight
-     * highlight on the shoulders), grooves kept dark, and a few broad lighter and darker patches. Sized from the
-     * screen density so the grain is the same in dp on any phone (tuned at 2.625 px per dp).
+     * Grained leather (v4, Nov 18, after the user's mockup): irregular plates about 7 x 5 dp split by a network of thin
+     * creases (cellular noise over a 16 x 22 grid, its lookup warped so the creases wander, wrapping at the tile's
+     * edges), a raised lip along each crease, each plate gently domed, fine crinkle over everything (two octaves of
+     * periodic value noise at 1 and 0.5 dp); lit from the top left (diffuse plus glints), creases dark, a few broad
+     * lighter and darker patches. Sized in dp from the screen density, so it looks the same on any phone.
      */
     private fun leatherBitmap(seed: Int): ImageBitmap {
-        val k = (android.content.res.Resources.getSystem().displayMetrics.density / 2.625f).coerceIn(.5f, 2f)
-        val nx = 24
-        val ny = 41
-        val size = (288 * k).toInt().coerceAtLeast(96)
-        val sx = size.toFloat() / nx
-        val sy = size.toFloat() / ny
+        val density = android.content.res.Resources.getSystem().displayMetrics.density.coerceIn(1f, 5f)
+        val nx = 16
+        val ny = 22
+        val w = (nx * 7f * density).roundToInt()
+        val h = (ny * 5f * density).roundToInt()
+        val sx = w.toFloat() / nx
+        val sy = h.toFloat() / ny
         val fx = FloatArray(nx * ny)
         val fy = FloatArray(nx * ny)
         val lift = FloatArray(nx * ny)
         for (j in 0 until ny) for (i in 0 until nx) {
-            fx[j * nx + i] = (i + .1f + .8f * unit(i, j, seed)) * sx
-            fy[j * nx + i] = (j + .1f + .8f * unit(i, j, seed + 1)) * sy
+            fx[j * nx + i] = (i + .05f + .9f * unit(i, j, seed)) * sx
+            fy[j * nx + i] = (j + .05f + .9f * unit(i, j, seed + 1)) * sy
             lift[j * nx + i] = unit(i, j, seed + 2)
         }
-        val edge = FloatArray(size * size)
-        val height = FloatArray(size * size)
-        for (y in 0 until size) for (x in 0 until size) {
-            val ci = (x / sx).toInt()
-            val cj = (y / sy).toInt()
+        val warpX = valueNoise(w, h, nx * 2, ny * 2, seed + 20)
+        val warpY = valueNoise(w, h, nx * 2, ny * 2, seed + 21)
+        val fine = valueNoise(w, h, (w / density).roundToInt(), (h / density).roundToInt(), seed + 30)
+        val finer = valueNoise(w, h, (w / density).roundToInt() * 2, (h / density).roundToInt() * 2, seed + 31)
+        val crease = FloatArray(w * h)
+        val height = FloatArray(w * h)
+        for (y in 0 until h) for (x in 0 until w) {
+            val o = y * w + x
+            val qx = ((x + warpX[o] * .45f * sx) % w + w) % w
+            val qy = ((y + warpY[o] * .45f * sy) % h + h) % h
+            val ci = (qx / sx).toInt()
+            val cj = (qy / sy).toInt()
             var d1 = Float.MAX_VALUE
             var d2 = Float.MAX_VALUE
             var bt = 0f
@@ -130,8 +141,8 @@ internal object ClassicTextures {
                 val wj = ((j % ny) + ny) % ny
                 val px = fx[wj * nx + wi] + (i - wi) * sx
                 val py = fy[wj * nx + wi] + (j - wj) * sy
-                val dx = (x - px) / sx
-                val dy = (y - py) / sy
+                val dx = (qx - px) / sx
+                val dy = (qy - py) / sy
                 val d = sqrt(dx * dx + dy * dy)
                 if (d < d1) {
                     d2 = d1
@@ -140,48 +151,57 @@ internal object ClassicTextures {
                 } else if (d < d2) d2 = d
             }
             val e = d2 - d1
-            val t = (e / .6f).coerceIn(0f, 1f)
-            edge[y * size + x] = e
-            height[y * size + x] = sqrt(t * (2f - t)) * (.7f + .3f * bt) + (unit(x, y, seed + 7) - .5f) * .08f
+            val c = smooth((e / .13f).coerceIn(0f, 1f))
+            val lipT = (e - .1f) / .06f
+            val lip = exp(-lipT * lipT)
+            crease[o] = c
+            height[o] = .45f * c + .24f * lip + .3f * (1f - d1 * d1).coerceIn(0f, 1f) + .06f * bt + .18f * fine[o] + .1f * finer[o]
         }
-        fun at(a: FloatArray, x: Int, y: Int) = a[((y + size) % size) * size + (x + size) % size]
-        val h = FloatArray(size * size)
-        for (y in 0 until size) for (x in 0 until size) {
-            var sum = 0f
-            for (b in -1..1) for (a in -1..1) sum += at(height, x + a, y + b)
-            h[y * size + x] = sum / 9f
-        }
-        val g = FloatArray(36) { unit(it % 6, it / 6, seed + 9) }
-        val pixels = IntArray(size * size)
-        for (y in 0 until size) for (x in 0 until size) {
-            val gx = (at(h, x + 1, y) - at(h, x - 1, y)) * 3f * k
-            val gy = (at(h, x, y + 1) - at(h, x, y - 1)) * 3f * k
+        val sheen = valueNoise(w, h, 4, 4, seed + 9)
+        val k = 4f * density / 3.5f
+        val pixels = IntArray(w * h)
+        for (y in 0 until h) for (x in 0 until w) {
+            val o = y * w + x
+            val gx = (height[y * w + (x + 1) % w] - height[y * w + (x - 1 + w) % w]) * k
+            val gy = (height[((y + 1) % h) * w + x] - height[((y - 1 + h) % h) * w + x]) * k
             val n = sqrt(gx * gx + gy * gy + 1f)
-            val diff = (gx * .55f + gy * .65f + .52f) / n
-            val c = diff.coerceIn(0f, 1f)
-            val c2 = c * c
+            val diff = (gx * .55f + gy * .6f + .58f) / n
+            val c1 = diff.coerceIn(0f, 1f)
+            val c2 = c1 * c1
             val c4 = c2 * c2
-            val spec = c4 * c4
-            val hv = h[y * size + x]
-            val groove = (edge[y * size + x] / .12f).coerceIn(0f, 1f)
-            var v = 10f + 10f * hv + 34f * (diff - .3f).coerceIn(0f, 1f) + 60f * spec
-            v *= (.2f + .8f * groove) * (.45f + .55f * (hv * 1.6f).coerceIn(0f, 1f))
-            // Broad sheen: smooth noise on a 6 x 6 grid, wrapping.
-            val xx = x.toFloat() / size * 6f
-            val yy = y.toFloat() / size * 6f
-            val x0 = xx.toInt()
-            val y0 = yy.toInt()
-            var tx = xx - x0
-            var ty = yy - y0
-            tx = tx * tx * (3f - 2f * tx)
-            ty = ty * ty * (3f - 2f * ty)
-            fun gv(i: Int, j: Int) = g[(j % 6) * 6 + i % 6]
-            val sheen = (gv(x0, y0) * (1 - tx) + gv(x0 + 1, y0) * tx) * (1 - ty) + (gv(x0, y0 + 1) * (1 - tx) + gv(x0 + 1, y0 + 1) * tx) * ty
-            v *= .8f + .4f * sheen
+            var v = 14f + 10f * height[o] + 30f * (diff - .45f).coerceIn(0f, 1f) + 85f * c4 * c4
+            v *= .5f + .5f * crease[o]
+            v *= 1f + .35f * sheen[o]
             val v8 = v.toInt().coerceIn(0, 255)
-            pixels[y * size + x] = (0xFF shl 24) or (v8 shl 16) or (v8 shl 8) or v8
+            pixels[o] = (0xFF shl 24) or (v8 shl 16) or (v8 shl 8) or v8
         }
-        return Bitmap.createBitmap(pixels, size, size, Bitmap.Config.ARGB_8888).asImageBitmap()
+        return Bitmap.createBitmap(pixels, w, h, Bitmap.Config.ARGB_8888).asImageBitmap()
+    }
+
+    private fun smooth(t: Float) = t * t * (3f - 2f * t)
+
+    /** Periodic value noise (-0.5..0.5): a gw x gh grid of randoms, smoothly interpolated, wrapping at the edges. */
+    private fun valueNoise(w: Int, h: Int, gw: Int, gh: Int, seed: Int): FloatArray {
+        val g = FloatArray(gw * gh) { unit(it % gw, it / gw, seed) }
+        val out = FloatArray(w * h)
+        for (y in 0 until h) {
+            val yy = y.toFloat() / h * gh
+            val y0 = yy.toInt()
+            val ty = smooth(yy - y0)
+            val r0 = (y0 % gh) * gw
+            val r1 = ((y0 + 1) % gh) * gw
+            for (x in 0 until w) {
+                val xx = x.toFloat() / w * gw
+                val x0 = xx.toInt()
+                val tx = smooth(xx - x0)
+                val c0 = x0 % gw
+                val c1 = (x0 + 1) % gw
+                val top = g[r0 + c0] * (1 - tx) + g[r0 + c1] * tx
+                val bottom = g[r1 + c0] * (1 - tx) + g[r1 + c1] * tx
+                out[y * w + x] = top * (1 - ty) + bottom * ty - .5f
+            }
+        }
+        return out
     }
 
     /** Knurled metal (the ruler window's ends): a grid of small pyramids, lit from the top left. */
@@ -426,6 +446,32 @@ internal fun X14uClassicBody(plan: ClassicBodyPlan, modifier: Modifier) {
         )
         plate(plan.readouts, ClassicColors.Metal)
         plan.band?.let { plate(it, ClassicColors.MetalDark) }
+        // The body's sides (Nov 18, the user's mockup): each plate's ends rolled over (a soft light band), a sheen
+        // where the leather and metal turn toward the sides (colour dodge: brightens the grain, keeps its contrast),
+        // and a dark rim where the body turns away. The bottom edge the same, weaker.
+        val dpx = 1.dp.toPx()
+        fun sides(stops: List<Pair<Float, Color>>): Brush {
+            val left = stops.map { (d, c) -> (d * dpx / size.width).coerceIn(0f, .5f) to c }
+            val right = stops.reversed().map { (d, c) -> (1f - d * dpx / size.width).coerceIn(.5f, 1f) to c }
+            return Brush.horizontalGradient(*(left + right).toTypedArray())
+        }
+        val roll = sides(listOf(0f to Color.Transparent, 4f to Color.Transparent, 8f to Color.White.copy(alpha = .12f),
+            12f to Color.White.copy(alpha = .2f), 17f to Color.White.copy(alpha = .08f), 27f to Color.Transparent))
+        for (r in listOfNotNull(plan.topBar, plan.bezel, plan.readouts, plan.band)) {
+            drawRect(roll, Offset(0f, r.start), Size(size.width, r.endInclusive - r.start))
+        }
+        fun gray(v: Float) = Color(v, v, v)
+        drawRect(sides(listOf(0f to gray(0f), 3f to gray(.15f), 10f to gray(.42f), 22f to gray(.2f), 44f to gray(0f))),
+            Offset(0f, plan.topBar.start), Size(size.width, size.height - plan.topBar.start), blendMode = BlendMode.ColorDodge)
+        drawRect(sides(listOf(0f to Color.Black.copy(alpha = .6f), 3f to Color.Transparent)),
+            Offset(0f, plan.topBar.start), Size(size.width, size.height - plan.topBar.start))
+        val foot = size.height
+        drawRect(Brush.verticalGradient(0f to gray(0f), 1f to gray(.3f), startY = foot - 24f * dpx, endY = foot - 10f * dpx),
+            Offset(0f, foot - 24f * dpx), Size(size.width, 14f * dpx), blendMode = BlendMode.ColorDodge)
+        drawRect(Brush.verticalGradient(0f to gray(.3f), .7f to gray(.1f), 1f to gray(0f), startY = foot - 10f * dpx, endY = foot),
+            Offset(0f, foot - 10f * dpx), Size(size.width, 10f * dpx), blendMode = BlendMode.ColorDodge)
+        drawRect(Brush.verticalGradient(0f to Color.Transparent, 1f to Color.Black.copy(alpha = .5f), startY = foot - 3f * dpx, endY = foot),
+            Offset(0f, foot - 3f * dpx), Size(size.width, 3f * dpx))
         // A stitched seam along the leather under the bezel.
         val seamY = (plan.bezel.endInclusive + plan.readouts.start) / 2f
         if (plan.readouts.start - plan.bezel.endInclusive > 4.dp.toPx()) {
