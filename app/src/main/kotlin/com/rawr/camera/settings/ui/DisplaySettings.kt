@@ -1,9 +1,13 @@
 package com.rawr.camera.settings.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
@@ -212,6 +216,58 @@ internal fun ControlStyleSettings(state: SettingsUiState, dispatch: SettingsDisp
                     dispatch.invoke(SetControlSurfaceStyle(ControlSurfaceStyle.Basic))
                 }
             )
+        }
+        // X14U (Nov 18): the accent colour, any style; applies at once.
+        val context = androidx.compose.ui.platform.LocalContext.current
+        remember(context) { AccentSettings.init(context) }
+        SettingsGroup(
+            title = "Accent",
+            description = "Selected values, the current mode and buttons that are on."
+        ) {
+            AccentSwatches(AccentSettings.choice) {
+                haptics.detent()
+                AccentSettings.select(it)
+            }
+        }
+    }
+}
+
+/** The accent choices as colour dots (style default: a split dot), the chosen one ringed, its name under it. */
+@Composable
+private fun AccentSwatches(selected: AccentSettings.Choice, onSelect: (AccentSettings.Choice) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState())
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        AccentSettings.Choice.entries.forEach { c ->
+            val on = c == selected
+            Column(
+                Modifier.width(64.dp).clickable { onSelect(c) }.padding(vertical = 4.dp),
+                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+            ) {
+                Box(
+                    Modifier.size(36.dp)
+                        .border(if (on) 2.dp else 1.dp, if (on) androidx.compose.ui.graphics.Color.White
+                            else androidx.compose.ui.graphics.Color.White.copy(alpha = .2f), androidx.compose.foundation.shape.CircleShape)
+                        .padding(4.dp)
+                        .background(
+                            c.argb?.let { androidx.compose.ui.graphics.SolidColor(androidx.compose.ui.graphics.Color(it)) }
+                                ?: androidx.compose.ui.graphics.Brush.sweepGradient(
+                                    listOf(androidx.compose.ui.graphics.Color(0xFFE06A61), androidx.compose.ui.graphics.Color(0xFFE8763E),
+                                        androidx.compose.ui.graphics.Color(0xFFFFC846), androidx.compose.ui.graphics.Color(0xFFE06A61))
+                                ),
+                            androidx.compose.foundation.shape.CircleShape
+                        )
+                )
+                Text(
+                    c.label,
+                    fontSize = 11.sp,
+                    maxLines = 2,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
         }
     }
 }

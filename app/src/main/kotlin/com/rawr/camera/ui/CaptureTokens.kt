@@ -13,8 +13,9 @@ internal object CaptureColors {
     /** X14U: the Classic style is on (set by the capture screen; state, so what reads the accent recomposes). */
     var classic by androidx.compose.runtime.mutableStateOf(false)
     private val Coral = Color(0xFFE06A61)
-    /** Coral; the Classic style's orange while that style is on. */
-    val Accent: Color get() = if (classic) ClassicColors.Accent else Coral
+    /** The accent chosen in Settings (Control Style → Accent), else the style's own: coral, Classic orange, Bronze amber. */
+    val Accent: Color get() = com.rawr.camera.settings.model.AccentSettings.choice.argb?.let { Color(it) }
+        ?: if (classic) ClassicColors.Accent else Coral
     val AccentSoft = Color(0xFFF2C7AA)
     val Danger = Color(0xFFFF6961)
     val Success = Color(0xFF65D17A)

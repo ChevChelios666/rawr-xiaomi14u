@@ -468,7 +468,7 @@ internal fun Shutter(
             .then(
                 if (classic) Modifier.drawBehind {
                     drawMetalKnob(center, size.minDimension / 2f,
-                        ring = ClassicColors.shutterRing(pressed || exposing || countingDown || stopSquare), pressed = pressed)
+                        ring = ClassicColors.Red, pressed = pressed)
                     if (exposing) drawCircle(Color.Black.copy(alpha = .45f), size.minDimension / 2f * .72f, center)
                 } else Modifier.border(2.dp, Color.White.copy(alpha = .86f), CircleShape)
             )

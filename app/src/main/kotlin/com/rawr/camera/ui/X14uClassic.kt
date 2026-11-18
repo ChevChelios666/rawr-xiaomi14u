@@ -43,13 +43,14 @@ import kotlin.math.sqrt
  */
 internal object ClassicColors {
     /**
-     * Bronze (Nov 18, the user's third style): the same body in bronze metal and brown leather, silver lettering on
-     * the knobs, a brighter orange, and the shutter's ring red only while pressed or busy. Set by CaptureScreen.
+     * Bronze (Nov 18, the user's third style): the same body in bronze metal and brown leather, engraved silver
+     * lettering on the knobs (the accent while on), amber as its own accent (red read too dark on bronze; any accent
+     * can be chosen in Settings), the shutter's red ring. Set by CaptureScreen.
      */
     var bronze by mutableStateOf(false)
 
     /** The mockup's orange (selected values, lit mode); replaces the coral accent in this style. */
-    val Accent: Color get() = if (bronze) Color(0xFFFF8A3D) else Color(0xFFE8763E)
+    val Accent: Color get() = if (bronze) Color(0xFFFFC846) else Color(0xFFE8763E)
     /** Top bar labels: warm, like engraving filled with copper paint (pale gold on bronze). */
     val Copper: Color get() = if (bronze) Color(0xFFE6C898) else Color(0xFFC08A62)
     val Engraved: Color get() = if (bronze) Color(0xFFF0E4D0) else Color(0xFFD9D2C7)
@@ -75,9 +76,6 @@ internal object ClassicColors {
         fun mix(a: Int, b: Int) = (a + (b - a) * t).toInt().coerceIn(0, 255)
         return Color(mix(30, 205), mix(22, 170), mix(15, 125), (alpha * 255).toInt().coerceIn(0, 255))
     }
-
-    /** The shutter's ring: red in Classic; in Bronze red only while pressed or busy, dark bronze otherwise. */
-    fun shutterRing(active: Boolean): Color = if (!bronze || active) Red else Color(0xFF3A2A1C)
 
     /** The leather's colour over the grey grain: near black (Classic), brown (Bronze). */
     val leatherFilter: ColorFilter

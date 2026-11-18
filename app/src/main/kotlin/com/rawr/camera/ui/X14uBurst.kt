@@ -93,7 +93,7 @@ internal fun X14uBurstShutter(
             val outline = 2.dp.toPx()
             val r = size.minDimension / 2f
             // Outline, as on the photo shutter; while running, the progress ring over it.
-            if (classic) drawMetalKnob(center, r, ring = ClassicColors.shutterRing(pressed || burst.running), pressed = pressed)
+            if (classic) drawMetalKnob(center, r, ring = ClassicColors.Red, pressed = pressed)
             else drawCircle(Color.White.copy(alpha = .86f), radius = r - outline / 2f, style = Stroke(outline))
             if (burst.running) {
                 val w = 4.dp.toPx()

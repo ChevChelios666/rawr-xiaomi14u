@@ -117,7 +117,7 @@ internal fun VideoRecordButton(
         val classic = isClassicStyle()
         Box(
             Modifier.size(CaptureDimens.ShutterOuter).then(
-                if (classic) Modifier.drawBehind { drawMetalKnob(center, size.minDimension / 2f, ring = ClassicColors.shutterRing(state.recording)) }
+                if (classic) Modifier.drawBehind { drawMetalKnob(center, size.minDimension / 2f, ring = ClassicColors.Red) }
                 else Modifier.border(2.dp, ring, CircleShape)
             ),
             contentAlignment = Alignment.Center
