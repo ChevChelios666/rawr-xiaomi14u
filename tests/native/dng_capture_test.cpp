@@ -613,6 +613,60 @@ int main() {
         std::cout << "DNG_CAPTURE_FULL_SIZE_GEOMETRY_PASS\n";
     }
 
+    // X14U (Nov 19): sensor defects the camera didn't report go in as FixBadPixelsList (OpcodeList1, id 5); the CFA
+    // bytes stay as captured. A flat 16x12 frame with one hot photosite gets exactly that one point.
+    {
+        auto f = makeFrame(true);
+        f.width = 16;
+        f.height = 12;
+        f.packedRowStrideBytes = 32;
+        f.sourceRowStrideBytes = 32;
+        f.raw16.assign(16 * 12 * 2, 0);
+        auto* px = reinterpret_cast<uint16_t*>(f.raw16.data());
+        for (int i = 0; i < 16 * 12; ++i) px[i] = 400;
+        px[5 * 16 + 6] = 4000;  // row 5, column 6
+        auto ctx = std::make_shared<rawrcam::metadata::CameraContextMetadata>(*f.metadata.cameraContext);
+        ctx->geometry.rawBufferWidth = 16;
+        ctx->geometry.rawBufferHeight = 12;
+        ctx->geometry.pixelArrayWidth = 16;
+        ctx->geometry.pixelArrayHeight = 12;
+        ctx->geometry.preCorrectionActiveArray = {0, 0, 16, 12, true};
+        f.metadata.cameraContext = ctx;
+        const auto before = f.raw16;
+        auto params = rawrcam::encoding::dng::makeTinyDngWriteParams(f, capture, &error);
+        if (!params) return 50;
+        const tinydng_opcode* fix = nullptr;
+        for (size_t i = 0; i < params->raw.opcode_count; ++i)
+            if (params->raw.opcodes[i].list == 1 && params->raw.opcodes[i].id == 5) fix = &params->raw.opcodes[i];
+        auto be = [](const uint8_t* b) { return (uint32_t(b[0]) << 24) | (uint32_t(b[1]) << 16) | (uint32_t(b[2]) << 8) | b[3]; };
+        // RGGB at the origin: Bayer phase 0; one point, no rectangles, then (row, column).
+        if (!fix || fix->params_size != 20 || be(fix->params) != 0 || be(fix->params + 4) != 1 || be(fix->params + 8) != 0 ||
+            be(fix->params + 12) != 5 || be(fix->params + 16) != 6)
+            return 51;
+        if (f.raw16 != before) return 52;
+        params->rebind();
+        tinydng_config cfg{};
+        tinydng_error err{};
+        tinydng_context* tctx = tinydng_context_create(&cfg, &err);
+        if (!tctx) return 53;
+        uint8_t* out = nullptr;
+        size_t outSize = 0;
+        if (tinydng_write_memory(tctx, &params->image, &params->options, &out, &outSize, &err) != TINYDNG_OK) {
+            std::cerr << err.message << "\n";
+            tinydng_context_destroy(tctx);
+            return 54;
+        }
+        if (const char* path = std::getenv("RAWR_DNG_BADPIXEL_OUT")) {
+            if (FILE* file = std::fopen(path, "wb")) {
+                std::fwrite(out, 1, outSize, file);
+                std::fclose(file);
+            }
+        }
+        tinydng_buffer_free(tctx, out);
+        tinydng_context_destroy(tctx);
+        std::cout << "DNG_CAPTURE_FIX_BAD_PIXELS_PASS\n";
+    }
+
     auto bad = makeFrame(false);
     error.clear();
     if (rawrcam::encoding::dng::makeTinyDngWriteParams(bad, capture, &error) ||

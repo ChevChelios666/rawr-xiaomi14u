@@ -67,6 +67,8 @@ rawr::raw_gpu_pipeline::BurstRunResult MergeProcessor::run(
                               [&burst](std::uint32_t index) { burst.loadFrame(index); })
                         : rawr::raw_gpu_pipeline::AndroidBurstCoordinator::FrameLoad{});
 
+    LOGI("MULTIFRAME_DEFECTS concealed=%u frames=%u reported=%zu", result.defectsConcealed, result.frameCount,
+         mergeConfig.hotPixels.size() / 2);
     return result;
 }
 }  // namespace rawrcam::capture::multiframe

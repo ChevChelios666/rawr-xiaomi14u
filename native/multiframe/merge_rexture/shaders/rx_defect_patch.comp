@@ -1,0 +1,45 @@
+#version 450
+// X14U (Nov 19): sensor defects the camera doesn't report (no hot pixel map on any X14U camera), hidden in each burst
+// frame before a merge reads it. Same rule as develop/HotPixelConceal.cpp (detectHotPixelsInPackedRaw16, which the
+// single-frame JPEG uses): a photosite far above (hot) or below (dead) all 8 same-colour neighbours at distance 2, whose
+// 4 adjacent other-colour pixels don't share it (a real point of light spreads into them), takes the median of its 4
+// nearest same-colour neighbours (as concealHotPixelsInPackedRaw16).
+// In place: the frame is the app's own copy (ring or journal upload), never the camera's buffer; the base DNG is read
+// back before the merge. A neighbour patched concurrently only makes a cluster's second defect easier to see.
+layout(local_size_x = 16, local_size_y = 16) in;
+layout(set = 0, binding = 0, r16ui) uniform uimage2D raw;
+layout(std430, set = 0, binding = 1) buffer Count { uint concealed; } count;
+layout(push_constant) uniform P {
+    float black;
+    float floorv;  // ~1.5% of the signal range: keeps noise out
+    int width;
+    int height;
+} p;
+
+float at(ivec2 q) { return float(imageLoad(raw, q).x); }
+
+void main() {
+    ivec2 q = ivec2(gl_GlobalInvocationID.xy);
+    if (q.x < 2 || q.y < 2 || q.x + 2 >= p.width || q.y + 2 >= p.height) return;
+    float v = at(q) - p.black;
+    float l = at(q + ivec2(-2, 0)), r = at(q + ivec2(2, 0)), u = at(q + ivec2(0, -2)), d = at(q + ivec2(0, 2));
+    float a = at(q + ivec2(-2, -2)), b = at(q + ivec2(2, -2)), c = at(q + ivec2(-2, 2)), e = at(q + ivec2(2, 2));
+    float hi = max(max(max(l, r), max(u, d)), max(max(a, b), max(c, e))) - p.black;
+    float lo = min(min(min(l, r), min(u, d)), min(min(a, b), min(c, e))) - p.black;
+    float n1 = at(q + ivec2(-1, 0)), n2 = at(q + ivec2(1, 0)), n3 = at(q + ivec2(0, -1)), n4 = at(q + ivec2(0, 1));
+    bool defect = false;
+    if (v > 2.0 * max(hi, 0.0) + p.floorv) {
+        float adj = max(max(n1, n2), max(n3, n4)) - p.black;
+        defect = v > 2.0 * max(adj, 0.0) + p.floorv;
+    } else if (lo > 4.0 * p.floorv && v < 0.35 * lo) {
+        float adj = min(min(n1, n2), min(n3, n4)) - p.black;
+        defect = v < 0.35 * adj;
+    }
+    if (!defect) return;
+    // Median of the 4 nearest same-colour neighbours: the mean of the middle two.
+    float s0 = min(l, r), s1 = max(l, r), s2 = min(u, d), s3 = max(u, d);
+    float mid0 = max(s0, s2), mid1 = min(s1, s3);
+    float median = 0.5 * (mid0 + mid1);
+    imageStore(raw, q, uvec4(uint(median + 0.5), 0u, 0u, 0u));
+    atomicAdd(count.concealed, 1u);
+}

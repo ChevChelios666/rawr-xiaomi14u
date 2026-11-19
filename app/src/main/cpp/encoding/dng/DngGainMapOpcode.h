@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "encoding/dng/DngWriteParams.h"
 #include "geometry/LensDistortion.h"
@@ -26,5 +27,11 @@ bool appendLensShadingGainMaps(TinyDngWriteParams& params, const rawrcam::metada
 // false with *error when the calibration doesn't fit the area.
 bool appendLensDistortionWarp(TinyDngWriteParams& params, const rawrcam::geometry::LensDistortionModel& model,
                               uint32_t width, uint32_t height, std::string* error);
+
+// Appends a FixBadPixelsList opcode (OpcodeList1, id 5) listing [x0, y0, x1, y1, ...] stored-image photosites, so DNG
+// readers hide the sensor defects the stored CFA still holds (the RAW data itself stays untouched). storedPattern is the
+// CFA code at the stored-image origin. Nothing is appended for an empty list.
+void appendFixBadPixels(TinyDngWriteParams& params, const std::vector<int32_t>& points, uint32_t storedPattern,
+                        uint32_t width, uint32_t height);
 
 }  // namespace rawrcam::encoding::dng

@@ -10,6 +10,7 @@
 
 #include "encoding/LensMetadata.h"
 #include "encoding/dng/DngExif.h"
+#include "develop/HotPixelConceal.h"
 #include "encoding/dng/DngGainMapOpcode.h"
 #include "encoding/dng/DngProvenance.h"
 #include "geometry/CfaPattern.h"
@@ -434,6 +435,21 @@ std::optional<TinyDngWriteParams> makeTinyDngWriteParams(const rawrcam::imaging:
         lens && captureContext.appDistortionCorrection)
         (void)appendLensDistortionWarp(p, *lens, gm->activeRight - gm->activeLeft, gm->activeBottom - gm->activeTop,
                                        nullptr);
+
+    // X14U (Nov 19): sensor defects as a FixBadPixelsList, so DNG readers hide them as Rawr's own JPEG does. The
+    // camera's map when it has one; else (X14U: none on any camera) found in this frame by the JPEG's rule. The CFA
+    // bytes stay as captured.
+    if (frame.width * sizeof(uint16_t) == frame.packedRowStrideBytes) {
+        std::vector<int32_t> found;
+        if (frame.metadata.hotPixelMap.empty()) {
+            float blackMean = 0.0f;
+            for (const float b : frame.metadata.blackLevelPhysicalRggb) blackMean += b * 0.25f;
+            found = rawrcam::develop::detectHotPixelsInPackedRaw16(frame.raw16, frame.width, frame.height, blackMean,
+                                                                   frame.metadata.effectiveWhiteLevel);
+        }
+        appendFixBadPixels(p, frame.metadata.hotPixelMap.empty() ? found : frame.metadata.hotPixelMap, storedPattern,
+                           frame.width, frame.height);
+    }
 
     fillDngExif(p, frame, captureContext);
     p.gps = captureContext.gps;

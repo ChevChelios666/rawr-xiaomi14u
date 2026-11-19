@@ -60,34 +60,54 @@ std::vector<int32_t> detectHotPixelsInPackedRaw16(const std::vector<uint8_t>& ra
                 for (uint32_t y = y0; y < y1; ++y) {
                     const uint16_t* r = px + std::size_t(y) * width;
                     for (uint32_t x = 2; x + 2 < width; ++x) {
+                        // Nov 19: the same test as before with early exits (most pixels fail at the first neighbour), so
+                        // the DNG writer and the merges' CPU paths can afford it. Results are identical (host test on
+                        // the 3.2x dark DNGs and on bright test frames with planted defects).
                         const float v = float(r[x]) - blackLevel;
                         const std::size_t w = width;
-                        const float n[8] = {float(r[x - 2]), float(r[x + 2]), float(r[x - 2 * w]), float(r[x + 2 * w]),
-                                            float(r[x - 2 * w - 2]), float(r[x - 2 * w + 2]),
-                                            float(r[x + 2 * w - 2]), float(r[x + 2 * w + 2])};
-                        float hi = n[0], lo = n[0];
-                        for (float k : n) {
-                            hi = std::max(hi, k);
-                            lo = std::min(lo, k);
-                        }
-                        hi -= blackLevel;
-                        lo -= blackLevel;
+                        const uint16_t* n[8] = {r + x - 2, r + x + 2, r + x - 2 * w, r + x + 2 * w,
+                                                r + x - 2 * w - 2, r + x - 2 * w + 2, r + x + 2 * w - 2, r + x + 2 * w + 2};
                         bool defect = false;
-                        if (v > 2.0f * std::max(hi, 0.0f) + floorv) {
-                            // Hot: the adjacent (other colour) pixels must not carry the peak too.
-                            const float a = std::max(std::max(float(r[x - 1]), float(r[x + 1])),
-                                                     std::max(float(r[x - w]), float(r[x + w]))) - blackLevel;
-                            defect = v > 2.0f * std::max(a, 0.0f) + floorv;
-                        } else if (lo > 4.0f * floorv && v < 0.35f * lo) {
-                            const float a = std::min(std::min(float(r[x - 1]), float(r[x + 1])),
-                                                     std::min(float(r[x - w]), float(r[x + w]))) - blackLevel;
-                            defect = v < 0.35f * a;  // dead: its neighbours of every colour are lit
+                        // Hot: v > 2 * max(hi, 0) + floor, i.e. every neighbour (black subtracted) below (v - floor) / 2,
+                        // and v above floor (for hi < 0).
+                        if (v > floorv) {
+                            const float limit = 0.5f * (v - floorv) + blackLevel;
+                            bool hot = true;
+                            for (const uint16_t* k : n)
+                                if (float(*k) >= limit) {
+                                    hot = false;
+                                    break;
+                                }
+                            if (hot) {
+                                // The adjacent (other colour) pixels must not carry the peak too.
+                                const float a = std::max(std::max(float(r[x - 1]), float(r[x + 1])),
+                                                         std::max(float(r[x - w]), float(r[x + w]))) - blackLevel;
+                                if (v > 2.0f * std::max(a, 0.0f) + floorv) defect = true;
+                                else goto next;  // hot test passed, so the dead test is skipped (as before)
+                            }
+                        }
+                        {
+                            // Dead: lo > 4 floor and v < 0.35 lo: every neighbour above both.
+                            const float need = std::max(4.0f * floorv, v / 0.35f) + blackLevel;
+                            bool dead = !defect;
+                            if (dead)
+                                for (const uint16_t* k : n)
+                                    if (!(float(*k) > need)) {
+                                        dead = false;
+                                        break;
+                                    }
+                            if (dead) {
+                                const float a = std::min(std::min(float(r[x - 1]), float(r[x + 1])),
+                                                         std::min(float(r[x - w]), float(r[x + w]))) - blackLevel;
+                                defect = v < 0.35f * a;  // dead: its neighbours of every colour are lit
+                            }
                         }
                         if (defect) {
                             list.push_back(int32_t(x));
                             list.push_back(int32_t(y));
                             if (list.size() / 2 > maxPoints) return;
                         }
+                    next:;
                     }
                 }
             });

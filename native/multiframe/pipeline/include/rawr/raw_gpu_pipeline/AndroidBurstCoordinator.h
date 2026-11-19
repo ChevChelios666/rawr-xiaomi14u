@@ -71,6 +71,8 @@ struct BurstRunResult {
     // HDR+ Quality: frames' worth of averaging the merged image actually got (harmonic mean over tiles of 1 + frames that
     // merged). Frames gated out of moving tiles do not count, so it is below frameCount when the scene moved; 0 = not reported.
     float effectiveFrames = 0.0f;
+    // X14U: photosites hidden as sensor defects across the burst's frames (rx_defect_patch.comp).
+    std::uint32_t defectsConcealed = 0;
 };
 // Synchronous correctness executor. The app runs it on a background worker while
 // borrowing pinned RAW16 images from RawImageRing. It uses the app's existing Vulkan queue via Submit.
@@ -207,6 +209,12 @@ class AndroidBurstCoordinator final {
     HostBuffer noiseStats_{};
     HostBuffer hotPixels_{};
     HostBuffer effectiveFrames_{};
+    // X14U: count of defects hidden this run (GPU -> host).
+    HostBuffer defectCount_{};
+    // Hides the frame's sensor defects in place, before a merge reads it (records into command_).
+    void recordDefectPatch(const BurstFrame& frame);
+    void resetDefectCount();
+    std::uint32_t defectCount() const noexcept;
     void ensureHostBuffer(HostBuffer& buffer, VkDeviceSize bytes);
     void destroyHostBuffer(HostBuffer& buffer) noexcept;
     void destroyHostBuffers() noexcept;

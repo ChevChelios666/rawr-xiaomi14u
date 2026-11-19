@@ -162,4 +162,39 @@ bool appendLensDistortionWarp(TinyDngWriteParams& p, const rawrcam::geometry::Le
     return true;
 }
 
+void appendFixBadPixels(TinyDngWriteParams& p, const std::vector<int32_t>& points, uint32_t storedPattern,
+                        uint32_t width, uint32_t height) {
+    std::vector<uint8_t> params;
+    // BayerPhase: the colour of the top-left photosite (0 red, 1 green on a red row, 2 green on a blue row, 3 blue).
+    const auto c = rawrcam::geometry::cfaColorIndices(storedPattern);
+    const uint32_t phase = c[0] == 0 ? 0u : c[0] == 2 ? 3u : (c[1] == 0 ? 1u : 2u);
+    uint32_t count = 0;
+    for (std::size_t i = 0; i + 1 < points.size(); i += 2)
+        if (points[i] >= 0 && points[i + 1] >= 0 && uint32_t(points[i]) < width && uint32_t(points[i + 1]) < height) ++count;
+    if (count == 0) return;
+    params.reserve(12 + std::size_t(count) * 8);
+    be32(params, phase);
+    be32(params, count);
+    be32(params, 0);  // no rectangles
+    for (std::size_t i = 0; i + 1 < points.size(); i += 2) {
+        if (points[i] < 0 || points[i + 1] < 0 || uint32_t(points[i]) >= width || uint32_t(points[i + 1]) >= height) continue;
+        be32(params, uint32_t(points[i + 1]));  // row
+        be32(params, uint32_t(points[i]));      // column
+    }
+    p.opcodeParams.push_back(std::move(params));
+    tinydng_opcode op{};
+    op.list = 1;
+    op.id = 5;
+    op.version = 0x01030000u;
+    op.flags = 1;  // optional: a reader without it still renders, with the defects
+    p.opcodes.push_back(op);
+    // Pushing may move earlier params/opcodes: rebind them all, index-aligned.
+    for (size_t i = 0; i < p.opcodes.size(); ++i) {
+        p.opcodes[i].params = p.opcodeParams[i].data();
+        p.opcodes[i].params_size = p.opcodeParams[i].size();
+    }
+    p.raw.opcodes = p.opcodes.data();
+    p.raw.opcode_count = p.opcodes.size();
+}
+
 }  // namespace rawrcam::encoding::dng

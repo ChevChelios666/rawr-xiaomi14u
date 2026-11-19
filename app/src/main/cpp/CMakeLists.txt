@@ -388,8 +388,8 @@ include(cmake/BuiltInLuts.cmake)
 rawr_embed_builtin_lut(${CMAKE_CURRENT_SOURCE_DIR}/tonemap/luts/rawr_ntrl.cube ${GEN}/tonemap/BuiltInRawrNtrlLut.inc)
 include(cmake/NativeModules.cmake)
 target_link_libraries(rawrcam_encoding PUBLIC rawrcam_dng_capture)
-# WarpRectilinear fit (geometry/LensDistortion.cpp).
-target_link_libraries(rawrcam_dng_capture PRIVATE rawrcam_geometry)
+# WarpRectilinear fit (geometry/LensDistortion.cpp); FixBadPixelsList from the defect finder (develop/HotPixelConceal.cpp).
+target_link_libraries(rawrcam_dng_capture PRIVATE rawrcam_geometry rawrcam_develop)
 
 add_library(rawrcam_native SHARED
   jni/RendererJni.cpp

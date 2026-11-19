@@ -203,6 +203,7 @@ rawr_test(raw_image_ring_queue_test
 rawr_test(dng_capture_test native/dng_capture_test.cpp
   "${APP}/encoding/dng/DngExif.cpp"
   "${APP}/encoding/dng/DngGainMapOpcode.cpp"
+  "${APP}/develop/HotPixelConceal.cpp"
   "${APP}/geometry/LensDistortion.cpp"
   "${APP}/encoding/dng/DngMetadataAdapter.cpp"
   "${APP}/encoding/dng/DngPixelPayload.cpp"

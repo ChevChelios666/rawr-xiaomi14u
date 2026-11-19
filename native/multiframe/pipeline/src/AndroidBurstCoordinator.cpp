@@ -20,6 +20,10 @@ constexpr std::uint32_t kTimestampQueryCapacity = 64u;
 void check(VkResult r, const char* what) {
     if (r != VK_SUCCESS) throw std::runtime_error(what);
 }
+struct DefectPatchPc {
+    float black, floorv;
+    std::int32_t width, height;
+};
 struct NoiseEstimatePc {
     float referenceBlack[4];
     float neighbourBlack[4];
@@ -81,6 +85,27 @@ void AndroidBurstCoordinator::destroyHostBuffers() noexcept {
     destroyHostBuffer(noiseStats_);
     destroyHostBuffer(hotPixels_);
     destroyHostBuffer(effectiveFrames_);
+    destroyHostBuffer(defectCount_);
+}
+// X14U (Nov 19): the X14U reports no hot pixel map on any camera, so a merge carried the sensor's defects (3.2x at
+// ISO 1100: ~4,000 clear ones, same places in every shot). Each frame is cleaned in place by the single-frame JPEG's
+// rule before the merge reads it.
+void AndroidBurstCoordinator::recordDefectPatch(const BurstFrame& frame) {
+    const auto& n = frame.parameters.normalization;
+    const float black = .25f * (n.blackByPhase[0] + n.blackByPhase[1] + n.blackByPhase[2] + n.blackByPhase[3]);
+    if (!frame.raw.view || !(n.whiteLevel > black) || !defectCount_.buffer) return;
+    DefectPatchPc pc{black, .015f * (n.whiteLevel - black), std::int32_t(width_), std::int32_t(height_)};
+    executor_.record(command_, ShaderId::RxDefectPatch,
+                     {{ImageBinding{0u, frame.raw.view, VK_IMAGE_LAYOUT_GENERAL}}, {BufferBinding{1u, defectCount_.buffer}}},
+                     &pc, sizeof(pc), (width_ + 15u) / 16u, (height_ + 15u) / 16u);
+    computeWriteBarrier(command_);
+}
+void AndroidBurstCoordinator::resetDefectCount() {
+    ensureHostBuffer(defectCount_, sizeof(std::uint32_t));
+    *static_cast<std::uint32_t*>(defectCount_.mapped) = 0u;
+}
+std::uint32_t AndroidBurstCoordinator::defectCount() const noexcept {
+    return defectCount_.mapped ? *static_cast<const std::uint32_t*>(defectCount_.mapped) : 0u;
 }
 void AndroidBurstCoordinator::warmPipelines(VkPhysicalDevice physical, VkDevice device, std::uint32_t qf) {
     if (!physical || !device) throw std::invalid_argument("multiframe burst: invalid warmup handles");
@@ -424,6 +449,7 @@ BurstRunResult AndroidBurstCoordinator::run(const std::vector<BurstFrame>& frame
 BurstRunResult AndroidBurstCoordinator::runRexture(const std::vector<BurstFrame>& frames, std::uint32_t ref,
                                                    const FrameConsumed& frameConsumed, const FrameLoad& frameLoad) {
     if (frameLoad) frameLoad(ref);
+    resetDefectCount();
     using Clock = std::chrono::steady_clock;
     const auto runBegin = Clock::now();
     BurstStageTimings timings{};
@@ -488,6 +514,7 @@ BurstRunResult AndroidBurstCoordinator::runRexture(const std::vector<BurstFrame>
     timings.referencePrepareMs = profiled(1u, ref, 3u + fitMark, [&] {
         if (initializeLayouts) arena_.recordInitializeLayouts(command_);
         recorder.recordBurstClear(command_);
+        recordDefectPatch(frames[ref]);
         recorder.recordPrepare(command_, true, frames[ref].raw.view, frames[ref].parameters);
     });
     if (initializeLayouts) layoutsInitialized_ = true;
@@ -523,6 +550,7 @@ BurstRunResult AndroidBurstCoordinator::runRexture(const std::vector<BurstFrame>
         if (rextureObserver_) {
             // Verification build: one submission per stage group so every stage can be dumped.
             timings.companionPrepareMs += profiled(11u, i, 3u, [&] {
+                recordDefectPatch(frames[i]);
                 recorder.recordPrepare(command_, false, frames[i].raw.view, frames[i].parameters, gainOf(i));
             });
             rextureObserver_("companion_prepare", i, arena_);
@@ -541,6 +569,7 @@ BurstRunResult AndroidBurstCoordinator::runRexture(const std::vector<BurstFrame>
             });
         } else if (!samePairLevels) {
             timings.companionPrepareMs += profiled(11u, i, 3u + 4u + 3u + 3u, [&] {
+                recordDefectPatch(frames[i]);
                 recorder.recordPrepare(command_, false, frames[i].raw.view, frames[i].parameters, gainOf(i));
                 for (std::uint32_t level = 0; level < 3u; ++level) recorder.recordAlignmentLevel(command_, level, false);
             });
@@ -561,6 +590,7 @@ BurstRunResult AndroidBurstCoordinator::runRexture(const std::vector<BurstFrame>
             const std::uint32_t slot = pending < 0 ? 0u : 1u;  // pairing is only used when every frame shares the levels
             constexpr std::uint32_t kMarks1 = 3u + 4u + 3u + 3u;
             timings.companionPrepareMs += profiled(11u, i, kMarks1, [&] {
+                recordDefectPatch(frames[i]);
                 recorder.recordPrepare(command_, false, frames[i].raw.view, frames[i].parameters, gainOf(i));
                 for (std::uint32_t level = 0; level < 3u; ++level) recorder.recordAlignmentLevel(command_, level, false);
             });
@@ -625,6 +655,7 @@ BurstRunResult AndroidBurstCoordinator::runRexture(const std::vector<BurstFrame>
                           timings};
     result.noiseEstimated = noiseFitted;
     if (noiseFitted) result.estimatedNoise = *merge_.sensorNoiseProfile;
+    result.defectsConcealed = defectCount();
     return result;
 }
 BurstRunResult AndroidBurstCoordinator::runHdrPlusFrequency(const std::vector<BurstFrame>& frames, std::uint32_t ref,
@@ -633,6 +664,11 @@ BurstRunResult AndroidBurstCoordinator::runHdrPlusFrequency(const std::vector<Bu
     // Four passes revisit every companion: all frames stay resident.
     if (frameLoad)
         for (std::uint32_t i = 0; i < frames.size(); ++i) frameLoad(i);
+    // Every frame is resident: the defects go first, in one submission.
+    resetDefectCount();
+    (void)executeChunk(4u, ref, 1u, [&] {
+        for (const auto& frame : frames) recordDefectPatch(frame);
+    });
     // Four half-tile-shifted passes. Companions are aligned in pass 0 only
     // (align-once, default) or re-aligned on each pass's padding (upstream).
     // Chunk codes: 1=pass reference, 11=companion prepare/alignment,
@@ -808,6 +844,7 @@ BurstRunResult AndroidBurstCoordinator::runHdrPlusFrequency(const std::vector<Bu
     result.noiseEstimated = noiseFitted;
     if (noiseFitted) result.estimatedNoise = fittedNoise;
     result.effectiveFrames = effectiveFrames;
+    result.defectsConcealed = defectCount();
     return result;
 }
 void AndroidBurstCoordinator::releaseScratch() noexcept {
