@@ -5,11 +5,13 @@
 #include <media/NdkMediaFormat.h>
 #include <time.h>
 #include <fcntl.h>
+#include <sys/system_properties.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <stdexcept>
 
@@ -69,32 +71,57 @@ void NativeAvRecorder::configureVideo() {
     if (codecName) AMediaCodec_releaseName(videoCodec_, codecName);
     if (videoCodecName_.rfind("c2.android.", 0) == 0 || videoCodecName_.rfind("OMX.google.", 0) == 0)
         throw std::runtime_error("software HEVC encoder selected: " + videoCodecName_);
-    AMediaFormat* format = AMediaFormat_new();
-    if (!format) throw std::runtime_error("video format allocation failed");
-    AMediaFormat_setString(format, AMEDIAFORMAT_KEY_MIME, "video/hevc");
-    AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_WIDTH, settings_.width);
-    AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_HEIGHT, settings_.height);
-    AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_FORMAT, kSurfaceColorFormat);
-    AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_PROFILE, settings_.bitDepth == 8 ? kMainProfile : kMain10Profile);
-    AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_BIT_RATE, settings_.bitrate);
-    AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_FRAME_RATE, settings_.fps);
-    // i-frame-interval is in seconds and accepts a float; 0 asks for every frame to be a sync frame.
-    AMediaFormat_setFloat(format, AMEDIAFORMAT_KEY_I_FRAME_INTERVAL,
-                          settings_.intraFrames <= 1 ? 0.0f
-                                                     : static_cast<float>(settings_.intraFrames) / settings_.fps);
-    if (settings_.bitrateMode >= 0) AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_BITRATE_MODE, settings_.bitrateMode);
-    // Optional codec key. A codec may reject the request during configure;
-    // omit it when left at the automatic default.
-    const int maxBFrames = settings_.intraFrames <= 1 ? 0 : settings_.maxBFrames;
-    if (maxBFrames >= 0) AMediaFormat_setInt32(format, "max-bframes", maxBFrames);
-    // Preserve the encoder's BT.709 RGB-to-YCbCr conversion. LOG signalling
-    // is rewritten after encoding, without changing the encoded samples.
-    AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_STANDARD, 1);
-    AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_TRANSFER, 3);
-    AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_RANGE, 2);
-    const media_status_t configured =
-        AMediaCodec_configure(videoCodec_, format, nullptr, nullptr, AMEDIACODEC_CONFIGURE_FLAG_ENCODE);
-    AMediaFormat_delete(format);
+    // X14U (Nov 19) test switch, from a PC without a rebuild (unset = as before):
+    //   adb shell setprop debug.rawr.enc_rate 120   operating rate: lets the encoder run faster than the recording's
+    //                                              fps, so a backlog from a slow start can drain (0 / unset = off)
+    //   adb shell setprop debug.rawr.enc_prio 0     0 realtime, 1 best effort (unset = the codec's default)
+    // A codec that refuses them is configured again without (VIDEO_ENCODER_HINTS_REFUSED).
+    const auto prop = [](const char* name) {
+        char value[PROP_VALUE_MAX] = {};
+        return __system_property_get(name, value) > 0 ? std::atoi(value) : -1;
+    };
+    const int rate = prop("debug.rawr.enc_rate");
+    const int priority = prop("debug.rawr.enc_prio");
+    const auto configureWith = [&](bool hints) {
+        AMediaFormat* format = AMediaFormat_new();
+        if (!format) throw std::runtime_error("video format allocation failed");
+        AMediaFormat_setString(format, AMEDIAFORMAT_KEY_MIME, "video/hevc");
+        AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_WIDTH, settings_.width);
+        AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_HEIGHT, settings_.height);
+        AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_FORMAT, kSurfaceColorFormat);
+        AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_PROFILE, settings_.bitDepth == 8 ? kMainProfile : kMain10Profile);
+        AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_BIT_RATE, settings_.bitrate);
+        AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_FRAME_RATE, settings_.fps);
+        // i-frame-interval is in seconds and accepts a float; 0 asks for every frame to be a sync frame.
+        AMediaFormat_setFloat(format, AMEDIAFORMAT_KEY_I_FRAME_INTERVAL,
+                              settings_.intraFrames <= 1 ? 0.0f
+                                                         : static_cast<float>(settings_.intraFrames) / settings_.fps);
+        if (settings_.bitrateMode >= 0) AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_BITRATE_MODE, settings_.bitrateMode);
+        // Optional codec key. A codec may reject the request during configure;
+        // omit it when left at the automatic default.
+        const int maxBFrames = settings_.intraFrames <= 1 ? 0 : settings_.maxBFrames;
+        if (maxBFrames >= 0) AMediaFormat_setInt32(format, "max-bframes", maxBFrames);
+        // Preserve the encoder's BT.709 RGB-to-YCbCr conversion. LOG signalling
+        // is rewritten after encoding, without changing the encoded samples.
+        AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_STANDARD, 1);
+        AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_TRANSFER, 3);
+        AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_RANGE, 2);
+        if (hints && rate > 0) AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_OPERATING_RATE, rate);
+        if (hints && (priority == 0 || priority == 1)) AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_PRIORITY, priority);
+        const media_status_t status =
+            AMediaCodec_configure(videoCodec_, format, nullptr, nullptr, AMEDIACODEC_CONFIGURE_FLAG_ENCODE);
+        AMediaFormat_delete(format);
+        return status;
+    };
+    const bool hints = rate > 0 || priority == 0 || priority == 1;
+    media_status_t configured = configureWith(hints);
+    if (hints && configured != AMEDIA_OK) {
+        __android_log_print(ANDROID_LOG_WARN, "RawrNativeVideo", "VIDEO_ENCODER_HINTS_REFUSED status=%d rate=%d prio=%d",
+                            int(configured), rate, priority);
+        configured = configureWith(false);
+    }
+    __android_log_print(ANDROID_LOG_INFO, "RawrNativeVideo", "VIDEO_ENCODER_HINTS rate=%d prio=%d %dx%d@%d status=%d",
+                        rate, priority, settings_.width, settings_.height, settings_.fps, int(configured));
     if (configured != AMEDIA_OK)
         throw std::runtime_error(std::string("configure HEVC ") + (settings_.bitDepth == 8 ? "Main " : "Main10 ") +
                                  std::to_string(settings_.width) + "x" + std::to_string(settings_.height) + " at " +
@@ -103,6 +130,7 @@ void NativeAvRecorder::configureVideo() {
     requireMedia(AMediaCodec_createInputSurface(videoCodec_, &inputWindow_), "create HEVC input surface");
     if (!inputWindow_) throw std::runtime_error("HEVC input surface is null");
     requireMedia(AMediaCodec_start(videoCodec_), "start HEVC");
+    outputRamp_.begin(StartRamp::monotonicNs());
 }
 
 void NativeAvRecorder::configureAudio() {
@@ -294,6 +322,7 @@ void NativeAvRecorder::drainVideo() noexcept {
             if (index < 0) throw std::runtime_error("HEVC dequeue failed: " + std::to_string(index));
             idleAfterStop = 0;
             eos = (info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM) != 0;
+            if (eos) outputRamp_.log("VIDEO_ENC_OUTPUT", false);  // a take shorter than the window
             try {
                 if (info.size > 0 && (info.flags & AMEDIACODEC_BUFFER_FLAG_CODEC_CONFIG) == 0) {
                     size_t capacity = 0;
@@ -314,6 +343,7 @@ void NativeAvRecorder::drainVideo() noexcept {
                             snappedPtsUs = lastSnappedVideoPtsUs_ + frameDurUs;
                     }
                     writeSample(Track::Video, data, capacity, info, snappedPtsUs);
+                    if (!outputRamp_.add(StartRamp::monotonicNs(), true, 0.0)) outputRamp_.log("VIDEO_ENC_OUTPUT", false);
                     const auto frameType = frameTypes_.classify(data + info.offset, static_cast<size_t>(info.size));
                     std::lock_guard<std::mutex> lock(statsMutex_);
                     if (frameType != HevcFrameTypeParser::Type::Unknown) {

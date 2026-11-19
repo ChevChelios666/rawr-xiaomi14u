@@ -138,6 +138,7 @@ void VideoOutput::markStarted() noexcept {
     timespec now{};
     clock_gettime(CLOCK_MONOTONIC, &now);
     startedAtNs_ = int64_t(now.tv_sec) * 1'000'000'000 + now.tv_nsec;
+    ramp_.begin(startedAtNs_);
 }
 void VideoOutput::swap(VideoOutput& other) noexcept {
     std::swap(window_, other.window_);
@@ -153,6 +154,7 @@ void VideoOutput::swap(VideoOutput& other) noexcept {
     std::swap(initialized_, other.initialized_);
     std::swap(available_, other.available_);
     std::swap(rendered_, other.rendered_);
+    std::swap(ramp_, other.ramp_);
 }
 VkFormat VideoOutput::preferredFormat(uint32_t bitDepth) const {
     const VkFormat format = bitDepth == 8                            ? VK_FORMAT_R8G8B8A8_UNORM
@@ -165,6 +167,7 @@ VkFormat VideoOutput::preferredFormat(uint32_t bitDepth) const {
                : VK_FORMAT_R16G16B16A16_SFLOAT;
 }
 void VideoOutput::stop() noexcept {
+    if (swapchain_) ramp_.log("VIDEO_ENC_INPUT", true);  // a take shorter than the window
     const VkDevice device = context_.device();
     if (device) {
         if (swapchain_) (void)context_.waitIdle();
@@ -191,9 +194,13 @@ void VideoOutput::stop() noexcept {
 }
 bool VideoOutput::acquire(uint32_t frameSlot, uint32_t* imageIndex) {
     if (!ready() || frameSlot >= available_.size()) return false;
+    const int64_t before = StartRamp::monotonicNs();
     const VkResult result = vkAcquireNextImageKHR(context_.device(), swapchain_, kEncoderAcquireWaitNs,
                                                   available_[frameSlot], VK_NULL_HANDLE, imageIndex);
-    if (result == VK_NOT_READY || result == VK_TIMEOUT) return false;
+    const int64_t after = StartRamp::monotonicNs();
+    const bool got = result != VK_NOT_READY && result != VK_TIMEOUT;
+    if (!ramp_.add(after, got, double(after - before) / 1e6)) ramp_.log("VIDEO_ENC_INPUT", true);
+    if (!got) return false;
     check(result, "video acquire");
     return true;
 }

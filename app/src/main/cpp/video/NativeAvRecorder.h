@@ -14,6 +14,7 @@
 
 #include "diagnostics/timing/RecentPeak.h"
 #include "video/AudioInput.h"
+#include "video/EncoderRamp.h"
 #include "video/HevcFrameType.h"
 #include "video/MovMuxer.h"
 
@@ -116,6 +117,7 @@ private:
     mutable std::mutex statsMutex_;
     std::string failure_;
     std::string metadataStatus_ = "pending";
+    StartRamp outputRamp_{};  // the take's first seconds, frames the encoder finished (VIDEO_ENC_OUTPUT)
     uint64_t encodedFrames_ = 0;
     uint64_t encodedAudioPackets_ = 0;
     int64_t firstVideoPtsUs_ = -1;

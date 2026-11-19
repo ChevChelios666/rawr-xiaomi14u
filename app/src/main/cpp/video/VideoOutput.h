@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "imaging/FrameLimits.h"
+#include "video/EncoderRamp.h"
 namespace rawrcam::vulkan {
 class VulkanContext;
 }
@@ -65,5 +66,6 @@ class VideoOutput final {
     std::vector<bool> initialized_;
     std::array<VkSemaphore, rawrcam::imaging::kRealtimeFramesInFlight> available_{};
     std::array<VkSemaphore, rawrcam::imaging::kRealtimeFramesInFlight> rendered_{};
+    StartRamp ramp_{};  // the take's first seconds, frames handed to the encoder (VIDEO_ENC_INPUT)
 };
 }  // namespace rawrcam::video
