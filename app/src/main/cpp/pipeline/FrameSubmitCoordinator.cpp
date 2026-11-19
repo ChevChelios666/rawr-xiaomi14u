@@ -374,13 +374,6 @@ rawrcam::vulkan::ImportedRaw& FrameSubmitCoordinator::ingestRaw(const SubmitPara
             if (config_.diagnosticMode == 16u || config_.diagnosticMode == 0u)
                 resources_.importer()->ensureBufferImport(params.ahb);
             return raw;
-        } catch (const rawrcam::vulkan::RawImportCacheFull& e) {
-            // Transient: this frame uploads; the zero-copy import resumes once the old set is evicted.
-            if (config_.diagnosticMode != 0u) throw;
-            const std::string line = std::string("RAW_INGRESS_TRANSIENT path=image_import reason=") + e.what();
-            LOGE("%s", line.c_str());
-            lifecyclePort_.postDiagnostic(line);
-            return cpuUpload_.upload(slotIndex, params.lease->image(), params.ahb, params.acquireFenceFd);
         } catch (const std::exception& e) {
             // Diagnostic modes exist to exercise the import itself; never mask them.
             if (config_.diagnosticMode != 0u) throw;
@@ -682,8 +675,7 @@ void FrameSubmitCoordinator::submitSplitVideoAndMonitor(const SubmitParams& para
         vkCheck(vkResetCommandBuffer(slot->command, 0), "video monitor reset command");
         vkCheck(vkBeginCommandBuffer(slot->command, &begin), "video monitor begin command");
         videoOutput_->beginMonitorTiming(slot->command, slotIndex);
-        // The on-screen monitor (4K and Open Gate: half resolution; see videoMonitorExtent).
-        const auto extent = videoOutput_->monitorExtent();
+        const auto extent = videoOutput_->extent();
         // Scopes: a new measurement about 8 times a second (60 ms still dropped the odd frame at 4K30 / 1080p60,
         // Nov 13); frames in between show the last one (its slot's images).
         const auto now = std::chrono::steady_clock::now();

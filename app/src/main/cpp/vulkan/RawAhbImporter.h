@@ -5,7 +5,6 @@
 
 #include <cstdint>
 #include <functional>
-#include <stdexcept>
 #include <string>
 #include <chrono>
 #include <unordered_map>
@@ -19,13 +18,6 @@ class RawRemosaicker;
 namespace rawrcam::vulkan {
 // Borrowed view of one imported camera AHB. The importer's cache entry owns
 // every handle here (and any the diagnostic hooks add) until clear().
-// The import cache is full of identities still in use: transient (a session
-// restart, e.g. 30 -> 60 fps for a recording, brings a new buffer set while the
-// old one is still warm). Callers must not latch a fallback path on it.
-struct RawImportCacheFull : std::runtime_error {
-    using std::runtime_error::runtime_error;
-};
-
 struct ImportedRaw {
     AHardwareBuffer* ahb = nullptr;
     VkImage image = VK_NULL_HANDLE;

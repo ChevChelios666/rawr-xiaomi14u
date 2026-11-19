@@ -16,13 +16,6 @@ namespace rawrcam::vulkan {
 class VulkanContext;
 }
 namespace rawrcam::video {
-// The on-screen monitor while recording: half resolution (one pixel per 2x2) for recordings wider than 2560 px (4K,
-// Open Gate), where writing it at full size cost GPU time the 33 ms budget needs (utalpt/rawr f64ee9f); full size
-// below, so 1080p's viewfinder stays sharp. The tonemap shader reads the monitor's size and follows it.
-inline VkExtent2D videoMonitorExtent(uint32_t width, uint32_t height) noexcept {
-    if (width <= 2560u) return {width, height};
-    return {(width + 1u) / 2u, (height + 1u) / 2u};
-}
 class VideoProcessingResources final {
    public:
     explicit VideoProcessingResources(vulkan::VulkanContext& context) : context_(context) {}
