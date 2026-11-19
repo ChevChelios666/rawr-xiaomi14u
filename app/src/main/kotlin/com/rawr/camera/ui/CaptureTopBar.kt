@@ -73,7 +73,9 @@ internal fun CaptureTopBar(
     /** X14U Burst: pre-capture seconds (0 = off) in the timer's place, and how full its buffer is (0…1). */
     burstPre: Int? = null,
     burstPreFill: Float = 0f,
-    onBurstPre: () -> Unit = {}
+    onBurstPre: () -> Unit = {},
+    /** X14U video (Nov 19): the items step in by this much a side, clear of the picture's top corner marks. */
+    sideInset: androidx.compose.ui.unit.Dp = 0.dp
 ) {
     val haptics = LocalCaptureHaptics.current
     Row(
@@ -81,7 +83,8 @@ internal fun CaptureTopBar(
             .fillMaxWidth()
             // Classic: the body draws the metal plate under the bar.
             .background(if (isClassicStyle()) Color.Transparent else if (transparent) Color.Black.copy(alpha = .18f) else CaptureColors.Surface)
-            .height(CaptureDimens.TopBarHeight),
+            .height(CaptureDimens.TopBarHeight)
+            .padding(horizontal = sideInset),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // X14U video: the chevron is centred, so both sides get the same number of slots (empty ones fill the

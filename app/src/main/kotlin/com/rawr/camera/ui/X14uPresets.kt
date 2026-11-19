@@ -3,7 +3,6 @@ package com.rawr.camera.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -179,8 +178,9 @@ internal fun X14uPresetStrip(
     val stepPx = with(LocalDensity.current) { (cardWidth + gap).toPx() }
     // Local order while a card is dragged; the stored order follows on release.
     val order = remember(presets.items.map { it.id }) { presets.items.map { it.id }.toMutableStateList() }
-    var dragId by remember { mutableStateOf<String?>(null) }
-    var dragDx by remember { mutableStateOf(0f) }
+    // Long-press a card and drag it (P0 stays first); followed in screen coordinates (RowReorder).
+    val reorder = remember(stepPx) { RowReorder<String>(stepPx, minIndex = 1) }
+    val dragId = reorder.dragging
     val items by rememberUpdatedState(presets.items)
     // Gesture handlers outlive a recomposition: they read these.
     val activeNow by rememberUpdatedState(presets.activeId)
@@ -236,8 +236,37 @@ internal fun X14uPresetStrip(
                     Box(
                         Modifier
                             .zIndex(if (dragging) 1f else 0f)
+                            .pointerInput(id, enabled) {
+                                if (!enabled) return@pointerInput
+                                detectTapGestures {
+                                    haptics.selection()
+                                    val now = items.firstOrNull { it.id == id } ?: return@detectTapGestures
+                                    if (now.id == activeNow) detailsNow(now) else applyNow(now)
+                                }
+                            }
+                            .then(with(reorder) {
+                                Modifier.reorderSlot(
+                                    key = id,
+                                    enabled = enabled && !item.isBaseline,
+                                    order = order,
+                                    onStart = { haptics.selection() },
+                                    onMove = { from, to ->
+                                        order.add(to, order.removeAt(from))
+                                        haptics.selection()
+                                    },
+                                    onEnd = {
+                                        val from = items.indexOfFirst { it.id == id }
+                                        val to = order.indexOf(id)
+                                        if (from >= 1 && to >= 1 && from != to) moveNow(from, to)
+                                    },
+                                    onCancel = {
+                                        order.clear()
+                                        order.addAll(items.map { it.id })
+                                    }
+                                )
+                            })
                             .graphicsLayer {
-                                translationX = if (dragging) dragDx else 0f
+                                translationX = reorder.translation(id)
                                 val k = if (dragging) 1.06f else 1f
                                 scaleX = k
                                 scaleY = k
@@ -250,50 +279,6 @@ internal fun X14uPresetStrip(
                                 if (selected) Modifier.border(1.2.dp, accent, RoundedCornerShape(12.dp))
                                 else Modifier.border(1.dp, Color.White.copy(alpha = .13f), RoundedCornerShape(12.dp))
                             )
-                            .pointerInput(id, enabled) {
-                                if (!enabled) return@pointerInput
-                                detectTapGestures {
-                                    haptics.selection()
-                                    val now = items.firstOrNull { it.id == id } ?: return@detectTapGestures
-                                    if (now.id == activeNow) detailsNow(now) else applyNow(now)
-                                }
-                            }
-                            .then(if (item.isBaseline || !enabled) Modifier else Modifier.pointerInput(id) {
-                                detectDragGesturesAfterLongPress(
-                                    onDragStart = {
-                                        haptics.selection()
-                                        dragId = id
-                                        dragDx = 0f
-                                    },
-                                    onDrag = { change, amount ->
-                                        change.consume()
-                                        dragDx += amount.x
-                                        val i = order.indexOf(id)
-                                        if (dragDx > stepPx / 2 && i < order.lastIndex) {
-                                            order.add(i + 1, order.removeAt(i))
-                                            dragDx -= stepPx
-                                            haptics.selection()
-                                        } else if (dragDx < -stepPx / 2 && i > 1) {
-                                            order.add(i - 1, order.removeAt(i))
-                                            dragDx += stepPx
-                                            haptics.selection()
-                                        }
-                                    },
-                                    onDragEnd = {
-                                        val from = items.indexOfFirst { it.id == id }
-                                        val to = order.indexOf(id)
-                                        dragId = null
-                                        dragDx = 0f
-                                        if (from >= 1 && to >= 1 && from != to) moveNow(from, to)
-                                    },
-                                    onDragCancel = {
-                                        dragId = null
-                                        dragDx = 0f
-                                        order.clear()
-                                        order.addAll(items.map { it.id })
-                                    }
-                                )
-                            })
                             .padding(start = 9.dp, end = 4.dp, top = 6.dp, bottom = 7.dp)
                     ) {
                         // The card's number goes by where it is now (also while it is dragged).

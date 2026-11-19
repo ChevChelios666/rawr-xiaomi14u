@@ -1389,6 +1389,10 @@ internal fun X14uCaptureLayout(
                 state, dispatch, onOpenSettings, videoLocked = recordingLock, showLog = false,
                 modifier = Modifier.padding(top = cutoutTop).alpha(recordingDim),
                 transparent = isVideo,
+                // A tall video shape (2.39, XPan) starts under the bar: its top corner marks would sit on the crop chip
+                // and DCG, so the bar's items step in past them (22 dp marks + a little), as the slot does at the foot.
+                sideInset = if (isVideo && videoTop < cutoutTop + CaptureDimens.TopBarHeight)
+                    ((layoutWidth - videoRect.width) / 2 + 22.dp + 4.dp).coerceAtLeast(0.dp) else 0.dp,
                 toggles = { X14uOptionToggles(quick, lensOptions, isVideo, enabled = !recordingLock, orientation, onQuickEvent, burst || pano) },
                 toggleCount = x14uOptionToggleCount(quick, lensOptions, isVideo, burst || pano),
                 toolsOpen = toolsOpen,
@@ -3709,8 +3713,8 @@ private fun X14uModeRow(
     val slot = 66.dp
     val stepPx = with(LocalDensity.current) { slot.toPx() }
     val order = remember(modes) { modes.toMutableStateList() }
-    var dragMode by remember { mutableStateOf<X14uMode?>(null) }
-    var dragDx by remember { mutableStateOf(0f) }
+    // Followed in screen coordinates (RowReorder): moving a mode no longer jumps back and forth.
+    val reorder = remember(stepPx) { RowReorder<X14uMode>(stepPx) }
     val modesNow by rememberUpdatedState(modes)
     val selectNow by rememberUpdatedState(onSelect)
     val currentNow by rememberUpdatedState(current)
@@ -3718,56 +3722,39 @@ private fun X14uModeRow(
         order.forEach { mode ->
             key(mode) {
                 val isSelected = current == mode
-                val dragging = dragMode == mode
+                val dragging = reorder.dragging == mode
                 Box(
                     Modifier
                         .zIndex(if (dragging) 1f else 0f)
+                        .pointerInput(mode, enabled) {
+                            if (!enabled) return@pointerInput
+                            detectTapGestures { if (mode != currentNow) selectNow(mode) }
+                        }
+                        .then(with(reorder) {
+                            Modifier.reorderSlot(
+                                key = mode,
+                                enabled = enabled,
+                                order = order,
+                                onStart = { haptics.selection() },
+                                onMove = { from, to ->
+                                    order.add(to, order.removeAt(from))
+                                    haptics.selection()
+                                },
+                                onEnd = { if (order.toList() != modesNow) X14uModeOrder.set(order.toList()) },
+                                onCancel = {
+                                    order.clear()
+                                    order.addAll(modesNow)
+                                }
+                            )
+                        })
                         .graphicsLayer {
-                            translationX = if (dragging) dragDx else 0f
+                            translationX = reorder.translation(mode)
                             val k = if (dragging) 1.12f else 1f
                             scaleX = k
                             scaleY = k
                         }
                         .width(slot)
                         .height(36.dp)
-                        .pointerInput(mode, enabled) {
-                            if (!enabled) return@pointerInput
-                            detectTapGestures { if (mode != currentNow) selectNow(mode) }
-                        }
-                        .then(if (!enabled) Modifier else Modifier.pointerInput(mode) {
-                            detectDragGesturesAfterLongPress(
-                                onDragStart = {
-                                    haptics.selection()
-                                    dragMode = mode
-                                    dragDx = 0f
-                                },
-                                onDrag = { change, amount ->
-                                    change.consume()
-                                    dragDx += amount.x
-                                    val i = order.indexOf(mode)
-                                    if (dragDx > stepPx / 2 && i < order.lastIndex) {
-                                        order.add(i + 1, order.removeAt(i))
-                                        dragDx -= stepPx
-                                        haptics.selection()
-                                    } else if (dragDx < -stepPx / 2 && i > 0) {
-                                        order.add(i - 1, order.removeAt(i))
-                                        dragDx += stepPx
-                                        haptics.selection()
-                                    }
-                                },
-                                onDragEnd = {
-                                    dragMode = null
-                                    dragDx = 0f
-                                    if (order.toList() != modesNow) X14uModeOrder.set(order.toList())
-                                },
-                                onDragCancel = {
-                                    dragMode = null
-                                    dragDx = 0f
-                                    order.clear()
-                                    order.addAll(modesNow)
-                                }
-                            )
-                        })
                         .semantics {
                             role = Role.Tab
                             this.selected = isSelected
