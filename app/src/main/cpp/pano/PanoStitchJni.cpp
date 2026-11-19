@@ -7,6 +7,10 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -15,6 +19,7 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/stitching.hpp>
+#include <opencv2/stitching/detail/util.hpp>
 #include <opencv2/stitching/warpers.hpp>
 
 namespace {
@@ -78,6 +83,63 @@ cv::Rect innerRect(const cv::Mat& pano) {
     if (full.width < pano.cols / 4 || full.height < pano.rows / 4) return {0, 0, pano.cols, pano.rows};
     return full;
 }
+
+// The canvas composePanorama() will allocate, from the stitcher's own estimate (same steps as OpenCV's
+// Stitcher::composePanorama: compose scale from the first frame, median focal as the warp scale, each frame's
+// warped ROI at compose scale). Width x height in pixels; 0 x 0 if it can't be worked out.
+cv::Size plannedPanoCanvas(cv::Stitcher& st, const std::vector<cv::Mat>& frames) {
+    const auto cameras = st.cameras();
+    const auto component = st.component();
+    if (cameras.empty() || cameras.size() != component.size() || frames.empty()) return {};
+    const double area = double(frames[component[0]].size().area());
+    const double reg = st.registrationResol(), comp = st.compositingResol();
+    const double work = reg < 0 ? 1.0 : std::min(1.0, std::sqrt(reg * 1e6 / area));
+    const double compose = comp < 0 ? 1.0 : std::min(1.0, std::sqrt(comp * 1e6 / area));
+    const double aspect = compose / work;
+    std::vector<double> focals;
+    for (const auto& c : cameras) focals.push_back(c.focal);
+    std::sort(focals.begin(), focals.end());
+    const size_t n = focals.size();
+    const double median = n % 2 ? focals[n / 2] : 0.5 * (focals[n / 2 - 1] + focals[n / 2]);
+    const cv::Ptr<cv::detail::RotationWarper> warper = st.warper()->create(float(median * aspect));
+    std::vector<cv::Point> corners;
+    std::vector<cv::Size> sizes;
+    for (size_t i = 0; i < cameras.size(); ++i) {
+        cv::detail::CameraParams c = cameras[i];
+        c.focal *= aspect;
+        c.ppx *= aspect;
+        c.ppy *= aspect;
+        cv::Mat K, R;
+        c.K().convertTo(K, CV_32F);
+        c.R.convertTo(R, CV_32F);
+        const cv::Size full = frames[component[i]].size();
+        const cv::Size sz(cvRound(full.width * compose), cvRound(full.height * compose));
+        const cv::Rect roi = warper->warpRoi(sz, K, R);
+        corners.push_back(roi.tl());
+        sizes.push_back(roi.size());
+    }
+    return cv::detail::resultRoi(corners, sizes).size();
+}
+
+// The phone's free memory (MemAvailable), 0 if unknown.
+double availableBytes() {
+    FILE* f = std::fopen("/proc/meminfo", "r");
+    if (!f) return 0.0;
+    char line[256];
+    double kb = 0.0;
+    while (std::fgets(line, sizeof line, f))
+        if (std::strncmp(line, "MemAvailable:", 13) == 0) {
+            kb = std::atof(line + 13);
+            break;
+        }
+    std::fclose(f);
+    return kb * 1024.0;
+}
+
+// Composing and multi-band blending take ~25-26 bytes per canvas pixel (measured with OpenCV 4.10, 3x3 sets of
+// 4096x3072 frames: 58 MP canvas 1.44 GB, 29 MP 0.76 GB, 19 MP 0.50 GB); a little margin on top.
+constexpr double kBytesPerCanvasPixel = 28.0;
+constexpr double kMaxCanvasPixels = 150e6;
 
 std::string statusText(cv::Stitcher::Status status) {
     switch (status) {
@@ -165,7 +227,40 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_rawr_camera_pano_PanoStitcherNativ
                         stitcher->setFeaturesMatcher(cv::makePtr<cv::detail::BestOf2NearestMatcher>(false, attempt == 1 ? 0.25f : 0.2f));
                         stitcher->setPanoConfidenceThresh(attempt == 1 ? 0.6 : 0.3);
                     }
-                    status = stitcher->stitch(frames, pano);
+                    // Nov 19: a 3x3 set was killed for low memory (rss 9.1 GB) while composing; the size check only
+                    // ran on the finished panorama. The canvas is now worked out from the estimate first (exactly as
+                    // composePanorama will size it) and checked before anything is allocated: the same "bad
+                    // estimate" rule as below, then a memory budget (a larger canvas is composed smaller).
+                    status = stitcher->estimateTransform(frames);
+                    if (status == cv::Stitcher::OK) {
+                        const cv::Size planned = plannedPanoCanvas(*stitcher, frames);
+                        const double canvas = double(planned.area());
+                        const double avail = availableBytes();
+                        // Half of the free memory (the camera keeps running beside the merge), at most 150 MP.
+                        const double budget = std::min(kMaxCanvasPixels,
+                                                       avail > 0.0 ? 0.5 * avail / kBytesPerCanvasPixel : kMaxCanvasPixels);
+                        __android_log_print(ANDROID_LOG_INFO, kTag,
+                                            "PANO_CANVAS attempt=%d planned=%dx%d (%.1f MP) frames=%.1f MP availMB=%.0f budget=%.1f MP",
+                                            attempt, planned.width, planned.height, canvas / 1e6, framesArea / 1e6,
+                                            avail / 1048576.0, budget / 1e6);
+                        if (canvas <= 0.0 || canvas > 3.0 * framesArea) {
+                            __android_log_print(ANDROID_LOG_WARN, kTag, "PANO_STITCH_ODD attempt=%d planned=%dx%d frames=%.1f MP",
+                                                attempt, planned.width, planned.height, framesArea / 1e6);
+                            status = cv::Stitcher::ERR_CAMERA_PARAMS_ADJUST_FAIL;
+                        } else {
+                            if (canvas > budget) {
+                                // The canvas area follows the compose megapixels per frame.
+                                const double resol = stitcher->compositingResol();
+                                const double frameMpNow = resol > 0.0 ? std::min(resol, frameMp) : frameMp;
+                                const double smaller = frameMpNow * budget / canvas;
+                                __android_log_print(ANDROID_LOG_WARN, kTag, "PANO_CANVAS_REDUCED compose=%.1f->%.1f MP",
+                                                    frameMpNow, smaller);
+                                if (smaller < 1.0) status = cv::Stitcher::ERR_CAMERA_PARAMS_ADJUST_FAIL;
+                                else stitcher->setCompositingResol(smaller);
+                            }
+                            if (status == cv::Stitcher::OK) status = stitcher->composePanorama(pano);
+                        }
+                    }
                     if (status == cv::Stitcher::OK && !pano.empty()) usedFrames = stitcher->component().size();
                 } catch (const cv::Exception& e) {
                     __android_log_print(ANDROID_LOG_WARN, kTag, "PANO_STITCH_TRY attempt=%d threw %s", attempt, e.what());
