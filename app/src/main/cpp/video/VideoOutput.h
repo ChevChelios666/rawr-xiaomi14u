@@ -60,6 +60,7 @@ class VideoOutput final {
     VkFormat outputFormat_ = VK_FORMAT_R16G16B16A16_SFLOAT;
     std::string offeredFormats_;
     double swapchainMs_ = 0;
+    uint64_t acquireWaitNs_ = kEncoderAcquireWaitNs;  // debug.rawr.enc_wait_ms
     int64_t startedAtNs_ = 0;
     std::vector<VkImage> images_;
     std::vector<VkImageView> views_;

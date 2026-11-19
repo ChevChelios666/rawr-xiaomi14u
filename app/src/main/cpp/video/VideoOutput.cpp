@@ -2,11 +2,13 @@
 
 #include <android/log.h>
 #include <android/native_window_jni.h>
+#include <sys/system_properties.h>
 #include <vulkan/vulkan_android.h>
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <stdexcept>
 #include <string>
 #include <ctime>
@@ -93,9 +95,21 @@ bool VideoOutput::start(JNIEnv* env, jobject javaSurface, uint32_t width, uint32
         // Ask for spare images so the encoder can absorb a brief stall. On the
         // test phone the Surface's own minimum (11-18) is already higher; the
         // request matters where it is lower. Fall back if it is refused.
+        // X14U (Nov 20) test switches, from a PC without a rebuild (unset = as before). The encoder holds up to 16 of
+        // the Surface's images (its own pipeline, ~1 s at 4K), so we can only ever have 2 ready; a frame that finds none
+        // within the wait is dropped (the 1-4 "enc" drops per 4K take).
+        //   adb shell setprop debug.rawr.enc_extra_images 4   images beyond the Surface's minimum (each 4K one ~33 MB)
+        //   adb shell setprop debug.rawr.enc_wait_ms 10       how long a frame waits for a free image (default 3)
+        const auto prop = [](const char* name) {
+            char value[PROP_VALUE_MAX] = {};
+            return __system_property_get(name, value) > 0 ? std::atoi(value) : -1;
+        };
+        const int extra = std::clamp(prop("debug.rawr.enc_extra_images"), 0, 16);
+        const int waitMs = prop("debug.rawr.enc_wait_ms");
+        acquireWaitNs_ = waitMs > 0 ? uint64_t(std::min(waitMs, 30)) * 1'000'000 : kEncoderAcquireWaitNs;
         VkResult created = VK_ERROR_INITIALIZATION_FAILED;
         for (uint32_t wanted : {kPreferredEncoderImages, 4u, 3u}) {
-            uint32_t images = std::max(wanted, caps.minImageCount);
+            uint32_t images = std::max(wanted, caps.minImageCount + uint32_t(wanted == kPreferredEncoderImages ? extra : 0));
             if (caps.maxImageCount) images = std::min(images, caps.maxImageCount);
             swapInfo.minImageCount = images;
             created = vkCreateSwapchainKHR(context_.device(), &swapInfo, nullptr, &swapchain_);
@@ -109,6 +123,8 @@ bool VideoOutput::start(JNIEnv* env, jobject javaSurface, uint32_t width, uint32
         check(vkGetSwapchainImagesKHR(context_.device(), swapchain_, &count, images_.data()), "video images");
         views_.resize(count);
         initialized_.assign(count, false);
+        __android_log_print(ANDROID_LOG_INFO, "RawrNativeVideo", "VIDEO_ENC_IMAGES images=%u surfaceMin=%u surfaceMax=%u extra=%d waitMs=%.0f",
+                            count, caps.minImageCount, caps.maxImageCount, extra, double(acquireWaitNs_) / 1e6);
         for (uint32_t i = 0; i < count; ++i) {
             VkImageViewCreateInfo view{};
             view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -155,6 +171,7 @@ void VideoOutput::swap(VideoOutput& other) noexcept {
     std::swap(available_, other.available_);
     std::swap(rendered_, other.rendered_);
     std::swap(ramp_, other.ramp_);
+    std::swap(acquireWaitNs_, other.acquireWaitNs_);
 }
 VkFormat VideoOutput::preferredFormat(uint32_t bitDepth) const {
     const VkFormat format = bitDepth == 8                            ? VK_FORMAT_R8G8B8A8_UNORM
@@ -195,7 +212,7 @@ void VideoOutput::stop() noexcept {
 bool VideoOutput::acquire(uint32_t frameSlot, uint32_t* imageIndex) {
     if (!ready() || frameSlot >= available_.size()) return false;
     const int64_t before = StartRamp::monotonicNs();
-    const VkResult result = vkAcquireNextImageKHR(context_.device(), swapchain_, kEncoderAcquireWaitNs,
+    const VkResult result = vkAcquireNextImageKHR(context_.device(), swapchain_, acquireWaitNs_,
                                                   available_[frameSlot], VK_NULL_HANDLE, imageIndex);
     const int64_t after = StartRamp::monotonicNs();
     const bool got = result != VK_NOT_READY && result != VK_TIMEOUT;
