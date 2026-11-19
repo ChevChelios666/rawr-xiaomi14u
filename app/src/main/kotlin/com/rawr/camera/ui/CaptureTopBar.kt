@@ -88,6 +88,10 @@ internal fun CaptureTopBar(
         // shorter side): left resolution, fps (and LOG), right the timer and the lens toggles.
         val videoLeftSlots = 2 + (if (showLog) 1 else 0)
         val videoRightSlots = 1 + toggleCount
+        // Photo, Burst and Pano (Nov 19): two slots left of the chevron, the lens toggles right of it; empty slots
+        // fill the shorter side (Burst / Pano hide 50 MP, some lenses have no toggles), so the chevron stays centred.
+        val stills = state.captureMode != CaptureMode.Video && toolsOpen != null
+        if (stills) repeat((toggleCount - 2).coerceAtLeast(0)) { TopBarSlot {} }
         if (state.captureMode == CaptureMode.Video) {
             if (toolsOpen != null) repeat((videoRightSlots - videoLeftSlots).coerceAtLeast(0)) { TopBarSlot {} }
             TopBarSlot {
@@ -321,6 +325,7 @@ internal fun CaptureTopBar(
             }
         }
         toggles()
+        if (stills) repeat((2 - toggleCount).coerceAtLeast(0)) { TopBarSlot {} }
         if (toolsOpen == null) TopBarSlot {
             IconButton(
                 enabled = !videoLocked,

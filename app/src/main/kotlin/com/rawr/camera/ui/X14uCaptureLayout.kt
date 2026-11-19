@@ -1390,7 +1390,7 @@ internal fun X14uCaptureLayout(
                 modifier = Modifier.padding(top = cutoutTop).alpha(recordingDim),
                 transparent = isVideo,
                 toggles = { X14uOptionToggles(quick, lensOptions, isVideo, enabled = !recordingLock, orientation, onQuickEvent, burst || pano) },
-                toggleCount = x14uOptionToggleCount(quick, lensOptions, isVideo),
+                toggleCount = x14uOptionToggleCount(quick, lensOptions, isVideo, burst || pano),
                 toolsOpen = toolsOpen,
                 onToggleTools = { openTools(!toolsOpen) },
                 onVideoCrop = {
@@ -1636,10 +1636,16 @@ private fun FrameBrackets(modifier: Modifier) {
 // ---- Top bar toggles -------------------------------------------------------------------------------------------
 
 /** How many top-bar slots [X14uOptionToggles] fills (video shows only the lens's available toggles). */
-private fun x14uOptionToggleCount(quick: ViewfinderQuickState, options: LensOptionsQuickState?, video: Boolean): Int =
+/** How many toggles [X14uOptionToggles] shows (the top bar pads the other side to keep the chevron centred). */
+private fun x14uOptionToggleCount(
+    quick: ViewfinderQuickState, options: LensOptionsQuickState?, video: Boolean, burst: Boolean = false
+): Int =
     lensOptionSlots(quick.lensOptions).filter { it.second.toggle }.count { (name, _) ->
         val row = options?.options?.indexOfFirst { it.name.trim().equals(name, ignoreCase = true) } ?: -1
-        !video || (options != null && row >= 0 && row !in options.unavailable)
+        // The same rules as X14uOptionToggles: video keeps only rows the lens has; video, Burst and Pano hide 50 MP.
+        val runsAsLens = row >= 0 && options!!.options[row].choices.any { !it.runAs.isNullOrBlank() }
+        val available = options != null && row >= 0 && row !in options.unavailable && !((burst || video) && runsAsLens)
+        !((video && !available) || (burst && runsAsLens))
     }
 
 /** DCG and 50 MP (every on/off option row) as plain text: accent when on, struck through when off or absent. */
