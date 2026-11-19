@@ -3222,7 +3222,10 @@ private fun X14uRuler(editor: X14uEditor.Ruler, modifier: Modifier) {
             val drumHalf = if (drum) size.width / 2f - 37.dp.toPx() else size.width / 2f
             val drumRadius = drumHalf / kotlin.math.sin(1.25f)
             val visible = if (drum) (drumRadius * 1.25f / stepPx).toInt() + 2 else (size.width / 2f / stepPx).toInt() + 2
-            val clearOfValue = 34.dp.toPx()
+            // The value printed over the needle, on the labels' line: labels keep clear of its real width (Nov 19: a
+            // fixed 34 dp let "3.2x" run into "3.7x · 86 mm" on the zoom ruler).
+            val valueLayout = measurer.measure(editor.valueText, valueStyle)
+            val valueHalf = valueLayout.size.width / 2f
             // Labels go down after the ticks, nearest the needle first; one that would touch a label already placed is
             // left out (the Classic drum crowds them toward the ends).
             val labels = ArrayList<Triple<Float, Float, androidx.compose.ui.text.TextLayoutResult>>()
@@ -3243,7 +3246,7 @@ private fun X14uRuler(editor: X14uEditor.Ruler, modifier: Modifier) {
                     Offset(x, tickBottom),
                     strokeWidth = (if (isMajor) 1.6.dp.toPx() else 1.dp.toPx()) * thin
                 )
-                if (abs(x - cx) > clearOfValue) editor.label(i)?.let { text ->
+                editor.label(i)?.let { text ->
                     val layout = measurer.measure(text, labelStyle)
                     if (drum && abs(x - cx) + layout.size.width / 2f > drumHalf) return@let
                     labels.add(Triple(x, fade, layout))
@@ -3254,6 +3257,7 @@ private fun X14uRuler(editor: X14uEditor.Ruler, modifier: Modifier) {
             labels.sortBy { abs(it.first - cx) }
             for ((x, fade, layout) in labels) {
                 val half = layout.size.width / 2f
+                if (abs(x - cx) < half + valueHalf + labelGap) continue
                 if (placed.any { (px, ph) -> abs(x - px) < half + ph + labelGap }) continue
                 placed.add(x to half)
                 drawText(
@@ -3269,7 +3273,7 @@ private fun X14uRuler(editor: X14uEditor.Ruler, modifier: Modifier) {
                 drawMountain(Offset(size.width - iconInset - 12.dp.toPx(), iconY), Color.White.copy(alpha = .6f))
             }
             // The needle starts under the value printed above it (Nov 18: in the shorter Classic windows it ran into it).
-            val valueBottom = 4.dp.toPx() + 2.dp.toPx() + measurer.measure(editor.valueText, valueStyle).size.height
+            val valueBottom = 4.dp.toPx() + 2.dp.toPx() + valueLayout.size.height
             val needleTop = maxOf(tickBottom - 25.dp.toPx(), valueBottom).coerceAtMost(tickBottom - 8.dp.toPx())
             drawLine(
                 CaptureColors.Accent,
