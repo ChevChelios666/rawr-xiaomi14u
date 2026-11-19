@@ -30,6 +30,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
@@ -428,6 +429,11 @@ internal fun Shutter(
     stopSquare: Boolean = false
 ) {
     val haptics = LocalCaptureHaptics.current
+    // X14U (Nov 19): the press handler below is set up once (pointerInput(Unit)), so it must read the newest
+    // dispatch. It kept the first one: the X14U layout passes a different dispatch per mode (Pano routes the press
+    // to its set, timed burst to its run), so a shutter first drawn in another mode took plain photos in Pano and
+    // the red square couldn't stop a set (diagnostics 20261119_173842: 6 presses, 6 plain photos, set still on).
+    val currentDispatch by rememberUpdatedState(dispatch)
     // The ring runs from the press over queue + exposure + readout: the HAL
     // can report capture start a full exposure late, so waiting for it would
     // show a spinner through the whole exposure and flash the ring.
@@ -477,7 +483,7 @@ internal fun Shutter(
                 contentDescription = when { stopSquare -> "Stop panorama"; countingDown -> "Cancel self timer"; else -> "Shutter" }
                 onClick {
                     haptics.capture()
-                    dispatch(TriggerCapture)
+                    currentDispatch(TriggerCapture)
                     true
                 }
             }.pointerInput(Unit) {
@@ -485,7 +491,7 @@ internal fun Shutter(
                     pressed = true
                     try {
                         haptics.capture()
-                        dispatch(TriggerCapture)
+                        currentDispatch(TriggerCapture)
                         tryAwaitRelease()
                     } finally {
                         pressed = false
