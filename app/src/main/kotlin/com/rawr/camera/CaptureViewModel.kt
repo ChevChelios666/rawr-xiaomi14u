@@ -94,7 +94,11 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     private fun updateForLens(perLens: Set<String> = emptySet(), edit: (SettingsValues) -> SettingsValues): SettingsValues =
         settingsEditor.update { it.editThroughLens(perLens, DeviceLensDefaults.lenses, edit) }
     val cameraLocation = com.rawr.camera.location.CameraLocation.get(application)
-    val foreground = com.rawr.camera.integration.CaptureForeground(cameraLocation::setForeground)
+    private val levelSensor = com.rawr.camera.integration.CaptureLevelSensor(application)
+    val foreground = com.rawr.camera.integration.CaptureForeground { active ->
+        cameraLocation.setForeground(active)
+        levelSensor.setActive(active)
+    }
     fun videoImageSettings(): com.rawr.camera.video.VideoImageSettings = latestSettings.toVideoImageSettings()
     fun videoEncoderConfig(): com.rawr.camera.settings.model.VideoEncoderConfig = latestSettings.videoEncoder.sanitized()
     /** Microphone setup for the video-mode meter; follows Settings edits. */
@@ -712,7 +716,8 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             },
             onJpegPublished = ::onJpegPublished,
             onDngPublished = ::refreshLatestGalleryImage,
-            gpsSnapshot = cameraLocation::snapshot
+            gpsSnapshot = cameraLocation::snapshot,
+            levelSnapshot = levelSensor::snapshot
         )
     val controller: CaptureScreenController =
         NativeCaptureScreenController(
@@ -1108,6 +1113,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     override fun onCleared() {
         horizonSensor.close()
         stabilizerSensor.close()
+        levelSensor.setActive(false)
         recording.closeWhenIdle {
             stillCaptureCoordinator.closeWhenIdle {
                 controller.close()

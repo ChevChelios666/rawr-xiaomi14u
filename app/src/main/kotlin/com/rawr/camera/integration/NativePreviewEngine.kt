@@ -214,7 +214,9 @@ class NativePreviewEngine {
         // forwards a quality. q95 keeps JPEG contours down in sky gradients.
         ultraHdrGainmapQuality: Int = 95,
         dngCompression: Int = 0,
-        gps: CaptureGps? = null
+        gps: CaptureGps? = null,
+        // {pitch, roll} degrees, NaN roll = absent; null = no reading. See CaptureLevel.toNative.
+        level: FloatArray? = null
     ): Long
 
     external fun cancelPreparedMultiframeCapture(handle: Long)
@@ -283,7 +285,9 @@ class NativePreviewEngine {
         // forwards a quality. q95 keeps JPEG contours down in sky gradients.
         ultraHdrGainmapQuality: Int = 95,
         dngCompression: Int = 0,
-        gps: CaptureGps? = null
+        gps: CaptureGps? = null,
+        // {pitch, roll} degrees, NaN roll = absent; null = no reading. See CaptureLevel.toNative.
+        level: FloatArray? = null
     ): Long
 
     external fun pollDngWriteCompletion(handle: Long): String

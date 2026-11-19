@@ -83,13 +83,25 @@ internal fun ViewfinderFixture(modifier: Modifier) {
     }
 }
 
+/** Grid line width and brightness; the 4x4 grid is finer, so it is a little fainter. */
+private const val GRID_WIDTH_DP = .6f
+private const val GRID_ALPHA = .45f
+private const val GRID_ALPHA_FINE = .30f
+private val GRID_UNDERLAY = Color.Black.copy(alpha = .30f)
+
 @Composable
 internal fun GridOverlay(mode: GridMode, modifier: Modifier) {
     if (mode == GridMode.Off) return
     val shapes = remember(mode) { GridGuides.shapes(mode) }
     Canvas(modifier) {
-        val color = Color.White.copy(alpha = if (mode == GridMode.FourByFour) .15f else .22f)
-        val stroke = 1.dp.toPx().coerceAtLeast(1f)
+        // Thin line over a faint dark underlay, so it stays visible on bright and on dark scenes (upstream #126).
+        val color = Color.White.copy(alpha = if (mode == GridMode.FourByFour) GRID_ALPHA_FINE else GRID_ALPHA)
+        val stroke = GRID_WIDTH_DP.dp.toPx()
+        val underlay = stroke + 1.dp.toPx()
+        fun line(c: Color, a: Offset, b: Offset) {
+            drawLine(GRID_UNDERLAY, a, b, underlay)
+            drawLine(c, a, b, stroke)
+        }
         val aspect = size.width / size.height
         // Diagonals and triangles depend on the frame's real shape.
         val drawn = when (mode) {
@@ -101,22 +113,24 @@ internal fun GridOverlay(mode: GridMode, modifier: Modifier) {
         withTransform({ scale(if (flipX) -1f else 1f, if (flipY) -1f else 1f, pivot = center) }) {
             drawn.forEach { shape ->
                 when (shape) {
-                    is GridGuides.Line -> drawLine(
+                    is GridGuides.Line -> line(
                         color, Offset(shape.x0 * size.width, shape.y0 * size.height),
-                        Offset(shape.x1 * size.width, shape.y1 * size.height), stroke
+                        Offset(shape.x1 * size.width, shape.y1 * size.height)
                     )
-                    is GridGuides.Arc -> drawArc(
-                        color, shape.startDeg, shape.sweepDeg, useCenter = false,
-                        topLeft = Offset((shape.cx - shape.rx) * size.width, (shape.cy - shape.ry) * size.height),
-                        size = Size(2 * shape.rx * size.width, 2 * shape.ry * size.height),
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(stroke)
-                    )
+                    is GridGuides.Arc -> {
+                        val topLeft = Offset((shape.cx - shape.rx) * size.width, (shape.cy - shape.ry) * size.height)
+                        val arcSize = Size(2 * shape.rx * size.width, 2 * shape.ry * size.height)
+                        drawArc(GRID_UNDERLAY, shape.startDeg, shape.sweepDeg, useCenter = false, topLeft = topLeft,
+                            size = arcSize, style = androidx.compose.ui.graphics.drawscope.Stroke(underlay))
+                        drawArc(color, shape.startDeg, shape.sweepDeg, useCenter = false, topLeft = topLeft,
+                            size = arcSize, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
+                    }
                     is GridGuides.Point -> {
                         val c = Offset(shape.x * size.width, shape.y * size.height)
                         val arm = 7.dp.toPx()
-                        val strong = color.copy(alpha = .45f)
-                        drawLine(strong, Offset(c.x - arm, c.y), Offset(c.x + arm, c.y), stroke)
-                        drawLine(strong, Offset(c.x, c.y - arm), Offset(c.x, c.y + arm), stroke)
+                        val strong = color.copy(alpha = .7f)
+                        line(strong, Offset(c.x - arm, c.y), Offset(c.x + arm, c.y))
+                        line(strong, Offset(c.x, c.y - arm), Offset(c.x, c.y + arm))
                     }
                 }
             }
