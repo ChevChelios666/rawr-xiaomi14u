@@ -54,6 +54,7 @@ enum class ShaderId : std::uint32_t {
     RxLowcovEaw,
     RxFbFlags,
     RxFit,
+    RxMoving,
     // X14U: sensor defects hidden in each burst frame before a merge (rx_defect_patch.comp).
     RxDefectPatch,
     Count
