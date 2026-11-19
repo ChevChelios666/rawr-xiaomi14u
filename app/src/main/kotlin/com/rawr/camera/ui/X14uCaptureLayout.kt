@@ -3714,7 +3714,8 @@ private fun X14uModeRow(
     val stepPx = with(LocalDensity.current) { slot.toPx() }
     val order = remember(modes) { modes.toMutableStateList() }
     // Followed in screen coordinates (RowReorder): moving a mode no longer jumps back and forth.
-    val reorder = remember(stepPx) { RowReorder<X14uMode>(stepPx) }
+    val reorderScope = androidx.compose.runtime.rememberCoroutineScope()
+    val reorder = remember(stepPx) { RowReorder<X14uMode>(stepPx, reorderScope) }
     val modesNow by rememberUpdatedState(modes)
     val selectNow by rememberUpdatedState(onSelect)
     val currentNow by rememberUpdatedState(current)

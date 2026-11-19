@@ -1,8 +1,12 @@
 package com.rawr.camera.ui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
@@ -12,6 +16,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -20,9 +28,14 @@ import kotlin.math.roundToInt
  * The finger is followed in screen coordinates. A card's own coordinates move under the finger when it is
  * translated and again when it changes place in the row, and drag amounts measured in them made the card jump
  * back and forth (the preset strip "glitched" when a card was moved). The card's place is worked out from where
- * the finger has taken it, so it never moves twice for one step.
+ * the finger has taken it, so it never moves twice for one step. The cards it passes slide to their new places
+ * (they jumped there in one frame; screen recording Nov 19).
  */
-internal class RowReorder<K : Any>(private val stepPx: Float, private val minIndex: Int = 0) {
+internal class RowReorder<K : Any>(
+    private val stepPx: Float,
+    private val scope: CoroutineScope,
+    private val minIndex: Int = 0
+) {
     var dragging by mutableStateOf<K?>(null)
         private set
     private var finger by mutableFloatStateOf(0f)
@@ -30,12 +43,46 @@ internal class RowReorder<K : Any>(private val stepPx: Float, private val minInd
     private var startSlot = 0f
     private var firstSlot = 0f
     private val slots = HashMap<K, LayoutCoordinates>()
+    // The cards that make room: where each was last laid out, and how far it is still drawn from its new place.
+    private val lastX = HashMap<K, Float>()
+    private val settle = mutableStateMapOf<K, Float>()
+    private val settleJobs = HashMap<K, Job>()
+
+    /** A card other than the dragged one moved to another slot: draw it from where it was and slide it home. */
+    private fun placed(key: K, coordinates: LayoutCoordinates) {
+        slots[key] = coordinates
+        val x = coordinates.positionInRoot().x
+        val old = lastX.put(key, x)
+        val moving = dragging
+        // Only while a card is dragged (the strip doesn't scroll then): scrolling moves every card and isn't a swap.
+        if (old == null || moving == null || moving == key || abs(x - old) < 1f) return
+        val start = (settle[key] ?: 0f) + old - x
+        settle[key] = start
+        settleJobs.remove(key)?.cancel()
+        settleJobs[key] = scope.launch {
+            Animatable(start).animateTo(0f, tween(170, easing = FastOutSlowInEasing)) { settle[key] = value }
+            settle.remove(key)
+        }
+    }
+
+    /** The dropped card glides from under the finger into its slot (it jumped there). */
+    private fun glideHome(key: K) {
+        val from = translation(key)
+        dragging = null
+        if (abs(from) < 1f) return
+        settle[key] = from
+        settleJobs.remove(key)?.cancel()
+        settleJobs[key] = scope.launch {
+            Animatable(from).animateTo(0f, tween(170, easing = FastOutSlowInEasing)) { settle[key] = value }
+            settle.remove(key)
+        }
+    }
 
     private fun slotX(key: K): Float? = slots[key]?.takeIf { it.isAttached }?.positionInRoot()?.x
 
     /** How far [key]'s card is drawn from its slot: where the finger has taken it (0 unless it is dragged). */
     fun translation(key: K): Float {
-        if (dragging != key) return 0f
+        if (dragging != key) return settle[key] ?: 0f
         val now = slotX(key) ?: return 0f
         return startSlot + (finger - startFinger) - now
     }
@@ -52,7 +99,7 @@ internal class RowReorder<K : Any>(private val stepPx: Float, private val minInd
         onMove: (from: Int, to: Int) -> Unit,
         onEnd: () -> Unit,
         onCancel: () -> Unit
-    ): Modifier = onGloballyPositioned { slots[key] = it }.then(
+    ): Modifier = onGloballyPositioned { placed(key, it) }.then(
         if (!enabled) Modifier else Modifier.pointerInput(key) {
             detectDragGesturesAfterLongPress(
                 onDragStart = { at ->
@@ -79,13 +126,13 @@ internal class RowReorder<K : Any>(private val stepPx: Float, private val minInd
                 },
                 onDragEnd = {
                     if (dragging == key) {
-                        dragging = null
+                        glideHome(key)
                         onEnd()
                     }
                 },
                 onDragCancel = {
                     if (dragging == key) {
-                        dragging = null
+                        glideHome(key)
                         onCancel()
                     }
                 }

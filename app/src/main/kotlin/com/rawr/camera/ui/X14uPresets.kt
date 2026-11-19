@@ -33,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.toMutableStateList
@@ -179,7 +180,8 @@ internal fun X14uPresetStrip(
     // Local order while a card is dragged; the stored order follows on release.
     val order = remember(presets.items.map { it.id }) { presets.items.map { it.id }.toMutableStateList() }
     // Long-press a card and drag it (P0 stays first); followed in screen coordinates (RowReorder).
-    val reorder = remember(stepPx) { RowReorder<String>(stepPx, minIndex = 1) }
+    val reorderScope = rememberCoroutineScope()
+    val reorder = remember(stepPx) { RowReorder<String>(stepPx, reorderScope, minIndex = 1) }
     val dragId = reorder.dragging
     val items by rememberUpdatedState(presets.items)
     // Gesture handlers outlive a recomposition: they read these.
