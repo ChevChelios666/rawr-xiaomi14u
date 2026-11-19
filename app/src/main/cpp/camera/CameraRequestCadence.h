@@ -31,6 +31,15 @@ inline std::optional<std::array<int32_t, 2>> cameraTargetFpsRange(const CameraCo
         return std::array<int32_t, 2>{60, 60};
     if (state.recordingFps > 0) return std::array<int32_t, 2>{state.recordingFps, state.recordingFps};
     const auto& caps = state.capabilities;
+    // Video mode, not recording yet: already at the recording rate. The X14U HAL takes the AE target range as a
+    // session parameter, so idle video at 24..30 and a take at 30..30 made the camera service rebuild the session
+    // at every start and stop (a ~250 ms sensor pause = 7-8 frames lost at the start of each take; diagnostics
+    // 20261119_142936). Same as the 60 fps rule above, for every advertised fixed rate.
+    if (state.videoMode && state.videoPreviewFps > 0 &&
+        std::any_of(caps.aeTargetFpsRanges.begin(), caps.aeTargetFpsRanges.end(), [&](const auto& range) {
+            return range[0] == state.videoPreviewFps && range[1] == state.videoPreviewFps;
+        }))
+        return std::array<int32_t, 2>{state.videoPreviewFps, state.videoPreviewFps};
     if (priorityRequested && caps.priorityAeTargetFpsMin > 0 &&
         caps.priorityAeTargetFpsMax >= caps.priorityAeTargetFpsMin) {
         int32_t floor = caps.priorityAeTargetFpsMin;
