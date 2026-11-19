@@ -190,6 +190,7 @@ fun SettingsValues.withPresetGroups(snap: SettingsValues, groups: Set<PresetGrou
         multiframeBaseFrameMode = snap.multiframeBaseFrameMode,
         multiframeChromaDenoise = snap.multiframeChromaDenoise,
         multiframeRextureNativeRgb = snap.multiframeRextureNativeRgb,
+        multiframeRextureDetailRestore = snap.multiframeRextureDetailRestore,
         multiframeTuning = snap.multiframeTuning,
         zoomMergeAlgorithm = snap.zoomMergeAlgorithm,
         demosaicAlgorithm = snap.demosaicAlgorithm,
