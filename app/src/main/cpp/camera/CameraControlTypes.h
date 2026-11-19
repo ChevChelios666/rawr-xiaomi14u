@@ -184,6 +184,10 @@ struct CameraControlState {
     // controller mutex alongside requested/applied camera state.
     bool videoMode = false;
     int videoPreviewFps = 30;
+    // X14U test switch (adb shell setprop debug.rawr.idle_fixed_fps 0, read when video mode is entered): off = idle
+    // video at the auto range as on Nov 18 (the session is rebuilt at each take start / stop); on (default) = idle
+    // video already at the recording rate (028214c). See CameraRequestCadence.h.
+    bool idleAtRecordingFps = true;
     // Long exposure (ViewfinderExposure.h): the capture's shutter when it is
     // longer than the viewfinder runs (0 = none); the one in flight and when
     // the sensor started it (CLOCK_MONOTONIC ms; 0 submitted, -1 none); and

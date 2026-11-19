@@ -1678,6 +1678,13 @@ struct NativeCameraController::Impl final : CameraEventSink {
         cadencePolicy.setVideoMode(video, fps);
         control.videoMode = cadencePolicy.videoMode();
         control.videoPreviewFps = cadencePolicy.videoFps();
+        if (enteringVideo) {
+            // Test switch (CameraControlTypes.h): unset or 1 = on, 0 = off.
+            char value[PROP_VALUE_MAX] = {};
+            const bool off = __system_property_get("debug.rawr.idle_fixed_fps", value) > 0 && value[0] == '0';
+            control.idleAtRecordingFps = !off;
+            diag(std::string("CAMERA_IDLE_FIXED_FPS ") + (off ? "off" : "on"));
+        }
         if (enteringVideo)
             cadencePolicy.bindShutter(control.requestedExposureTimeNs, control.capabilities.exposureTimeMinNs,
                                       control.capabilities.exposureTimeMaxNs);
