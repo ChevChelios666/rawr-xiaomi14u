@@ -288,27 +288,52 @@ internal class PanoSet {
     }
 }
 
-/** Device orientation (rotation matrix, device to world) from the game rotation vector while [active]. */
+/**
+ * Device orientation (rotation matrix, device to world) from the game rotation vector while [active].
+ *
+ * Nov 19: twice in one session (after the screen had been off and the activity rebuilt) the sensor gave no readings
+ * at all: frame 1 was taken with no orientation, so the set could never aim or go on. A registration that stays
+ * silent for 1.5 s is now made again (up to 3 times), and each step is logged.
+ */
 @Composable
 internal fun rememberPanoMotion(active: Boolean): () -> FloatArray? {
     val context = LocalContext.current
     val latest = remember { arrayOfNulls<FloatArray>(1) }
-    DisposableEffect(active) {
+    var attempt by remember { mutableIntStateOf(0) }
+    DisposableEffect(active, attempt) {
         val manager = context.getSystemService(SensorManager::class.java)
         val sensor = manager?.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
             ?: manager?.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        val since = android.os.SystemClock.elapsedRealtime()
         val listener = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent) {
                 val r = FloatArray(9)
                 SensorManager.getRotationMatrixFromVector(r, event.values)
+                if (latest[0] == null) {
+                    android.util.Log.i("RawrPano", "PANO_MOTION_FIRST attempt=$attempt ms=${android.os.SystemClock.elapsedRealtime() - since}")
+                }
                 latest[0] = r
             }
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
         }
-        if (active && sensor != null) manager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_GAME)
+        if (active) {
+            val registered = sensor != null && manager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_GAME)
+            android.util.Log.i("RawrPano", "PANO_MOTION registered=$registered sensor=${sensor?.name} attempt=$attempt")
+        }
         onDispose {
             manager?.unregisterListener(listener)
             latest[0] = null
+        }
+    }
+    LaunchedEffect(active, attempt) {
+        if (!active) {
+            if (attempt != 0) attempt = 0
+            return@LaunchedEffect
+        }
+        kotlinx.coroutines.delay(1_500L)
+        if (latest[0] == null && attempt < 3) {
+            android.util.Log.w("RawrPano", "PANO_MOTION_SILENT attempt=$attempt: registering again")
+            attempt += 1
         }
     }
     return { latest[0]?.copyOf() }

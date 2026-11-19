@@ -663,6 +663,13 @@ internal fun X14uCaptureLayout(
     val panoShoot: () -> Unit = shoot@{
         if (recordingLock || panoSet.arming) return@shoot
         if (panoSet.frames > 0) return@shoot panoDone()
+        // No orientation yet (sensor silent, see rememberPanoMotion): a set started now would take frame 1, lock
+        // focus, exposure and white balance, and never go on. Say so and leave everything as it is.
+        if (panoMotion() == null) {
+            android.util.Log.w("RawrPano", "PANO_NO_MOTION at the shutter: set not started")
+            android.widget.Toast.makeText(panoContext, "Motion sensor not ready: try again in a moment", android.widget.Toast.LENGTH_SHORT).show()
+            return@shoot
+        }
         panoSet.start(panoState, dispatch, com.rawr.camera.settings.model.ZoomChain.factorOf(panoState.selectedLensId) ?: 1f)
         panoScope.launch {
             kotlinx.coroutines.delay(400L)
