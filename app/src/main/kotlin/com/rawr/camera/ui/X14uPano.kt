@@ -268,8 +268,8 @@ internal class PanoSet {
 
     /** Ends the set and gives back the exposure, focus and white balance it locked. */
     fun end(state: CaptureUiState, dispatch: CaptureDispatch) {
-        // With the caller's stack: a set that ends after frame 1 shows who ended it (Nov 17 test).
-        if (frames > 0 || arming) android.util.Log.i("RawrPano", "PANO_END frames=$frames arming=$arming", Throwable("pano end"))
+        // One line (the caller's stack, kept for the Nov 17 hunt, filled 90 lines of every report).
+        if (frames > 0 || arming) android.util.Log.i("RawrPano", "PANO_END frames=$frames arming=$arming")
         saved?.let { s ->
             if (s.exposure != state.exposureControl.mode && s.exposure in state.capabilities.supportedExposureModes) {
                 dispatch(SetExposureMode(s.exposure))

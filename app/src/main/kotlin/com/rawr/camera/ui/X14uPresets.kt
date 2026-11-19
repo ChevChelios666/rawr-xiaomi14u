@@ -227,10 +227,13 @@ internal fun X14uPresetStrip(
                 .padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(gap)
         ) {
-            order.forEach { id ->
-                // No early return inside key {}: D8 can't take the class the compiler makes for it.
-                val item = presets.items.firstOrNull { it.id == id }
-                if (item != null) key(id) {
+            // key() straight in the loop (no `if` around it): an `if` gives each place in the row its own group, so a
+            // keyed card couldn't move between places; the dragged card was rebuilt on the first swap and its drag
+            // ended (the strip "glitched" while the mode row, keyed directly, worked). Nor an early return inside
+            // key {}: D8 can't take the class the compiler makes for it.
+            order.mapNotNull { id -> presets.items.firstOrNull { it.id == id } }.forEach { item ->
+                val id = item.id
+                key(id) {
                     val selected = id == presets.activeId
                     val dragging = id == dragId
                     Box(
