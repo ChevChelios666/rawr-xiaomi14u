@@ -682,7 +682,8 @@ void FrameSubmitCoordinator::submitSplitVideoAndMonitor(const SubmitParams& para
         vkCheck(vkResetCommandBuffer(slot->command, 0), "video monitor reset command");
         vkCheck(vkBeginCommandBuffer(slot->command, &begin), "video monitor begin command");
         videoOutput_->beginMonitorTiming(slot->command, slotIndex);
-        const auto extent = videoOutput_->extent();
+        // The on-screen monitor (4K and Open Gate: half resolution; see videoMonitorExtent).
+        const auto extent = videoOutput_->monitorExtent();
         // Scopes: a new measurement about 8 times a second (60 ms still dropped the odd frame at 4K30 / 1080p60,
         // Nov 13); frames in between show the last one (its slot's images).
         const auto now = std::chrono::steady_clock::now();

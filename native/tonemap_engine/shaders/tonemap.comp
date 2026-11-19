@@ -530,7 +530,14 @@ void main() {
     if (pc.monitorEnabled != 0u)
         imageStore(monitorImage, p, vec4(clamp(encoded + vec3(outputDither(up)), 0.0, 1.0), 1.0));
 #elif RAWR_TONEMAP_VIDEO_MONITOR
-    if (videoMonitor.monitorEnabled != 0u)
-        imageStore(monitorImage, p, vec4(clamp(encoded + vec3(outputDither(up)), 0.0, 1.0), 1.0));
+    // The monitor is the output's size, or half of it (4K / Open Gate: one pixel per 2x2; the screen never needs
+    // the full frame).
+    if (videoMonitor.monitorEnabled != 0u) {
+        bool halfMonitor = imageSize(monitorImage).x < imageSize(outputImage).x;
+        if (!halfMonitor)
+            imageStore(monitorImage, p, vec4(clamp(encoded + vec3(outputDither(up)), 0.0, 1.0), 1.0));
+        else if (((up.x | up.y) & 1u) == 0u)
+            imageStore(monitorImage, p >> 1, vec4(clamp(encoded + vec3(outputDither(up)), 0.0, 1.0), 1.0));
+    }
 #endif
 }
