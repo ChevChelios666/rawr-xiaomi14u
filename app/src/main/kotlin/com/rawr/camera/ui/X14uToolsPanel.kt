@@ -461,50 +461,49 @@ internal fun X14uAspectMask(aspect: PhotoAspect, modifier: Modifier) {
     }
 }
 
-/** Gravity from the phone's sensor, low-passed (device axes: x right, y up, z out of the screen). */
+/**
+ * The phone's attitude from the gravity sensor (accelerometer if there is none), smoothed and with lock hysteresis by
+ * [LevelTracker] (shared with the pitch / roll the photos record, upstream #126).
+ */
 @Composable
-private fun rememberGravity(): FloatArray? {
+private fun rememberLevelReading(): LevelReading? {
     val context = LocalContext.current
-    var gravity by remember { mutableStateOf<FloatArray?>(null) }
+    var reading by remember { mutableStateOf<LevelReading?>(null) }
     DisposableEffect(context) {
         val manager = context.getSystemService(android.hardware.SensorManager::class.java)
         val sensor = manager?.getDefaultSensor(android.hardware.Sensor.TYPE_GRAVITY)
             ?: manager?.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER)
-        val smoothed = FloatArray(3)
-        var primed = false
+        val tracker = LevelTracker()
         val listener = object : android.hardware.SensorEventListener {
             override fun onSensorChanged(event: android.hardware.SensorEvent) {
-                val k = .18f
-                for (i in 0..2) smoothed[i] = if (primed) smoothed[i] + k * (event.values[i] - smoothed[i]) else event.values[i]
-                primed = true
-                gravity = smoothed.copyOf()
+                tracker.update(event.values[0], event.values[1], event.values[2])?.let { reading = it }
             }
             override fun onAccuracyChanged(sensor: android.hardware.Sensor?, accuracy: Int) = Unit
         }
         if (sensor != null) manager.registerListener(listener, sensor, android.hardware.SensorManager.SENSOR_DELAY_GAME)
         onDispose { manager?.unregisterListener(listener) }
     }
-    return gravity
+    return reading
 }
 
+/** Up / down tilt: the horizon line moves this far per degree, up to [LEVEL_PITCH_MAX_DEG]. */
+private const val LEVEL_PITCH_DP_PER_DEG = 3f
+private const val LEVEL_PITCH_MAX_DEG = 20f
+
 /**
- * Horizon level: a line with a centre tick that stays level with the world (amber, green within 1°, a click when it
- * gets there). Pointing the camera down at a table turns it into a bubble that centres when the phone is flat.
+ * Horizon level (Nov 19, option A "floating horizon"). The line is the horizon: it turns with the phone's roll (amber,
+ * green when straight) and moves up or down with the camera's tilt (aimed up = the horizon lower in the frame). The
+ * fixed side marks and centre mark show where a level horizon sits; they turn green when the camera isn't tilted up or
+ * down. Locks at 0.8° and lets go past 1.5° (no flicker, one click). Aiming at the ground or sky (60–75° of tilt) the
+ * line fades into a bubble that centres when the phone is flat.
  */
 @Composable
 internal fun X14uLevel(modifier: Modifier) {
-    val g = rememberGravity() ?: return
+    val r = rememberLevelReading() ?: return
     val haptics = LocalCaptureHaptics.current
-    val norm = sqrt(g[0] * g[0] + g[1] * g[1] + g[2] * g[2]).coerceAtLeast(.1f)
-    val flat = abs(g[2]) / norm > .9f
-    // Roll: 0 upright, + when the phone turns clockwise.
-    val roll = Math.toDegrees(atan2(-g[0].toDouble(), g[1].toDouble())).toFloat()
-    val nearest = (roll / 90f).roundToInt() * 90f
-    val tilt = roll - nearest
-    val bubbleX = g[0] / norm
-    val bubbleY = -g[1] / norm
-    val bubbleOff = Math.toDegrees(kotlin.math.asin(sqrt(bubbleX * bubbleX + bubbleY * bubbleY).coerceAtMost(1f).toDouble())).toFloat()
-    val level = if (flat) bubbleOff < 1f else abs(tilt) < 1f
+    val flat = r.flat
+    // The click: straight (horizon view) or flat (bubble view).
+    val level = if (flat) r.tiltLevel else r.rollLevel
     var wasLevel by remember { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(level) {
         if (level && !wasLevel) haptics.selection()
@@ -512,30 +511,43 @@ internal fun X14uLevel(modifier: Modifier) {
     }
     val amber = Color(0xFFE8A33A)
     val green = Color(0xFF5BD16A)
-    val color = if (level) green else amber
+    val lineAlpha = 1f - r.flatBlend
+    val bubbleAlpha = r.flatBlend
     Canvas(modifier) {
         val c = Offset(size.width / 2f, size.height / 2f)
         val stroke = 1.6.dp.toPx()
-        if (flat) {
-            val ring = 26.dp.toPx()
-            drawCircle(Color.White.copy(alpha = .7f), ring, c, style = Stroke(1.4.dp.toPx()))
-            drawCircle(Color.White.copy(alpha = .7f), 5.dp.toPx(), c, style = Stroke(1.dp.toPx()))
-            // 10° of tilt moves the dot to the ring.
-            val reach = ring * ((bubbleOff / 10f).coerceAtMost(1f))
-            val len = sqrt(bubbleX * bubbleX + bubbleY * bubbleY).coerceAtLeast(1e-4f)
-            drawCircle(color, 6.dp.toPx(), Offset(c.x + bubbleX / len * reach, c.y + bubbleY / len * reach))
-        } else {
+        if (lineAlpha > 0.01f) {
             val half = minOf(size.width, size.height) * .22f
             val gap = 10.dp.toPx()
-            // Fixed reference stubs at the frame's horizontal for the nearest hold, and the live horizon.
-            rotate(-nearest, c) {
-                drawLine(Color.White.copy(alpha = .55f), Offset(c.x - half - gap - 14.dp.toPx(), c.y), Offset(c.x - half - gap, c.y), stroke)
-                drawLine(Color.White.copy(alpha = .55f), Offset(c.x + half + gap, c.y), Offset(c.x + half + gap + 14.dp.toPx(), c.y), stroke)
+            val marks = (if (r.pitchLevel) green else Color.White).copy(alpha = .8f * lineAlpha)
+            // Where a level horizon sits, for the nearest way the phone is held.
+            rotate(r.quadrant.toFloat(), c) {
+                drawLine(marks, Offset(c.x - half - gap - 14.dp.toPx(), c.y), Offset(c.x - half - gap, c.y), stroke)
+                drawLine(marks, Offset(c.x + half + gap, c.y), Offset(c.x + half + gap + 14.dp.toPx(), c.y), stroke)
+                drawLine(marks.copy(alpha = .6f * lineAlpha), Offset(c.x - 5.dp.toPx(), c.y), Offset(c.x + 5.dp.toPx(), c.y),
+                    1.dp.toPx())
             }
-            rotate(-roll, c) {
-                drawLine(color, Offset(c.x - half, c.y), Offset(c.x + half, c.y), stroke)
-                drawLine(Color.White.copy(alpha = .85f), Offset(c.x, c.y - 8.dp.toPx()), Offset(c.x, c.y + 8.dp.toPx()), 1.dp.toPx())
+            // The live horizon: turned by the roll, moved along its own "down" by the tilt.
+            val shift = LEVEL_PITCH_DP_PER_DEG.dp.toPx() *
+                r.elevationDeg.coerceIn(-LEVEL_PITCH_MAX_DEG, LEVEL_PITCH_MAX_DEG)
+            rotate(r.quadrant + r.rollDeg, c) {
+                val y = c.y + shift
+                drawLine((if (r.rollLevel) green else amber).copy(alpha = lineAlpha), Offset(c.x - half, y),
+                    Offset(c.x + half, y), stroke)
+                drawLine(Color.White.copy(alpha = .85f * lineAlpha), Offset(c.x, y - 8.dp.toPx()),
+                    Offset(c.x, y + 8.dp.toPx()), 1.dp.toPx())
             }
+        }
+        if (bubbleAlpha > 0.01f) {
+            val ring = 26.dp.toPx()
+            val white = Color.White.copy(alpha = .7f * bubbleAlpha)
+            drawCircle(white, ring, c, style = Stroke(1.4.dp.toPx()))
+            drawCircle(white, 5.dp.toPx(), c, style = Stroke(1.dp.toPx()))
+            // 10° of tilt moves the dot to the ring.
+            val len = sqrt(r.bubbleXDeg * r.bubbleXDeg + r.bubbleYDeg * r.bubbleYDeg)
+            val reach = ring * (len / 10f).coerceAtMost(1f) / len.coerceAtLeast(1e-4f)
+            drawCircle((if (r.tiltLevel) green else amber).copy(alpha = bubbleAlpha), 6.dp.toPx(),
+                Offset(c.x + r.bubbleXDeg * reach, c.y + r.bubbleYDeg * reach))
         }
     }
 }
