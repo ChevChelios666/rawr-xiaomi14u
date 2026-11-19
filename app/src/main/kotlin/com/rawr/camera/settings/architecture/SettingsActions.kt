@@ -336,6 +336,7 @@ data class SetMultiframeBaseFrameMode(val value: MultiframeBaseFrameMode) : Sett
 data class SetMultiframeChromaDenoise(val enabled: Boolean) : SettingsApplicationAction
 
 data class SetMultiframeRextureNativeRgb(val enabled: Boolean) : SettingsApplicationAction
+data class SetMultiframeRextureDetailRestore(val enabled: Boolean) : SettingsApplicationAction
 
 data class SetMultiframeNumericValue(val parameter: MultiframeNumericParameter, val value: Float) :
     SettingsApplicationAction
