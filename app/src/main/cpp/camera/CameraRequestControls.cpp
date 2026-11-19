@@ -179,9 +179,9 @@ CameraControlApplyResult applyCameraControlState(CameraRequest* request, const C
             const uint8_t off = camera2_priority::kOff;
             (void)request->setU8(camera2_priority::kAePriorityModeTag, 1, &off);
         }
-        // The full-size readouts of the 0.5x and 3.2x are half a stop less sensitive: more ISO (past the top of the
-        // range, the rest as a longer shutter), so the 50 MP RAW matches the 12 MP view's brightness.
-        const float gain = shotHandover().carrySameMode() ? 1.0f : ShotHandover::fullSizeGain(state.capabilities.cameraId);
+        // The 14 Ultra's 0.5x full-size readout is less sensitive: more ISO (past the top of the range, the rest as a
+        // longer shutter), so the 50 MP RAW matches the 12 MP view's brightness.
+        const float gain = ShotHandover::fullSizeGain(state.capabilities.cameraId);
         const int32_t isoMax = std::max(state.capabilities.sensitivityMin, state.capabilities.sensitivityMax);
         const double wantedIso = double(pin->sensitivity) * gain;
         const double extraShutter = wantedIso > isoMax && isoMax > 0 ? wantedIso / isoMax : 1.0;
@@ -346,18 +346,12 @@ CameraControlApplyResult applyCameraControlState(CameraRequest* request, const C
             : ACAMERA_CONTROL_AF_TRIGGER_IDLE;
     (void)request->setU8(ACAMERA_CONTROL_AF_TRIGGER, 1, &trigger);
     // X14U 50 MP shot: the lens goes to where the 12 MP view had focused (AF: AF OFF + its measured distance; MF: the
-    // user's distance), in the shot camera's own full-size focus scale.
+    // user's distance).
     const bool manualFocus = state.focusMode == FocusControlMode::Manual;
     if (pin && (manualFocus || pin->focusDiopters) && state.capabilities.manualFocusSupported) {
         const uint8_t afOff = ACAMERA_CONTROL_AF_MODE_OFF;
         const uint8_t idle = ACAMERA_CONTROL_AF_TRIGGER_IDLE;
-        const float viewDiopters = manualFocus ? requestedFocusDiopters(state) : *pin->focusDiopters;
-        const float sweep = shotHandover().focusSweep();
-        const float diopters = sweep >= 0.0f                    ? sweep
-                               : shotHandover().carrySameMode() ? viewDiopters
-                                                                : ShotHandover::fullSizeFocus(state.capabilities.cameraId,
-                                                                                              viewDiopters);
-        shotHandover().noteSentFocus(diopters);
+        const float diopters = manualFocus ? requestedFocusDiopters(state) : *pin->focusDiopters;
         result.focusStatus = request->setU8(ACAMERA_CONTROL_AF_MODE, 1, &afOff);
         (void)request->setFloat(ACAMERA_LENS_FOCUS_DISTANCE, 1, &diopters);
         (void)request->setU8(ACAMERA_CONTROL_AF_TRIGGER, 1, &idle);

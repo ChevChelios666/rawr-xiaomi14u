@@ -36,9 +36,6 @@ class CameraRequestPipeline final {
     // the provider crashes in the restarted low-light scan).
     bool captureAfTrigger(CameraSessionDriver*, const CameraRequest* repeating, const CameraControlState&,
                           CameraFocusTrigger trigger);
-    // One copy of the repeating request as is (its AE, AF and keys), adjusted by prepare and tagged tagId.
-    bool captureTagged(CameraSessionDriver*, const CameraRequest* repeating, const CameraControlState&, uint64_t tagId,
-                       const PrepareRequest& prepare);
     uint64_t latestSubmittedSerial() const noexcept { return latestSubmittedRequestSerial_; }
     int lastCaptureSequence() const noexcept { return lastCaptureSequence_; }
     void retire() noexcept { provenance_.clear(); }

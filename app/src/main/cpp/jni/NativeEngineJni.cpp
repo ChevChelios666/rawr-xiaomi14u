@@ -1,9 +1,7 @@
-#include "camera/HalRawSynthNative.h"
 #include "geometry/HorizonLock.h"
 #include "geometry/Stabilizer.h"
 #include "camera/FaceOptions.h"
 #include "camera/ShotHandover.h"
-#include "capture/single/SynthesizedStill.h"
 #include "encoding/OutputAspect.h"
 #include <android/asset_manager_jni.h>
 #include <android/log.h>
@@ -245,87 +243,12 @@ extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreview
                         pin && pin->focusDiopters ? *pin->focusDiopters : -1.0f);
 }
 
-// X14U H route (rawrHal): the 12 MP view restarts after the Java 50 MP still; keep its white balance, exposure and
-// lens position across the restart (the claimed tone/colour frame comes right after it).
-// X14U 50 MP (camera's own pipeline): plain still -> linear RGGB mosaic (x14u/HalRawSynthNative.kt).
-extern "C" JNIEXPORT jintArray JNICALL Java_com_rawr_camera_x14u_HalRawSynthNative_jpegSize(JNIEnv* env, jclass,
-                                                                                            jbyteArray jpeg) {
-    const jsize n = env->GetArrayLength(jpeg);
-    jbyte* bytes = env->GetByteArrayElements(jpeg, nullptr);
-    int w = 0, h = 0;
-    const bool ok = rawrcam::camera::halsynth::jpegSize(reinterpret_cast<const uint8_t*>(bytes), size_t(n), w, h);
-    env->ReleaseByteArrayElements(jpeg, bytes, JNI_ABORT);
-    if (!ok) return nullptr;
-    jintArray result = env->NewIntArray(2);
-    const jint dims[2] = {w, h};
-    env->SetIntArrayRegion(result, 0, 2, dims);
-    return result;
-}
-
-extern "C" JNIEXPORT jboolean JNICALL Java_com_rawr_camera_x14u_HalRawSynthNative_jpegMosaic(
-    JNIEnv* env, jclass, jbyteArray jpeg, jobject out, jint width, jint height, jintArray lut) {
-    auto* dst = static_cast<uint16_t*>(env->GetDirectBufferAddress(out));
-    if (!dst || env->GetDirectBufferCapacity(out) < jlong(width) * height * 2 || env->GetArrayLength(lut) < 256)
-        return JNI_FALSE;
-    const jsize n = env->GetArrayLength(jpeg);
-    jbyte* bytes = env->GetByteArrayElements(jpeg, nullptr);
-    jint* table = env->GetIntArrayElements(lut, nullptr);
-    const bool ok = rawrcam::camera::halsynth::jpegToMosaic(reinterpret_cast<const uint8_t*>(bytes), size_t(n), dst,
-                                                            width, height, table);
-    env->ReleaseIntArrayElements(lut, table, JNI_ABORT);
-    env->ReleaseByteArrayElements(jpeg, bytes, JNI_ABORT);
-    return ok ? JNI_TRUE : JNI_FALSE;
-}
-
-extern "C" JNIEXPORT jboolean JNICALL Java_com_rawr_camera_x14u_HalRawSynthNative_nv21Mosaic(
-    JNIEnv* env, jclass, jbyteArray nv21, jint width, jint height, jobject out, jintArray lut) {
-    auto* dst = static_cast<uint16_t*>(env->GetDirectBufferAddress(out));
-    if (!dst || env->GetDirectBufferCapacity(out) < jlong(width) * height * 2 ||
-        env->GetArrayLength(lut) < 255 * 16 + 1 || env->GetArrayLength(nv21) < jlong(width) * height * 3 / 2)
-        return JNI_FALSE;
-    jbyte* bytes = env->GetByteArrayElements(nv21, nullptr);
-    jint* table = env->GetIntArrayElements(lut, nullptr);
-    const bool ok = rawrcam::camera::halsynth::nv21ToMosaic(reinterpret_cast<const uint8_t*>(bytes), width, height,
-                                                            dst, table);
-    env->ReleaseIntArrayElements(lut, table, JNI_ABORT);
-    env->ReleaseByteArrayElements(nv21, bytes, JNI_ABORT);
-    return ok ? JNI_TRUE : JNI_FALSE;
-}
-
-// X14U 50 MP closed-loop focus (CaptureViewModel.shootFullSize): lens steps, the distance sent, sharpness probe.
-extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setFocusSweep(JNIEnv*, jobject,
-                                                                                                   jfloat diopters) {
-    rawrcam::camera::shotHandover().setFocusSweep(diopters);
-}
 extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setFaceOptions(JNIEnv*, jobject,
                                                                                                     jboolean focus,
                                                                                                     jboolean exposure) {
     rawrcam::camera::faceOptions().focus.store(focus == JNI_TRUE, std::memory_order_relaxed);
     rawrcam::camera::faceOptions().exposure.store(exposure == JNI_TRUE, std::memory_order_relaxed);
 }
-extern "C" JNIEXPORT jfloat JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_sentFocus(JNIEnv*, jobject) {
-    return rawrcam::camera::shotHandover().sentFocus();
-}
-extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setFocusProbe(JNIEnv*, jobject,
-                                                                                                   jboolean on) {
-    rawrcam::camera::shotHandover().setFocusProbe(on == JNI_TRUE);
-}
-extern "C" JNIEXPORT jfloat JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_focusSharpness(JNIEnv*, jobject) {
-    return rawrcam::camera::shotHandover().sharpness();
-}
-extern "C" JNIEXPORT jlong JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_focusProbeCount(JNIEnv*, jobject) {
-    return rawrcam::camera::shotHandover().probeCount();
-}
-
-extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setCarryViewAcrossRestart(
-    JNIEnv*, jobject, jboolean on) {
-    rawrcam::camera::shotHandover().setCarry(on == JNI_TRUE, /*sameMode=*/true);
-    const auto wb = rawrcam::camera::shotHandover().carried();
-    __android_log_print(ANDROID_LOG_INFO, "RawrCamCameraNDK", "SYNTH_CARRY on=%d gains=%.3f,%.3f,%.3f,%.3f",
-                        on == JNI_TRUE ? 1 : 0, wb ? wb->gains[0] : 0.0f, wb ? wb->gains[1] : 0.0f,
-                        wb ? wb->gains[2] : 0.0f, wb ? wb->gains[3] : 0.0f);
-}
-
 extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setViewfinderHold(
     JNIEnv*, jobject, jboolean on) {
     rawrcam::camera::shotHandover().setHold(on == JNI_TRUE);
@@ -1040,41 +963,6 @@ Java_com_rawr_camera_integration_NativePreviewEngine_prewarmStillBuffers(JNIEnv*
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_rawr_camera_integration_NativePreviewEngine_stillCaptureHoldsCamera(JNIEnv*, jobject, jlong h) {
     return rawrcam::session::stillCaptureHoldsCamera(handle(h)) ? JNI_TRUE : JNI_FALSE;
-}
-extern "C" JNIEXPORT jboolean JNICALL
-Java_com_rawr_camera_integration_NativePreviewEngine_hasHalSessionStill(JNIEnv*, jobject, jlong h) {
-    return rawrcam::session::hasHalSessionStill(handle(h)) ? JNI_TRUE : JNI_FALSE;
-}
-// X14U: the synthesized 50 MP frame (direct buffer, RGGB uint16 LE) for the next still request; empty clears it.
-extern "C" JNIEXPORT jboolean JNICALL
-Java_com_rawr_camera_integration_NativePreviewEngine_setSynthesizedStill(JNIEnv* env, jobject, jobject buffer, jint width,
-                                                                       jint height, jlong exposureNs, jint iso,
-                                                                       jfloat aperture, jfloat focalLength,
-                                                                       jfloat focusDiopters) {
-    if (!buffer || width <= 0 || height <= 0) {
-        rawrcam::capture::synth::clear();
-        return JNI_TRUE;
-    }
-    auto* data = static_cast<const uint8_t*>(env->GetDirectBufferAddress(buffer));
-    const jlong capacity = env->GetDirectBufferCapacity(buffer);
-    const size_t bytes = size_t(width) * size_t(height) * 2u;
-    if (!data || capacity < jlong(bytes)) return JNI_FALSE;
-    rawrcam::capture::synth::Pending p;
-    p.raw16.assign(data, data + bytes);
-    p.width = uint32_t(width);
-    p.height = uint32_t(height);
-    p.exposureTimeNs = exposureNs;
-    p.sensitivity = iso;
-    p.aperture = aperture;
-    p.focalLengthMm = focalLength;
-    p.focusDiopters = focusDiopters;
-    rawrcam::capture::synth::set(std::move(p));
-    return JNI_TRUE;
-}
-// Blocks for the whole shot (seconds): call off the main thread.
-extern "C" JNIEXPORT jboolean JNICALL
-Java_com_rawr_camera_integration_NativePreviewEngine_captureHalSessionStill(JNIEnv*, jobject, jlong h) {
-    return rawrcam::session::captureHalSessionStill(handle(h)) ? JNI_TRUE : JNI_FALSE;
 }
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_rawr_camera_integration_NativePreviewEngine_pollJpegWriteCompletion(JNIEnv* env, jobject, jlong h) {

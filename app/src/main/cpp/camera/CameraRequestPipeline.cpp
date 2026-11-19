@@ -169,38 +169,6 @@ bool CameraRequestPipeline::prepareBracketRequest(CameraRequest* request, const 
     provenance_.push_back(std::move(provenance));
     return true;
 }
-bool CameraRequestPipeline::captureTagged(CameraSessionDriver* session, const CameraRequest* repeating,
-                                          const CameraControlState& control, uint64_t tagId,
-                                          const PrepareRequest& prepare) {
-    if (!session || !repeating || tagId == 0) return false;
-    const auto owned = repeating->copy();
-    CameraRequest* const request = owned.get();
-    if (!request) return false;
-    const uint8_t afIdle = ACAMERA_CONTROL_AF_TRIGGER_IDLE;
-    const uint8_t precaptureIdle = ACAMERA_CONTROL_AE_PRECAPTURE_TRIGGER_IDLE;
-    (void)request->setU8(ACAMERA_CONTROL_AF_TRIGGER, 1, &afIdle);
-    (void)request->setU8(ACAMERA_CONTROL_AE_PRECAPTURE_TRIGGER, 1, &precaptureIdle);
-    if (prepare && !prepare(request)) {
-        diag("CAMERA_TAGGED_PREPARE_FAIL tag=" + std::to_string(tagId));
-        return false;
-    }
-    auto provenance =
-        std::make_unique<CameraRequestProvenance>(CameraRequestProvenance::from(control, nextRequestSerial_++));
-    provenance->optimizedStillRequestId = tagId;
-    if (request->setUserContext(provenance.get()) != ACAMERA_OK) {
-        diag("CAMERA_REQUEST_PROVENANCE_FAIL");
-        return false;
-    }
-    provenance_.push_back(std::move(provenance));
-    int sequenceId = 0;
-    const RequestStatus s = session->capture({request}, &sequenceId);
-    if (!ok(s)) {
-        diag("CAMERA_TAGGED_CAPTURE_FAILURE tag=" + std::to_string(tagId) + " status=" + statusText(s));
-        return false;
-    }
-    diag("CAMERA_TAGGED_SUBMIT tag=" + std::to_string(tagId) + " sequenceId=" + std::to_string(sequenceId));
-    return true;
-}
 bool CameraRequestPipeline::captureAfTrigger(CameraSessionDriver* session, const CameraRequest* repeating,
                                              const CameraControlState& control, CameraFocusTrigger trigger) {
     if (!session || !repeating || trigger == CameraFocusTrigger::Idle) return false;

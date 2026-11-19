@@ -124,9 +124,6 @@ class SessionEngine {
     std::string pollDngWriteCompletion();
     // Some accepted still still needs the camera session (see CaptureCoordinator::holdsCameraFrames).
     bool stillCaptureHoldsCamera();
-    // X14U HAL 50 MP session shot (NativeCameraController::captureHalSessionStill).
-    bool hasHalSessionStill();
-    bool captureHalSessionStill();
     void prewarmStillBuffers(int count);
     // X14U Burst pre-capture (SingleFrameCoordinator / PrecaptureRing).
     void armPrecapture(int maxFrames, int intervalMs);

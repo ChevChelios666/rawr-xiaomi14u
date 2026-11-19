@@ -330,13 +330,7 @@ class RawPreviewCoordinator(application: Application) : AutoCloseable {
     fun setVideoCropSource(width: Int, height: Int) = native.setVideoCropSource(width, height)
     fun setStabilizer(enabled: Boolean, focalNorm: Float) = native.setStabilizer(enabled, focalNorm)
     fun setCarryWhiteBalance(on: Boolean) = native.setCarryWhiteBalance(on)
-    fun setCarryViewAcrossRestart(on: Boolean) = native.setCarryViewAcrossRestart(on)
-    fun setFocusSweep(diopters: Float) = native.setFocusSweep(diopters)
     fun setFaceOptions(focus: Boolean, exposure: Boolean) = native.setFaceOptions(focus, exposure)
-    fun sentFocus(): Float = native.sentFocus()
-    fun setFocusProbe(on: Boolean) = native.setFocusProbe(on)
-    fun focusSharpness(): Float = native.focusSharpness()
-    fun focusProbeCount(): Long = native.focusProbeCount()
     fun setViewfinderHold(on: Boolean) = native.setViewfinderHold(on)
     fun heldNewFrames(): Long = native.heldNewFrames()
     fun heldNewFullSizeFrames(): Long = native.heldNewFullSizeFrames()
@@ -702,12 +696,6 @@ class RawPreviewCoordinator(application: Application) : AutoCloseable {
 
     /** An accepted still still needs the camera session (frames due or not yet copied out). */
     fun stillCaptureHoldsCamera(): Boolean = native.stillCaptureHoldsCamera(nativeHandle)
-    fun hasHalSessionStill(): Boolean = native.hasHalSessionStill(nativeHandle)
-    fun captureHalSessionStill(): Boolean = native.captureHalSessionStill(nativeHandle)
-    /** X14U: the synthesized 50 MP frame the next still takes (null clears it). */
-    fun setSynthesizedStill(mosaic: com.rawr.camera.x14u.HalRawSynth.BufferOut?, shot: com.rawr.camera.x14u.HalRawSynth.ShotInfo?): Boolean =
-        native.setSynthesizedStill(mosaic?.buffer, mosaic?.width ?: 0, mosaic?.height ?: 0, shot?.exposureNs ?: 0L,
-            shot?.iso ?: 0, shot?.aperture ?: 0f, shot?.focalLength ?: 0f, -1f)
 
     /** X14U Burst pre-capture (native PrecaptureRing); maxFrames 0 = off. */
     fun armPrecapture(maxFrames: Int, intervalMs: Int) {

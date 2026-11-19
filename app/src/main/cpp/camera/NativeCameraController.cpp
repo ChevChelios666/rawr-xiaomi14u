@@ -14,7 +14,6 @@
 #include <cmath>
 #include <condition_variable>
 #include <cstdio>
-#include <ctime>
 #include <fstream>
 #include <iomanip>
 #include <map>
@@ -36,7 +35,6 @@
 #include "camera/CameraStartLadder.h"
 #include "camera/CameraWhiteBalanceControls.h"
 #include "camera/FullSizeSequence.h"
-#include "camera/HalStillSession.h"
 #include "camera/SessionRecipe.h"
 #include "camera/VendorGatePreset.h"
 #include "camera/SensitivityProbeStartup.h"
@@ -146,7 +144,6 @@ struct NativeCameraController::Impl final : CameraEventSink {
     bool fullSizeDecisionRepeating = false;
     // X14U 50 MP shot: the carry state the repeating request was last built with (ShotHandover pin).
     bool carrySubmitted = false;
-    uint64_t sweepSubmitted = 0;
     StillExposureGuard stillExposureGuard;
     std::function<void()> pendingFocus;
     std::function<void()> pendingFocusMode;
@@ -158,7 +155,6 @@ struct NativeCameraController::Impl final : CameraEventSink {
     bool active = false;
     bool starting = false;
     bool shutDown = false;
-    bool halSessionBusy = false;  // captureHalSessionStill owns the camera
     // Empty or unknown lens ids resolve to the profile's first lens at start.
     std::string lensId;
     // Built-in profile for this device model until the app supplies the
@@ -795,7 +791,7 @@ struct NativeCameraController::Impl final : CameraEventSink {
     }
 
     void startLocked(std::unique_lock<std::mutex>& lock) {
-        if (!active || deviceSession.hasDevice() || starting || shutDown || halSessionBusy) return;
+        if (!active || deviceSession.hasDevice() || starting || shutDown) return;
         fullSizeSequence.reset();
         fullSizeMoreExposures = false;
         fullSizeLastExposureTimestamp = 0;
@@ -1259,7 +1255,6 @@ struct NativeCameraController::Impl final : CameraEventSink {
             diag(std::string("CAMERA_STILL_FAILED tag=") + std::to_string(tag) + " kind=" + kind +
                  " frame=" + std::to_string(frameNumber) + " reason=" + std::to_string(reason) +
                  " lens=" + control.capabilities.lensId);
-            if (tag == metadata::kHal50StillRequestId) return;
             if (tag == metadata::kFullSizeDecisionRequestId) {
                 // Not a capture: the still that follows is still submitted.
                 if (fullSizeDecision == FullSizeDecision::Waiting) fullSizeDecision = FullSizeDecision::Failed;
@@ -1340,20 +1335,6 @@ struct NativeCameraController::Impl final : CameraEventSink {
         if (!actions.frame) return;
         // The decision frame only fills the discarded companion: no viewfinder
         // or capture consumer may see its metadata.
-        if (actions.frame->optimizedStillRequestId == metadata::kHal50StillRequestId) {
-            const auto& f = *actions.frame;
-            const auto mode = deviceSession.vendorResultValue(result, "org.codeaurora.qcamera3.sensor_meta_data.current_mode");
-            char line[320];
-            std::snprintf(line, sizeof(line),
-                          "HAL50_RESULT lens=%s exposureNs=%lld iso=%d aperture=%.2f focus=%.3f afMode=%d "
-                          "lensState=%d sensorMode=%lld",
-                          control.capabilities.lensId.c_str(), (long long)f.exposureTimeNs, f.sensitivity,
-                          f.aperture.value_or(-1.0f), f.focusDistanceDiopters.value_or(-1.0f),
-                          int(actions.resultAfMode.value_or(255)), int(actions.resultLensState.value_or(255)),
-                          mode ? (long long)*mode : -1LL);
-            diag(line);
-            return;
-        }
         if (actions.frame->optimizedStillRequestId == metadata::kFullSizeDecisionRequestId) {
             diag("CAMERA_FULL_SIZE_DECISION_RESULT iso=" + std::to_string(actions.frame->sensitivity) +
                  " exposureNs=" + std::to_string(actions.frame->exposureTimeNs));
@@ -1390,14 +1371,6 @@ struct NativeCameraController::Impl final : CameraEventSink {
             carrySubmitted = carrying;
             diag(std::string("SHOT50_REPEATING_REFRESH carry=") + (carrying ? "1" : "0") +
                  " sent=" + (submitRepeatingLocked() ? "1" : "0"));
-        }
-        // The shot's focus sweep moved the lens: the repeating request carries the new distance.
-        if (const uint64_t sweep = shotHandover().sweepGeneration(); sweep != sweepSubmitted) {
-            sweepSubmitted = sweep;
-            if (shotHandover().carrying()) {
-                diag("SHOT50_FOCUS_STEP diopters=" + std::to_string(shotHandover().focusSweep()) +
-                     " sent=" + (submitRepeatingLocked() ? "1" : "0"));
-            }
         }
         const uint64_t longTag = longExposureTag.load(std::memory_order_relaxed);
         // Freeze the viewfinder on the press until a single long frame is in,
@@ -1900,8 +1873,6 @@ struct NativeCameraController::Impl final : CameraEventSink {
         if (const auto& af = focusControls.afRegion(); af && deviceSession.cameraContext() &&
             (!focusControls.steeringFaces() || faceOptions().exposure.load(std::memory_order_relaxed)))
             c.focusArea = normalizedRegion(deviceSession.cameraContext()->geometry, *af);
-        // The 12 MP view's AF area, for the 50 MP shot's focus measure (not replaced by the shot's own session).
-        if (!shotHandover().carrying()) shotHandover().setFocusArea(c.focusArea);
         std::lock_guard<std::mutex> published(rawrAeContextMutex);
         rawrAePublished = c;
     }
@@ -2081,96 +2052,6 @@ bool NativeCameraController::captureFullSize(uint64_t requestId, uint32_t count,
     return impl_->captureFullSize(requestId, count, retainFocus, moreExposures);
 }
 bool NativeCameraController::waitFullSizeIdle(int64_t timeoutMs) { return impl_->waitFullSizeIdle(timeoutMs); }
-bool NativeCameraController::hasHalSessionStill() {
-    std::lock_guard<std::mutex> lock(impl_->mutex);
-    const auto route = impl_->selectedRouteLocked();
-    return route && route->auxJpegSize && route->auxJpegStill >= 3 &&
-           (route->auxJpegStill <= 6 || route->auxJpegStill == 9 || route->auxJpegStill == 10);
-}
-bool NativeCameraController::captureHalSessionStill() {
-    auto& m = *impl_;
-    std::unique_lock<std::mutex> lock(m.mutex);
-    const auto route = m.selectedRouteLocked();
-    if (!m.active || m.halSessionBusy || !route || !route->auxJpegSize || route->auxJpegStill < 3 ||
-        route->auxJpegStill == 7 || route->auxJpegStill == 8 || route->auxJpegStill > 10)
-        return false;
-    HalStillParams p;
-    p.cameraId = route->cameraId;
-    p.physicalId = route->physicalCameraId;
-    p.width = int32_t(route->auxJpegSize->first);
-    p.height = int32_t(route->auxJpegSize->second);
-    const auto still = route->auxJpegStill;
-    p.plain = still == 4 || still == 9 || still == 10;
-    p.gcamLayout = still >= 5;
-    p.yuvStill = still == 6 || still == 9;
-    p.stillUsage = route->auxJpegBufferUsage.value_or(0);
-    p.keys = route->vendorKeys;
-    // Focus and exposure intent of the viewfinder: its AF/AE regions, MF distance, manual exposure, EV.
-    if (m.control.focusMode == FocusControlMode::Manual && m.control.capabilities.manualFocusSupported) {
-        p.manualFocus = true;
-        p.focusDiopters = requestedFocusDiopters(m.control);
-    }
-    if (const auto* request = m.deviceSession.request()) {
-        RequestEntry e{};
-        if (request->get(ACAMERA_CONTROL_AF_REGIONS, &e) == ACAMERA_OK && e.count == 5 && e.data.i32)
-            p.afRegions.assign(e.data.i32, e.data.i32 + 5);
-        if (request->get(ACAMERA_CONTROL_AE_REGIONS, &e) == ACAMERA_OK && e.count == 5 && e.data.i32)
-            p.aeRegions.assign(e.data.i32, e.data.i32 + 5);
-    }
-    p.evSteps = m.control.requestedEvSteps;
-    if (m.control.exposureMode == ExposureControlMode::Manual) {
-        p.manualExposure = true;
-        p.exposureTimeNs = m.control.requestedExposureTimeNs;
-        p.sensitivity = m.control.requestedSensitivity;
-    }
-    char stamp[32] = {};
-    const std::time_t now = std::time(nullptr);
-    std::tm local{};
-    localtime_r(&now, &local);
-    std::strftime(stamp, sizeof(stamp), "%Y%m%d_%H%M%S", &local);
-    const auto msNow = std::chrono::duration_cast<std::chrono::milliseconds>(
-                           std::chrono::system_clock::now().time_since_epoch()).count() % 1000;
-    char name[96] = {};
-    std::snprintf(name, sizeof(name), "RAWR_%s_%03d_HALS_%s.jpg", stamp, int(msNow), route->lensId.c_str());
-    p.path = std::string("/storage/emulated/0/DCIM/Camera/") + name;
-    m.diag("HALS_BEGIN lens=" + route->lensId + " camera=" + p.cameraId + " physical=" +
-           (p.physicalId.empty() ? std::string("none") : p.physicalId) + " plain=" + (p.plain ? "1" : "0") +
-           " layout=" + (p.gcamLayout ? (p.yuvStill ? "gcamYuv" : "gcam") : "own") +
-           " mf=" + (p.manualFocus ? std::to_string(p.focusDiopters) : std::string("af")) +
-           " afRegion=" + (p.afRegions.empty() ? std::string("none") : "set") +
-           " manualExposure=" + (p.manualExposure ? "1" : "0"));
-    // Close the viewfinder session and device, as a lens switch does.
-    m.active = false;
-    m.halSessionBusy = true;
-    if (!m.retireSessionLocked(lock, std::chrono::seconds(3), "HALS")) m.forceRetireSessionLocked(lock, "HALS");
-    m.teardownCameraResourcesLocked(lock);
-    m.active = true;
-    lock.unlock();
-    const bool ok = runHalStillSession(p, [this](const std::string& line) { impl_->diag(line); });
-    lock.lock();
-    m.halSessionBusy = false;
-    // A stop requested meanwhile cleared `active`: stay closed then.
-    if (m.active) m.startLocked(lock);
-    return ok;
-}
-bool NativeCameraController::captureHal50Still() {
-    std::lock_guard<std::mutex> lock(impl_->mutex);
-    if (!impl_->deviceSession.hal50Still() || !impl_->active) return false;
-    // DCIM/Camera beside the app's photos (shared storage takes an app's own JPEG by path).
-    char stamp[32] = {};
-    const std::time_t now = std::time(nullptr);
-    std::tm local{};
-    localtime_r(&now, &local);
-    std::strftime(stamp, sizeof(stamp), "%Y%m%d_%H%M%S", &local);
-    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::system_clock::now().time_since_epoch()).count() % 1000;
-    char name[96] = {};
-    std::snprintf(name, sizeof(name), "RAWR_%s_%03d_HAL50_%s.jpg", stamp, int(ms),
-                  impl_->control.capabilities.lensId.c_str());
-    return impl_->deviceSession.captureHal50Still(impl_->requests, impl_->control,
-                                                  std::string("/storage/emulated/0/DCIM/Camera/") + name,
-                                                  [this](const std::string& line) { impl_->diag(line); });
-}
 void NativeCameraController::releaseFullSizeFocus() {
     std::lock_guard<std::mutex> lock(impl_->mutex);
     // Releasing a software snapshot never changes AF mode or triggers a scan.

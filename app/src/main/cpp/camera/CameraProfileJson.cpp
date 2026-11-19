@@ -648,19 +648,6 @@ std::string serializeCameraProfile(const CameraProfile& profile) {
                 a.raw("buffers", auxBuffers.str());
             }
             if (r.auxJpegStreamUseCase) a.number("useCase", r.auxJpegStreamUseCase);
-            if (r.auxJpegStill)
-                a.text("still", r.auxJpegStill == 12  ? "rawrHal"
-                                : r.auxJpegStill == 11 ? "javaRaw"
-                                : r.auxJpegStill == 10 ? "gcamPlain"
-                                : r.auxJpegStill == 9 ? "gcamYuvPlain"
-                                : r.auxJpegStill == 8 ? "javaYuv"
-                                : r.auxJpegStill == 7 ? "java"
-                                : r.auxJpegStill == 6 ? "gcamYuv"
-                                : r.auxJpegStill == 5 ? "gcam"
-                                : r.auxJpegStill == 4 ? "sessionPlain"
-                                : r.auxJpegStill == 3 ? "session"
-                                : r.auxJpegStill == 2 ? "plain"
-                                                      : "camera");
             streams.raw("auxJpeg", a.str());
         }
         lens.raw("streams", streams.str());
@@ -1070,18 +1057,6 @@ std::optional<LensRoute> readLens(const Json& l, std::string* error) {
         if (!readUseCase(a, r.auxJpegStreamUseCase, error, "auxJpeg of lens " + r.lensId)) return std::nullopt;
         if (!readUsage(&object(a, "buffers"), "auxJpeg buffer usage", r.auxJpegBufferUsage, error, r.lensId))
             return std::nullopt;
-        if (const std::string still = a->str("still"); still == "camera") r.auxJpegStill = 1;
-        else if (still == "plain") r.auxJpegStill = 2;
-        else if (still == "session") r.auxJpegStill = 3;
-        else if (still == "sessionPlain") r.auxJpegStill = 4;
-        else if (still == "gcam") r.auxJpegStill = 5;
-        else if (still == "gcamYuv") r.auxJpegStill = 6;
-        else if (still == "java") r.auxJpegStill = 7;
-        else if (still == "javaYuv") r.auxJpegStill = 8;
-        else if (still == "gcamYuvPlain") r.auxJpegStill = 9;
-        else if (still == "gcamPlain") r.auxJpegStill = 10;
-        else if (still == "javaRaw") r.auxJpegStill = 11;
-        else if (still == "rawrHal") r.auxJpegStill = 12;
     }
 
     // Session.

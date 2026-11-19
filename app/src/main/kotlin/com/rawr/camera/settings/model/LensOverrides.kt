@@ -212,26 +212,7 @@ fun SettingsValues.overrideLens(runAs: Boolean = true): LensProfile? {
     val lens = lenses.firstOrNull { sameName(it.name, lastLensId) } ?: return null
     if (isVideo || !runAs) return lens
     val runAs = lens.runAsTarget() ?: return lens
-    // X14U 1x "50 mp" at an aperture other than f/2 runs the camera's own 50 MP, not the run-as lens's RAW: its
-    // overrides live on "<run-as> A" ("50MP A"; names are at most 6 characters) when that lens exists.
-    if (lens.apertureChosen()) apertureLensOf(lenses, runAs)?.let { return it }
     return lenses.firstOrNull { sameName(it.name, runAs) } ?: lens
-}
-
-/** Name suffixes of the lens holding the overrides of a run-as shot taken at a chosen aperture ("50MP A", "50MPA"). */
-val APERTURE_LENS_SUFFIXES = listOf(" A", "A")
-
-/** The lens holding [runAs]'s overrides at a chosen aperture, or null. */
-fun apertureLensOf(lenses: List<LensProfile>, runAs: String): LensProfile? =
-    APERTURE_LENS_SUFFIXES.firstNotNullOfOrNull { suffix -> lenses.firstOrNull { sameName(it.name, runAs.trim() + suffix) } }
-
-/** True when a chosen option sets Xiaomi's variable aperture (the 1x Aperture choices other than f/2). */
-fun LensProfile.apertureChosen(): Boolean {
-    val picks = options.effectivePicks()
-    return options.indices.any { row ->
-        options[row].choices.getOrNull(picks[row])?.vendorKeys.orEmpty()
-            .any { it.enabled && it.tag == "com.xiaomi.lens.aperture" }
-    }
 }
 
 /** The lens a chosen option choice of this lens runs as ("50MP"), or null. */

@@ -8,7 +8,6 @@
 
 #include "capture/single/StillBinnedCorner.h"
 #include "capture/single/StillCfaRemosaic.h"
-#include "capture/single/SynthesizedStill.h"
 #include "imaging/Raw16CpuSnapshot.h"
 #include "imaging/RawFrameLease.h"
 #include "sys/resource.h"
@@ -47,8 +46,6 @@ bool SingleFrameCaptureAcquisition::deferSubmittedFrame(const metadata::FrameMet
         std::lock_guard<std::mutex> lock(mutex_);
         pending_ = std::move(deferred);
     }
-    // X14U: a synthesized 50 MP frame waits: this viewfinder frame's copy becomes it.
-    if (synth::pending()) synth::claim(metadata.timestampNs);
     return true;
 }
 bool SingleFrameCaptureAcquisition::beginDeferredSnapshot(AImage* imageLease, AHardwareBuffer* ahb,
@@ -71,47 +68,10 @@ bool SingleFrameCaptureAcquisition::beginDeferredSnapshot(AImage* imageLease, AH
         return true;
     }
     imaging::RawFrameLease lease({imageLease, ahb, copyFence, timestampNs, 0});
-    auto synthesized = synth::take(timestampNs);
     try {
-        worker_ = std::thread([this, lease = std::move(lease), deferred = std::move(*deferred),
-                               synthesized = std::move(synthesized), timestampNs]() mutable {
+        worker_ = std::thread([this, lease = std::move(lease), deferred = std::move(*deferred)]() mutable {
             setpriority(PRIO_PROCESS, 0, 5);
             try {
-                if (synthesized) {
-                    // X14U synthesized 50 MP still: the viewfinder image of the same moment is copied only as the
-                    // tone reference, then replaced.
-                    {
-                        const auto& vf = lease.get();
-                        const auto copy = imaging::copyCompletedRaw16AhbToPacked(
-                            vf.ahb, deferred.frame->width, deferred.frame->height, deferred.frame->raw16,
-                            vf.acquireFenceFd, vf.image);
-                        lease = imaging::RawFrameLease({});
-                        const auto hotStart = std::chrono::steady_clock::now();
-                        const uint32_t hot = synth::removeHotPixels(*synthesized);
-                        __android_log_print(ANDROID_LOG_INFO, "RawrCamNative", "SYNTH_HOT_PIXELS fixed=%u ms=%lld", hot,
-                                            static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
-                                                std::chrono::steady_clock::now() - hotStart).count()));
-                        std::string toneLine = "SYNTH_TONE skipped reason=ref_copy_failed";
-                        if (copy.success) {
-                            deferred.frame->packedRowStrideBytes = deferred.frame->width * 2;
-                            remosaicBlockCfaStill(*deferred.frame);
-                            toneLine = synth::matchTone(*deferred.frame, *synthesized);
-                        }
-                        __android_log_print(ANDROID_LOG_INFO, "RawrCamNative", "%s", toneLine.c_str());
-                    }
-                    synth::apply(*deferred.frame, std::move(*synthesized));
-                    deferred.copyResult.success = true;
-                    deferred.copyResult.sourceRowStrideBytes = deferred.frame->sourceRowStrideBytes;
-                    deferred.copyResult.sourcePixelStrideBytes = 2;
-                    __android_log_print(ANDROID_LOG_INFO, "RawrCamNative", "SYNTH_STILL_APPLIED %ux%u timestampNs=%llu",
-                                        deferred.frame->width, deferred.frame->height,
-                                        static_cast<unsigned long long>(timestampNs));
-                    journal_.commit(deferred);
-                    std::lock_guard<std::mutex> lock(mutex_);
-                    ready_ = std::move(deferred);
-                    workerRunning_ = false;
-                    return;
-                }
                 const auto& frame = lease.get();
                 deferred.copyResult =
                     imaging::copyCompletedRaw16AhbToPacked(frame.ahb, deferred.frame->width, deferred.frame->height,

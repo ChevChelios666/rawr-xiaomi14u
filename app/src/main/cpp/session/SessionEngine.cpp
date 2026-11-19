@@ -4,8 +4,6 @@
 
 #include <algorithm>
 #include <vector>
-#include <android/hardware_buffer.h>
-#include "camera/ShotHandover.h"
 #include <chrono>
 #include <cmath>
 #include <sstream>
@@ -386,68 +384,7 @@ bool SessionEngine::submitMetadata(const metadata::FrameMetadataSnapshot& metada
     }
     return ingressQueue_.enqueue(metadata);
 }
-namespace {
-// X14U 50 MP focus sweep: sharpness at the focus point of a full-size RAW frame (CPU, a 1024 px window). 2x2 sums
-// (CFA-independent); squared central differences over the mean squared, so exposure doesn't move it. Two scales: 2x2
-// (fine, noise-dominated at ISO 200+ on 0.8 um pixels, Nov 16 18:34 test) and 4x4 (the decision: defocus still shows,
-// noise averages out). Log SHOT50_FOCUS_PROBE per frame (the lag from a lens step to a changed frame shows there).
-void measureFullSizeSharpness(const imaging::AcquiredRawFrame& frame) {
-    AHardwareBuffer_Desc desc{};
-    AHardwareBuffer_describe(frame.ahb, &desc);
-    constexpr int kWindow = 1024, kQuads = kWindow / 2, kBlocks = kWindow / 4;
-    if (uint64_t(desc.width) * desc.height < 30'000'000ull || desc.stride < desc.width || desc.width < kWindow ||
-        desc.height < kWindow)
-        return;
-    const int fence = frame.acquireFenceFd >= 0 ? dup(frame.acquireFenceFd) : -1;
-    void* data = nullptr;
-    if (AHardwareBuffer_lock(frame.ahb, AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN, fence, nullptr, &data) != 0 || !data)
-        return;
-    const auto* px = static_cast<const uint16_t*>(data);
-    const auto area = camera::shotHandover().focusArea();
-    const float cx = area ? ((*area)[0] + (*area)[2]) * 0.5f : 0.5f;
-    const float cy = area ? ((*area)[1] + (*area)[3]) * 0.5f : 0.5f;
-    const int x0 = std::clamp(int(cx * desc.width) - kWindow / 2, 0, int(desc.width) - kWindow) & ~3;
-    const int y0 = std::clamp(int(cy * desc.height) - kWindow / 2, 0, int(desc.height) - kWindow) & ~3;
-    std::vector<float> q(size_t(kQuads) * kQuads);
-    for (int y = 0; y < kQuads; ++y) {
-        const uint16_t* r0 = px + size_t(y0 + 2 * y) * desc.stride + x0;
-        const uint16_t* r1 = r0 + desc.stride;
-        for (int x = 0; x < kQuads; ++x)
-            q[size_t(y) * kQuads + x] = float(r0[2 * x]) + r0[2 * x + 1] + r1[2 * x] + r1[2 * x + 1];
-    }
-    AHardwareBuffer_unlock(frame.ahb, nullptr);
-    std::vector<float> b(size_t(kBlocks) * kBlocks);
-    for (int y = 0; y < kBlocks; ++y)
-        for (int x = 0; x < kBlocks; ++x) {
-            const size_t i = size_t(2 * y) * kQuads + 2 * x;
-            b[size_t(y) * kBlocks + x] = q[i] + q[i + 1] + q[i + kQuads] + q[i + kQuads + 1];
-        }
-    const auto energy = [](const std::vector<float>& v, int n) {
-        double mean = 0.0;
-        for (const float x : v) mean += x;
-        mean /= double(v.size());
-        if (mean <= 1.0) return 0.0;
-        double e = 0.0;
-        for (int y = 1; y + 1 < n; ++y)
-            for (int x = 1; x + 1 < n; ++x) {
-                const double gx = v[size_t(y) * n + x + 1] - v[size_t(y) * n + x - 1];
-                const double gy = v[size_t(y + 1) * n + x] - v[size_t(y - 1) * n + x];
-                e += gx * gx + gy * gy;
-            }
-        return e / (double(n - 2) * (n - 2)) / (mean * mean) * 1e4;
-    };
-    const double fine = energy(q, kQuads), coarse = energy(b, kBlocks);
-    auto& handover = camera::shotHandover();
-    handover.noteSharpness(float(coarse));
-    LOGI("SHOT50_FOCUS_PROBE n=%lld sweep=%.3f s2=%.1f s4=%.1f at=%.3f,%.3f", static_cast<long long>(handover.probeCount()),
-         handover.focusSweep(), fine, coarse, cx, cy);
-}
-}  // namespace
-
-void SessionEngine::enqueueRawFrame(imaging::AcquiredRawFrame frame) {
-    if (frame.ahb && camera::shotHandover().focusProbe()) measureFullSizeSharpness(frame);
-    ingressQueue_.enqueue(std::move(frame));
-}
+void SessionEngine::enqueueRawFrame(imaging::AcquiredRawFrame frame) { ingressQueue_.enqueue(std::move(frame)); }
 void SessionEngine::stopIngress() { ingressQueue_.stop(); }
 void SessionEngine::tickRawReaderUsage() {
     const auto failed = failedCameraGeneration_.exchange(0);

@@ -171,7 +171,7 @@ data object CancelSpotAe : ApplicationCaptureAction
 
 data object TriggerCapture : ApplicationCaptureAction
 
-/** X14U synthesized 50 MP: the shot after its own countdown (the self-timer already ran before the camera's still). */
+/** X14U: the shot without the self-timer (timed burst: every photo of a run). */
 data object TriggerCaptureNow : ApplicationCaptureAction
 
 /** X14U Burst: the shutter is held — frames at [fps] until [StopBurst], [limit] frames or a full save queue. */

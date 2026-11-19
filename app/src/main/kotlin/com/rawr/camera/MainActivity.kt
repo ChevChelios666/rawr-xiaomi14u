@@ -228,7 +228,6 @@ class MainActivity : ComponentActivity() {
             val panoStatus by captureViewModel.panoStatus.collectAsStateWithLifecycle()
             val fullSizeShot by captureViewModel.fullSizeShot.collectAsStateWithLifecycle()
             val fullSizeBusy by captureViewModel.fullSizeBusy.collectAsStateWithLifecycle()
-            val fullSizeCountdownMs by captureViewModel.fullSizeCountdownMs.collectAsStateWithLifecycle()
             val tools by captureViewModel.tools.collectAsStateWithLifecycle()
             val presets by captureViewModel.presets.collectAsStateWithLifecycle()
             val stillsHint by captureViewModel.stillsHint.collectAsStateWithLifecycle()
@@ -311,8 +310,6 @@ class MainActivity : ComponentActivity() {
                     panoStatus = panoStatus,
                     fullSizeShot = fullSizeShot,
                     fullSizeBusy = fullSizeBusy,
-                    fullSizeCountdownMs = fullSizeCountdownMs,
-                    onCancelFullSizeCountdown = captureViewModel::cancelFullSizeCountdown,
                     onFullSizeShot = captureViewModel::tryShootFullSize,
                     presets = presets,
                     presetActions = captureViewModel.presetActions,

@@ -36,14 +36,8 @@ class NativePreviewEngine {
 
     /** X14U 50 MP shot: carry the viewfinder's white balance into the shot's session (true) or let go (false). */
     external fun setCarryWhiteBalance(on: Boolean)
-    external fun setCarryViewAcrossRestart(on: Boolean)
-    external fun setFocusSweep(diopters: Float)
     /** X14U: continuous AF follows the main face / exposure is set for it (Settings → Focus and exposure). */
     external fun setFaceOptions(focus: Boolean, exposure: Boolean)
-    external fun sentFocus(): Float
-    external fun setFocusProbe(on: Boolean)
-    external fun focusSharpness(): Float
-    external fun focusProbeCount(): Long
 
     /** X14U 50 MP shot: hold the viewfinder on its last frame (frames are developed, not shown). */
     external fun setViewfinderHold(on: Boolean)
@@ -295,13 +289,6 @@ class NativePreviewEngine {
     external fun pollDngWriteCompletion(handle: Long): String
 
     external fun stillCaptureHoldsCamera(handle: Long): Boolean
-    /** X14U HAL 50 MP session shot: the selected lens takes its 50 MP in a short session of its own. */
-    external fun hasHalSessionStill(handle: Long): Boolean
-    /** Blocks for the whole shot (seconds); off the main thread. */
-    external fun captureHalSessionStill(handle: Long): Boolean
-    /** X14U: the synthesized 50 MP RGGB frame for the next still (direct buffer); null clears it. */
-    external fun setSynthesizedStill(buffer: java.nio.ByteBuffer?, width: Int, height: Int, exposureNs: Long, iso: Int,
-                                     aperture: Float, focalLength: Float, focusDiopters: Float): Boolean
     external fun prewarmStillBuffers(handle: Long, count: Int)
     external fun setStillDevelopPaused(paused: Boolean)
     external fun armPrecapture(handle: Long, maxFrames: Int, intervalMs: Int)

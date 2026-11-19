@@ -36,7 +36,6 @@ cpp/
 │   ├── CameraControlSurface.{h,cpp}   # Camera policy and application control surface
 │   ├── NativeCameraController.{h,cpp} # Public control intent, mutex, lifecycle sequencing
 │   ├── CameraDeviceSession.{h,cpp}    # Private NDK handles, startup/rollback/retirement
-│   ├── HalStillSession.{h,cpp}        # X14U HAL 50 MP shot in a short session without RAW
 │   ├── CameraCallbacks.{h,cpp}        # Revocable generation-tagged callback routing
 │   ├── CameraRequestPipeline.{h,cpp}  # Request application/submission and provenance
 │   ├── CameraResultProcessor.{h,cpp}  # Metadata/control decoding and follow-up actions
