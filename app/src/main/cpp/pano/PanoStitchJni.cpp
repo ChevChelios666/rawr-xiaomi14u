@@ -94,7 +94,7 @@ std::string statusText(cv::Stitcher::Status status) {
 // to outFd (closed here). Returns "" on success, otherwise why it failed.
 extern "C" JNIEXPORT jstring JNICALL Java_com_rawr_camera_pano_PanoStitcherNative_stitch(
     JNIEnv* env, jobject, jintArray fdsArray, jintArray rotationsArray, jfloat composeMegapixels, jint outFd,
-    jint quality, jboolean crop, jint projection, jfloat spanDegrees) {
+    jint quality, jboolean crop, jint projection, jfloat spanDegrees, jboolean vertical) {
     std::vector<jint> fds(static_cast<size_t>(env->GetArrayLength(fdsArray)));
     std::vector<jint> rotations(static_cast<size_t>(env->GetArrayLength(rotationsArray)), 0);
     env->GetIntArrayRegion(fdsArray, 0, jsize(fds.size()), fds.data());
@@ -123,40 +123,73 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_rawr_camera_pano_PanoStitcherNativ
         } else {
             // Projection: 0 Auto (Rectilinear up to ~100° across, else Cylindrical), 1 Rectilinear, 2 Cylindrical,
             // 3 Panini, 4 Spherical (OpenCV's default).
+            // Up / down sweeps (Nov 19): OpenCV's cylinder stands upright and Panini squeezes across, so along an
+            // up / down sweep both stretch without limit (a 2-frame vertical set came out 2962x19809, another
+            // overflowed remap's 32767 px). Those sets use Rectilinear up to ~100°, else Spherical.
+            const bool upDown = vertical == JNI_TRUE;
             int p = projection;
-            if (p == 0) p = (spanDegrees > 0.0f && spanDegrees <= 100.0f) ? 1 : 2;
-            __android_log_print(ANDROID_LOG_INFO, kTag, "PANO_PROJECTION chosen=%d asked=%d span=%.1f", p, int(projection),
-                                double(spanDegrees));
+            if (p == 0) p = (spanDegrees > 0.0f && spanDegrees <= 100.0f) ? 1 : (upDown ? 4 : 2);
+            else if (upDown && (p == 2 || p == 3)) p = (spanDegrees > 0.0f && spanDegrees <= 100.0f) ? 1 : 4;
+            __android_log_print(ANDROID_LOG_INFO, kTag, "PANO_PROJECTION chosen=%d asked=%d span=%.1f vertical=%d", p,
+                                int(projection), double(spanDegrees), int(upDown));
             const double frameMp = double(frames[0].total()) / 1e6;
-            // Up to three tries: OpenCV's defaults (ORB at 0.6 MP, confidence 1.0), then, when the frames didn't
-            // match (Nov 17: 2-frame sets at 20-30 % overlap indoors all failed with "didn't overlap enough"), SIFT
-            // at 1 MP with a looser match, then looser still. Working sets stitch on the first try as before.
+            double framesArea = 0.0;
+            for (const auto& f : frames) framesArea += double(f.total());
+            // Tries: ORB at 0.6 MP (OpenCV's default), SIFT at 1 MP with a looser match, looser still. Two-frame and
+            // up / down sets start with SIFT (Nov 19: ORB scraped through on few matches in dim light and placed
+            // the frames badly; SIFT's result was the right one). Every failure goes on to the next try, a thrown
+            // OpenCV error included (one ended the whole merge), and so does a result far larger than its frames
+            // (a bad estimate stretched the canvas).
+            const bool siftFirst = frames.size() == 2 || upDown;
+            const int order[3] = {siftFirst ? 1 : 0, siftFirst ? 2 : 1, siftFirst ? 0 : 2};
             cv::Mat pano;
             cv::Stitcher::Status status = cv::Stitcher::ERR_NEED_MORE_IMGS;
             int usedAttempt = 0;
             size_t usedFrames = 0;
-            for (int attempt = 0; attempt < 3; ++attempt) {
-                auto stitcher = cv::Stitcher::create(cv::Stitcher::PANORAMA);
-                if (p == 1) stitcher->setWarper(cv::makePtr<cv::PlaneWarper>());
-                else if (p == 2) stitcher->setWarper(cv::makePtr<cv::CylindricalWarper>());
-                else if (p == 3) stitcher->setWarper(cv::makePtr<cv::PaniniWarper>(1.5f, 1.0f));
-                else stitcher->setWarper(cv::makePtr<cv::SphericalWarper>());
-                if (composeMegapixels > 0.0f && composeMegapixels < frameMp) stitcher->setCompositingResol(composeMegapixels);
-                if (attempt > 0) {
-                    stitcher->setFeaturesFinder(cv::SIFT::create(4000));
-                    stitcher->setRegistrationResol(1.0);
-                    stitcher->setFeaturesMatcher(cv::makePtr<cv::detail::BestOf2NearestMatcher>(false, attempt == 1 ? 0.25f : 0.2f));
-                    stitcher->setPanoConfidenceThresh(attempt == 1 ? 0.6 : 0.3);
+            for (int attempt : order) {
+                pano.release();
+                try {
+                    auto stitcher = cv::Stitcher::create(cv::Stitcher::PANORAMA);
+                    if (p == 1) stitcher->setWarper(cv::makePtr<cv::PlaneWarper>());
+                    else if (p == 2) stitcher->setWarper(cv::makePtr<cv::CylindricalWarper>());
+                    else if (p == 3) stitcher->setWarper(cv::makePtr<cv::PaniniWarper>(1.5f, 1.0f));
+                    else stitcher->setWarper(cv::makePtr<cv::SphericalWarper>());
+                    // OpenCV levels a set as if it turned sideways; an up / down sweep turns about one sideways axis,
+                    // so "up" is undefined there and the set ends up tilted (frames splayed, black canvas). Its
+                    // frames keep frame 1's level instead.
+                    stitcher->setWaveCorrection(!upDown);
+                    if (composeMegapixels > 0.0f && composeMegapixels < frameMp) stitcher->setCompositingResol(composeMegapixels);
+                    if (attempt > 0) {
+                        stitcher->setFeaturesFinder(cv::SIFT::create(4000));
+                        stitcher->setRegistrationResol(1.0);
+                        stitcher->setFeaturesMatcher(cv::makePtr<cv::detail::BestOf2NearestMatcher>(false, attempt == 1 ? 0.25f : 0.2f));
+                        stitcher->setPanoConfidenceThresh(attempt == 1 ? 0.6 : 0.3);
+                    }
+                    status = stitcher->stitch(frames, pano);
+                    if (status == cv::Stitcher::OK && !pano.empty()) usedFrames = stitcher->component().size();
+                } catch (const cv::Exception& e) {
+                    __android_log_print(ANDROID_LOG_WARN, kTag, "PANO_STITCH_TRY attempt=%d threw %s", attempt, e.what());
+                    status = cv::Stitcher::ERR_CAMERA_PARAMS_ADJUST_FAIL;
+                    pano.release();
+                } catch (const std::bad_alloc&) {
+                    __android_log_print(ANDROID_LOG_WARN, kTag, "PANO_STITCH_TRY attempt=%d out of memory", attempt);
+                    status = cv::Stitcher::ERR_CAMERA_PARAMS_ADJUST_FAIL;
+                    pano.release();
                 }
-                status = stitcher->stitch(frames, pano);
-                __android_log_print(ANDROID_LOG_INFO, kTag, "PANO_STITCH_TRY attempt=%d frames=%zu status=%d", attempt,
-                                    frames.size(), int(status));
+                __android_log_print(ANDROID_LOG_INFO, kTag, "PANO_STITCH_TRY attempt=%d frames=%zu status=%d size=%dx%d", attempt,
+                                    frames.size(), int(status), pano.cols, pano.rows);
                 if (status == cv::Stitcher::OK && !pano.empty()) {
+                    // A panorama can't hold much more than its frames: three times their area means a bad estimate.
+                    if (double(pano.total()) > 3.0 * framesArea) {
+                        __android_log_print(ANDROID_LOG_WARN, kTag, "PANO_STITCH_ODD attempt=%d size=%dx%d frames=%.1f MP",
+                                            attempt, pano.cols, pano.rows, framesArea / 1e6);
+                        status = cv::Stitcher::ERR_CAMERA_PARAMS_ADJUST_FAIL;
+                        pano.release();
+                        continue;
+                    }
                     usedAttempt = attempt;
-                    usedFrames = stitcher->component().size();
                     break;
                 }
-                if (status != cv::Stitcher::ERR_NEED_MORE_IMGS && status != cv::Stitcher::ERR_HOMOGRAPHY_EST_FAIL) break;
             }
             frames.clear();
             if (status != cv::Stitcher::OK || pano.empty()) {
@@ -174,7 +207,11 @@ extern "C" JNIEXPORT jstring JNICALL Java_com_rawr_camera_pano_PanoStitcherNativ
                     // How it was made, for the panorama's EXIF (Kotlin adds how the frames were taken).
                     static const char* kProjection[] = {"Auto", "Rectilinear", "Cylindrical", "Panini", "Spherical"};
                     static const char* kMatch[] = {"ORB features", "SIFT features", "SIFT features, loose match"};
-                    summary = std::string(kProjection[std::clamp(p, 1, 4)]) + (projection == 0 ? " (Auto)" : "") + " projection, " +
+                    const bool replaced = projection != 0 && p != projection;
+                    summary = std::string(kProjection[std::clamp(p, 1, 4)]) + (projection == 0 ? " (Auto)" : "") +
+                              (replaced ? std::string(" (") + kProjection[std::clamp(int(projection), 1, 4)] +
+                                              " doesn't suit an up/down sweep)" : "") +
+                              " projection, " + (upDown ? "up/down sweep, " : "") +
                               std::to_string(usedFrames) + " of " + std::to_string(fds.size()) + " frames stitched, " +
                               kMatch[usedAttempt] +
                               (pano.cols != fullW || pano.rows != fullH ? ", cropped" : "") + ", OpenCV " + CV_VERSION;

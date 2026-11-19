@@ -648,7 +648,7 @@ internal fun X14uCaptureLayout(
     val panoDone: () -> Unit = {
         // A finished set (stop or complete) is merged on the phone when that's on (Settings → JPEG).
         if (panoSet.frames >= 2) {
-            panoExtras.onPanoMerge(panoSet.tag, panoSet.frames, panoSet.startedAtMillis, panoSet.spanDegrees)
+            panoExtras.onPanoMerge(panoSet.tag, panoSet.frames, panoSet.startedAtMillis, panoSet.spanDegrees, panoSet.heldVertical)
         }
         panoDropSingle()
         panoSet.end(panoState, dispatch)

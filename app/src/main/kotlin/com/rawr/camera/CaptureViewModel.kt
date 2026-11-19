@@ -193,11 +193,11 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     private val panoMerger by lazy { com.rawr.camera.pano.PanoMerger(getApplication()) }
     private var panoStatusClear: kotlinx.coroutines.Job? = null
 
-    fun mergePano(tag: String, frames: Int, startedAtMillis: Long, spanDegrees: Float) {
+    fun mergePano(tag: String, frames: Int, startedAtMillis: Long, spanDegrees: Float, vertical: Boolean) {
         val settings = latestSettings
         if (!settings.panoMerge || frames < 2 || tag.isEmpty()) return
         viewModelScope.launch {
-            panoMerger.merge(tag, frames, startedAtMillis, spanDegrees, settings.panoProjection, settings.panoKeepFrames) { message ->
+            panoMerger.merge(tag, frames, startedAtMillis, spanDegrees, settings.panoProjection, settings.panoKeepFrames, vertical) { message ->
                 panoStatusClear?.cancel()
                 panoStatusFlow.value = message
                 // The thumbnail follows the new panorama (and leaves frames that "keep frames" off deletes).

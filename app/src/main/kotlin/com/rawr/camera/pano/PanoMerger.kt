@@ -26,7 +26,8 @@ internal object PanoStitcherNative {
         quality: Int,
         crop: Boolean,
         projection: Int,
-        spanDegrees: Float
+        spanDegrees: Float,
+        vertical: Boolean
     ): String
 }
 
@@ -47,29 +48,41 @@ internal class PanoMerger(private val context: Context) {
         spanDegrees: Float,
         projection: com.rawr.camera.settings.model.PanoProjection,
         keepFrames: Boolean,
+        /** The sweep went up or down (as the frames are saved): levelled and projected for that. */
+        vertical: Boolean,
         status: (String?) -> Unit
-    ) = lock.withLock {
-        withContext(Dispatchers.IO) {
-            if (!PanoStitcherNative.available) {
-                status("Pano merge isn't available")
-                return@withContext
-            }
-            status("Pano: waiting for $frames frames…")
-            val found = waitForFrames(tag, frames, startedAtMillis)
-            if (found.size < 2) {
-                status(if (found.isEmpty()) "Pano merge needs JPEG frames" else "Pano merge: only ${found.size} frame saved")
-                return@withContext
-            }
-            status("Merging pano (${found.size} frames)…")
-            val started = System.currentTimeMillis()
-            val error = runCatching { stitch(found, projection.ordinal, spanDegrees) }.getOrElse { it.message ?: "stitch failed" }
-            if (error.isEmpty()) {
-                status("Pano saved (${(System.currentTimeMillis() - started) / 1000} s)")
-                if (!keepFrames) deleteFrames(tag, startedAtMillis)
-            } else {
-                status("Pano merge failed: $error")
+    ) {
+        // Sets merge one at a time; a set taken while another merges says so (Nov 19: the last set showed
+        // nothing while it waited).
+        if (lock.isLocked) status("Pano queued: another one is merging…")
+        val saved = lock.withLock {
+            withContext(Dispatchers.IO) {
+                if (!PanoStitcherNative.available) {
+                    status("Pano merge isn't available")
+                    return@withContext false
+                }
+                status("Pano: waiting for $frames frames…")
+                val found = waitForFrames(tag, frames, startedAtMillis)
+                if (found.size < 2) {
+                    status(if (found.isEmpty()) "Pano merge needs JPEG frames" else "Pano merge: only ${found.size} frame saved")
+                    return@withContext false
+                }
+                status("Merging pano (${found.size} frames)…")
+                val started = System.currentTimeMillis()
+                val error = runCatching { stitch(found, projection.ordinal, spanDegrees, vertical) }
+                    .getOrElse { it.message ?: "stitch failed" }
+                if (error.isEmpty()) {
+                    status("Pano saved (${(System.currentTimeMillis() - started) / 1000} s)")
+                    true
+                } else {
+                    status("Pano merge failed: $error")
+                    false
+                }
             }
         }
+        // Deleting the frames looks again over about a minute (late DNGs): outside the lock, so the next set
+        // doesn't wait for it (it held the queue for ~85 s).
+        if (saved && !keepFrames) withContext(Dispatchers.IO) { deleteFrames(tag, startedAtMillis) }
     }
 
     private suspend fun waitForFrames(tag: String, frames: Int, startedAtMillis: Long): List<Frame> {
@@ -143,7 +156,7 @@ internal class PanoMerger(private val context: Context) {
     }
 
     /** "" on success. */
-    private fun stitch(frames: List<Frame>, projection: Int, spanDegrees: Float): String {
+    private fun stitch(frames: List<Frame>, projection: Int, spanDegrees: Float, vertical: Boolean): String {
         val resolver = context.contentResolver
         val rotations = frames.map { frame ->
             resolver.openFileDescriptor(frame.uri, "r")?.use { pfd ->
@@ -185,7 +198,8 @@ internal class PanoMerger(private val context: Context) {
                 quality = 92,
                 crop = true,
                 projection = projection,
-                spanDegrees = spanDegrees
+                spanDegrees = spanDegrees,
+                vertical = vertical
             )
             readable.forEach { fds[it] = -1 } // closed natively
             if (!result.startsWith("OK|")) {

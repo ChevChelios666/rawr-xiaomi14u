@@ -114,7 +114,7 @@ internal class PanoSet {
     var lastShotAt = 0L
         private set
 
-    /** Set name part, from its start time ("2231"). */
+    /** Set name part, from its start time ("223105"). */
     var tag = ""
         private set
     /** When the set started (for finding its frames to merge). */
@@ -139,6 +139,10 @@ internal class PanoSet {
     private var saved: Saved? = null
 
     val inSet: Boolean get() = frames > 0 || arming
+    /** Wide up or down as held (so in the saved frames): the merge levels and projects it for that. */
+    val heldVertical: Boolean
+        get() = shape == PanoShape.Wide && directionChosen && (direction == PanoDirection.Up || direction == PanoDirection.Down)
+
     /** Up / down sweeps measure the turn as pitch; the rest as yaw. */
     val vertical: Boolean
         get() = shape == PanoShape.Wide && (screenDirection == PanoDirection.Up || screenDirection == PanoDirection.Down)
@@ -148,7 +152,9 @@ internal class PanoSet {
     /** Locks for frame 1 from what the camera is doing now, and lays out the frame places for [lensFactor]. */
     fun start(state: CaptureUiState, dispatch: CaptureDispatch, lensFactor: Float) {
         saved = Saved(state.exposureControl.mode, state.focus.mode, state.whiteBalanceMode)
-        tag = java.text.SimpleDateFormat("HHmm", java.util.Locale.US).format(java.util.Date())
+        // Hours, minutes and seconds (Nov 19): two sets in the same minute shared "HHmm", so one merge took both
+        // sets' frames and "delete frames" removed the other set's.
+        tag = java.text.SimpleDateFormat("HHmmss", java.util.Locale.US).format(java.util.Date())
         startedAtMillis = System.currentTimeMillis()
         fovX = fov(lensFactor, alongWidth = true)
         fovY = fov(lensFactor, alongWidth = false)
