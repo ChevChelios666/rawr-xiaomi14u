@@ -51,12 +51,13 @@ bool VideoOutput::start(JNIEnv* env, jobject javaSurface, uint32_t width, uint32
     stop();
     if (!javaSurface || !context_.device() || width == 0 || height == 0 || (bitDepth != 8 && bitDepth != 10))
         return false;
-    // X14U (Nov 20, utalpt's 17U path): `adb shell setprop debug.rawr.enc_yuv 1` feeds the encoder YUV (NV12/P010)
-    // written by our GPU through an ImageWriter, so the encoder no longer converts every RGBA frame itself (4K30
-    // dropped frames once the phone was warm; with YUV none, Nov 20). All of the setup runs here, outside the session
+    // X14U (Nov 20, utalpt's 17U path): the encoder gets YUV (NV12/P010) written by our GPU through an ImageWriter,
+    // so it no longer converts every RGBA frame itself (4K30 dropped frames once the phone was warm; with YUV none in
+    // five takes up to 41 C, Bronze and LOG included). `adb shell setprop debug.rawr.enc_yuv 0` brings back the RGBA
+    // swapchain for comparison. All of the setup runs here, outside the session
     // lock (it took 33-57 ms; inside the lock it made the camera drop a frame at record start); only the feeder
     // thread starts in markStarted(), once this output is the session's live one. Falls back to RGBA if it can't.
-    if (propInt("debug.rawr.enc_yuv") == 1) {
+    if (propInt("debug.rawr.enc_yuv") != 0) {
         const auto t0 = std::chrono::steady_clock::now();
         try {
             if (startYuv(env, javaSurface, width, height, bitDepth)) {
