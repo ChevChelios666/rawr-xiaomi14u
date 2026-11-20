@@ -6,8 +6,11 @@
 #include <array>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <ctime>
+#include <mutex>
 #include <string>
+#include <vector>
 
 namespace rawrcam::video {
 
@@ -75,6 +78,85 @@ class StartRamp final {
     double firstOkMs_ = -1.0;
     bool logged_ = false;
     std::array<Bin, kBins> bins_{};
+};
+
+// X14U (Nov 20): the first 2 s of a take, event by event, to find the camera frame lost right after a YUV take starts
+// (INGRESS_QUEUE_PRESSURE rawDropped=1 160-250 ms in; utalpt sees it on the 17U too). Logged once, one line per kind,
+// each event as "ms-since-start:value(s)":
+//   VIDEO_START_TRACE ingress  camera frames: queue wait / session-lock wait / handling, ms
+//   VIDEO_START_TRACE drops    frames the camera queue dropped (count)
+//   VIDEO_START_TRACE import   encoder buffers imported for the first time (ms)
+//   VIDEO_START_TRACE dequeue  waits for a free encoder buffer from the writer (ms, over 2 ms only)
+//   VIDEO_START_TRACE fence    GPU completion waits per encoded frame (ms)
+//   VIDEO_START_TRACE miss     frames with no encoder buffer in hand
+class StartTrace final {
+   public:
+    static StartTrace& get() noexcept {
+        static StartTrace trace;
+        return trace;
+    }
+    void begin(int64_t originNs) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        events_.clear();
+        events_.reserve(512);
+        originNs_ = originNs;
+        logged_ = false;
+    }
+    void add(char kind, int64_t nowNs, float a, float b = 0.0f, float c = 0.0f) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (originNs_ == 0 || logged_ || nowNs < originNs_) return;
+        if (nowNs - originNs_ > kWindowNs) {
+            logLocked();
+            return;
+        }
+        if (events_.size() < 1024) events_.push_back({kind, float(double(nowNs - originNs_) / 1e6), a, b, c});
+    }
+    void flush() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (originNs_ != 0 && !logged_) logLocked();
+    }
+
+   private:
+    static constexpr int64_t kWindowNs = 2'000'000'000;
+    struct Event {
+        char kind;
+        float t, a, b, c;
+    };
+    void logLocked() {
+        logged_ = true;
+        static constexpr struct {
+            char kind;
+            const char* name;
+            int values;
+        } kinds[] = {{'i', "ingress", 3}, {'d', "drops", 1}, {'b', "import", 1},
+                     {'q', "dequeue", 1}, {'f', "fence", 1},  {'m', "miss", 0}};
+        for (const auto& k : kinds) {
+            std::string line;
+            char cell[64];
+            for (const auto& e : events_) {
+                if (e.kind != k.kind) continue;
+                if (k.values == 3)
+                    std::snprintf(cell, sizeof cell, " %.0f:%.1f/%.1f/%.1f", double(e.t), double(e.a), double(e.b),
+                                  double(e.c));
+                else if (k.values == 1)
+                    std::snprintf(cell, sizeof cell, " %.0f:%.1f", double(e.t), double(e.a));
+                else
+                    std::snprintf(cell, sizeof cell, " %.0f", double(e.t));
+                if (line.size() + std::strlen(cell) > 3500) {
+                    __android_log_print(ANDROID_LOG_INFO, "RawrNativeVideo", "VIDEO_START_TRACE %s%s", k.name,
+                                        line.c_str());
+                    line.clear();
+                }
+                line += cell;
+            }
+            __android_log_print(ANDROID_LOG_INFO, "RawrNativeVideo", "VIDEO_START_TRACE %s%s", k.name,
+                                line.empty() ? " -" : line.c_str());
+        }
+    }
+    std::mutex mutex_;
+    int64_t originNs_ = 0;
+    bool logged_ = false;
+    std::vector<Event> events_;
 };
 
 }  // namespace rawrcam::video

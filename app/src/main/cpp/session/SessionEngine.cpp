@@ -28,6 +28,7 @@
 #include "imaging/RawFrameLease.h"
 #include "metadata/MetadataDiagnostics.h"
 #include "session/SessionEngine.h"
+#include "video/EncoderRamp.h"
 #include "video_pipeline/VideoCrop.h"
 #include "vulkan/VulkanDispatch.h"
 
@@ -420,8 +421,17 @@ void SessionEngine::consumeIngress(imaging::FrameIngressQueue::Event event, imag
         if (delay > 50 && (++ingressSlowReports_ % 120u) == 1u)
             LOGI("INGRESS_QUEUE_SLOW delayMs=%lld kind=%s", static_cast<long long>(delay), raw ? "raw" : "metadata");
     }
+    // VIDEO_START_TRACE (video/EncoderRamp.h): each camera frame's queue wait, lock wait and handling in a take's
+    // first 2 s, and the queue's drops.
+    const auto traceEntry = std::chrono::steady_clock::now();
+    const float traceQueueMs =
+        std::chrono::duration<float, std::milli>(traceEntry - event.enqueuedAt).count();
+    float traceLockMs = 0.0f;
+    std::chrono::steady_clock::time_point traceLocked{};
     {
         std::lock_guard<std::mutex> lock(mu_);
+        traceLocked = std::chrono::steady_clock::now();
+        traceLockMs = std::chrono::duration<float, std::milli>(traceLocked - traceEntry).count();
         if (raw) rawReaderUsage_.rawArrived(std::get<imaging::RawFrameLease>(event.payload).get().generation);
         drainFullSizeStills();
         if (drops.images) realtime_.timing().recordDropped(drops.images);
@@ -433,8 +443,14 @@ void SessionEngine::consumeIngress(imaging::FrameIngressQueue::Event event, imag
         // Paused presentation still receives metadata. Retire completed image
         // leases on those events rather than depending on an idle ingress poll.
         realtime_.coordinator().releaseCompletedSlots(false);
-        if (raw)
+        if (drops.images)
+            video::StartTrace::get().add('d', video::StartRamp::monotonicNs(), float(drops.images));
+        if (raw) {
             realtime_.coordinator().onRawFrame(std::move(std::get<imaging::RawFrameLease>(event.payload)));
+            video::StartTrace::get().add(
+                'i', video::StartRamp::monotonicNs(), traceQueueMs, traceLockMs,
+                std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - traceLocked).count());
+        }
         else if (const auto* metadata = std::get_if<metadata::FrameMetadataSnapshot>(&event.payload))
             (void)realtime_.coordinator().submitMetadata(*metadata);
         else {

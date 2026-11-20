@@ -75,6 +75,7 @@ bool VideoOutput::start(JNIEnv* env, jobject javaSurface, uint32_t width, uint32
 bool VideoOutput::markStarted() noexcept {
     startedAtNs_ = monotonicNs();
     ramp_.begin(startedAtNs_);
+    StartTrace::get().begin(startedAtNs_);
     if (yuv_ && !feeder_.joinable()) {
         try {
             feeder_ = std::thread([this] { feederLoop(); });
@@ -271,7 +272,10 @@ VkFormat VideoOutput::preferredFormat(uint32_t bitDepth) const {
                : VK_FORMAT_R16G16B16A16_SFLOAT;
 }
 void VideoOutput::stop() noexcept {
-    if (swapchain_ || yuv_) ramp_.log("VIDEO_ENC_INPUT", true);  // a take shorter than the window
+    if (swapchain_ || yuv_) {
+        ramp_.log("VIDEO_ENC_INPUT", true);  // a take shorter than the window
+        StartTrace::get().flush();
+    }
     stopYuv();
     const VkDevice device = context_.device();
     if (device) {
@@ -316,6 +320,7 @@ bool VideoOutput::acquire(uint32_t frameSlot, uint32_t* imageIndex) {
         if (!got) {
             // No encoder buffer in hand: drop this frame now instead of waiting.
             yuvNoBuffer_.fetch_add(1, std::memory_order_relaxed);
+            StartTrace::get().add('m', rampNow, 0.0f);
             if (index == kYuvImages) ++yuvNoImage_; else ++yuvNoReady_;
             yuvCv_.notify_one();
             return false;
@@ -601,7 +606,13 @@ bool VideoOutput::dequeueEncoderImage(JNIEnv* env) {
     EncoderBuffer* buffer = nullptr;
     if (!clearException(env) && hardwareBuffer) {
         try {
+            const int64_t i0 = monotonicNs();
+            const size_t known = encoderBuffers_.size();
             buffer = importEncoderBuffer(AHardwareBuffer_fromHardwareBuffer(env, hardwareBuffer));
+            if (encoderBuffers_.size() != known) {
+                const int64_t i1 = monotonicNs();
+                StartTrace::get().add('b', i1, float(double(i1 - i0) / 1e6));
+            }
         } catch (const std::exception& error) {
             YLOG("VIDEO_YUV_IMPORT_FAIL %s", error.what());
         }
@@ -656,6 +667,7 @@ void VideoOutput::feederLoop() {
             const VkResult r = vkWaitForFences(device, 1, &fence, VK_TRUE, 2'000'000);
             const double waited = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - w0).count();
             yuvFenceMs_ += waited;
+            StartTrace::get().add('f', monotonicNs(), float(waited));
             if (waited > yuvFenceMaxMs_) yuvFenceMaxMs_ = waited;
             if (r == VK_SUCCESS) {
                 queueEncoderImage(env, index);
@@ -685,6 +697,7 @@ void VideoOutput::feederLoop() {
             const bool ok = dequeueEncoderImage(env);
             const double took = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - d0).count();
             yuvDequeueMs_ += took;
+            if (took > 2.0) StartTrace::get().add('q', monotonicNs(), float(took));
             if (took > yuvDequeueMaxMs_) yuvDequeueMaxMs_ = took;
             ++yuvDequeues_;
             lock.lock();
