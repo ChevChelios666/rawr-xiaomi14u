@@ -290,7 +290,6 @@ internal fun X14uCaptureLayout(
     val videoLockSettings by com.rawr.camera.video.VideoLockSettings.values.collectAsState()
     val faceSettings by com.rawr.camera.settings.model.FaceSettings.values.collectAsState()
     val videoLock = remember { X14uVideoLock() }
-    var videoHolding by remember { mutableStateOf(false) }
     val latestState by androidx.compose.runtime.rememberUpdatedState(state)
     LaunchedEffect(videoControls.recording) {
         if (!videoControls.recording && videoLock.active) videoLock.release(latestState, dispatch)
@@ -318,11 +317,9 @@ internal fun X14uCaptureLayout(
                         gripToggle()
                     } else if (!gripVideo.busy) {
                         gripHold[0]?.cancel()
-                        videoHolding = true
                         gripHold[0] = gripScope.launch {
                             kotlinx.coroutines.delay(gripLockSettings.holdMs.toLong())
                             gripHold[0] = null
-                            videoHolding = false
                             gripLock()
                         }
                     }
@@ -331,7 +328,6 @@ internal fun X14uCaptureLayout(
                     val pending = gripHold[0] ?: return@collect
                     pending.cancel()
                     gripHold[0] = null
-                    videoHolding = false
                     gripToggle()
                 }
                 else -> Unit
@@ -1287,25 +1283,6 @@ internal fun X14uCaptureLayout(
                         modifier = Modifier.fillMaxSize()
                     )
                 }
-                // Only once the press is clearly a hold (Nov 20: a tap to record flashed it for a split second).
-                var holdHintShown by remember { mutableStateOf(false) }
-                androidx.compose.runtime.LaunchedEffect(videoHolding) {
-                    holdHintShown = false
-                    if (videoHolding) {
-                        kotlinx.coroutines.delay(VIDEO_HOLD_HINT_DELAY_MS)
-                        holdHintShown = true
-                    }
-                }
-                if (isVideo && videoHolding && holdHintShown && !videoControls.recording) {
-                    Text(
-                        "Keep holding to record locked",
-                        fontFamily = X14uFont, fontSize = dpText(13f), color = Color.White,
-                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 64.dp)
-                            .uprightLayoutInLandscape(orientation)
-                            .background(Color.Black.copy(alpha = .55f), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 10.dp, vertical = 5.dp)
-                    )
-                }
                 if (isVideo && videoControls.recording) {
                     X14uRecordTimer(
                         video = videoControls,
@@ -1571,7 +1548,7 @@ internal fun X14uCaptureLayout(
                 pano = if (!pano) null else PanoShutter(panoShoot, if (panoSet.frames > 0) panoUndo else null, panoLocked),
                 burst = burst,
                 timed = if (timedReady || timedRun.running) TimedShutter(timedPress, timedRun.running) else null,
-                videoHold = if (videoLockSettings.enabled) VideoHold(videoLockSettings.holdMs, onVideoHoldLock) { videoHolding = it } else null,
+                videoHold = if (videoLockSettings.enabled) VideoHold(videoLockSettings.holdMs, onVideoHoldLock) {} else null,
                 sideAlpha = recordingDim
             )
             if (activePreset != null && plateBelow) {
@@ -3799,6 +3776,3 @@ private fun X14uModeRow(
         }
     }
 }
-
-// A tap to start recording lasts well under this; a hold to record locked shows its hint after it.
-private const val VIDEO_HOLD_HINT_DELAY_MS = 350L
