@@ -22,6 +22,7 @@ pc;
 
 // Focus: 14x14 luma (8x8 output + 3px halo) and 12x12 alphas for a radius-2 dilation, so peaking stays
 // visible when the viewfinder image is shown at about half size (X14U: 2048-wide preview on the screen).
+shared float rawTile[324];   // 18x18: lumaTile plus a 2px ring for the speck filter
 shared float lumaTile[196];
 shared float alphaTile[144];
 
@@ -112,9 +113,28 @@ void main() {
     uint lid = gl_LocalInvocationIndex;
     ivec2 origin = ivec2(gl_WorkGroupID.xy) * 8 - ivec2(3);
     // Fused pipeline needs display for false/shadow and focus luma.
+    for (uint i = lid; i < 324u; i += 64u) {
+        ivec2 q = ivec2(int(i % 18u), int(i / 18u));
+        rawTile[i] = lumaAt(origin - ivec2(2) + q);
+    }
+    barrier();
+    // Speck filter (X14U, Nov 20): a dot no bigger than 3x3 (a hot or dead photosite, small even after the
+    // viewfinder's demosaic and scaling) is pulled into the range of the ring 2 px around it, so peaking doesn't
+    // light up the sensor's defects in dark scenes. An edge or line crosses that ring, so it keeps its contrast.
     for (uint i = lid; i < 196u; i += 64u) {
-        ivec2 q = ivec2(int(i % 14u), int(i / 14u));
-        lumaTile[i] = lumaAt(origin + q);
+        int tx = int(i % 14u) + 2, ty = int(i / 14u) + 2;
+        float lo = 1.0, hi = 0.0;
+        for (int k = -2; k <= 2; k++) {
+            float a = rawTile[(ty - 2) * 18 + tx + k], b = rawTile[(ty + 2) * 18 + tx + k];
+            lo = min(lo, min(a, b));
+            hi = max(hi, max(a, b));
+        }
+        for (int k = -1; k <= 1; k++) {
+            float a = rawTile[(ty + k) * 18 + tx - 2], b = rawTile[(ty + k) * 18 + tx + 2];
+            lo = min(lo, min(a, b));
+            hi = max(hi, max(a, b));
+        }
+        lumaTile[i] = clamp(rawTile[ty * 18 + tx], lo, hi);
     }
     barrier();
     // 12x12 focus alphas (alpha (ax, ay) = luma (ax + 1, ay + 1)) for the radius-2 dilation.
