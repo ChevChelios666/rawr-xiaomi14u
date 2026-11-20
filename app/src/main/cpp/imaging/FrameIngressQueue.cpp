@@ -42,7 +42,7 @@ void FrameIngressQueue::enqueue(AcquiredRawFrame frame) {
         }
         if (generation_ == frame.generation) latestTimestamp_ = std::max(latestTimestamp_, frame.timestampNs);
         auto isImage = [](const Event& event) { return std::holds_alternative<RawFrameLease>(event.payload); };
-        if (std::count_if(queue_.begin(), queue_.end(), isImage) >= static_cast<ptrdiff_t>(kMaxIngressImages)) {
+        if (std::count_if(queue_.begin(), queue_.end(), isImage) >= static_cast<ptrdiff_t>(ingressImages())) {
             queue_.erase(std::find_if(queue_.begin(), queue_.end(), isImage));
             ++drops_.images;
         }
