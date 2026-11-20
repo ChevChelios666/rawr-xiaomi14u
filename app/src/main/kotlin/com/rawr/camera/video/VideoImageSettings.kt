@@ -38,17 +38,17 @@ data class VideoImageSettings(
  * X14U (Nov 20) real-time video profiles, from 4K30 / 1080p30 / 1080p60 takes on the phone: which of the video
  * processing features fit the frame time. The user's settings stay as set; a feature that doesn't fit the current
  * size and frame rate is silently left out (Settings says where each applies).
- * - 1080p 30 fps: highlight reconstruction (either method) and defringe
- * - 1080p 60 fps: highlight reconstruction only (with defringe the encoder dropped frames)
- * - 4K and Open Gate: neither (each alone dropped frames at 4K30; base processing is ~28 of 33 ms)
+ * - 1080p 30 fps: highlight reconstruction (either method), FCC and defringe
+ * - 1080p 60 fps: highlight reconstruction and FCC (with defringe the encoder dropped frames)
+ * - 4K and Open Gate: none (each alone dropped frames at 4K30; base processing is ~28 of 33 ms)
  * - denoise: never in video (~110 ms a frame even at 1080p)
  */
-data class VideoFeatureFit(val highlight: Boolean, val defringe: Boolean, val denoise: Boolean)
+data class VideoFeatureFit(val highlight: Boolean, val defringe: Boolean, val denoise: Boolean, val fcc: Boolean)
 
 fun videoFeatureFit(size: VideoCropSize, fps: Int): VideoFeatureFit = when {
-    size != VideoCropSize.HD -> VideoFeatureFit(highlight = false, defringe = false, denoise = false)
-    fps > 30 -> VideoFeatureFit(highlight = true, defringe = false, denoise = false)
-    else -> VideoFeatureFit(highlight = true, defringe = true, denoise = false)
+    size != VideoCropSize.HD -> VideoFeatureFit(highlight = false, defringe = false, denoise = false, fcc = false)
+    fps > 30 -> VideoFeatureFit(highlight = true, defringe = false, denoise = false, fcc = true)
+    else -> VideoFeatureFit(highlight = true, defringe = true, denoise = false, fcc = true)
 }
 
 fun SettingsValues.videoFeatureFit(): VideoFeatureFit =
@@ -66,7 +66,7 @@ fun SettingsValues.toVideoImageSettings(): VideoImageSettings {
         videoHighlightThreshold,
         videoHighlightCompression,
         // Video FCC is a single step when enabled.
-        if (videoFccEnabled) 1 else 0,
+        if (videoFccEnabled && fit.fcc) 1 else 0,
         if (videoDefringeEnabled && fit.defringe) videoDefringeStrength else 0f,
         if (videoDenoiseEnabled && fit.denoise) videoDenoiseStrength else 0f,
         videoDenoiseDetail,

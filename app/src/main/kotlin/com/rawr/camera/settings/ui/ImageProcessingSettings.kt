@@ -416,7 +416,7 @@ internal fun DemosaicGroup(state: SettingsUiState, dispatch: SettingsDispatch) {
     }
     SettingsGroup(
         title = "False color correction · Video",
-        description = "One correction step in video: fewer coloured specks on fine detail."
+        description = "One correction step in video: fewer coloured specks on fine detail. Video: 1080p only; at 4K it's too slow for real time."
     ) {
         SettingsSwitchRow(
             title = "Video false color correction",
