@@ -560,9 +560,9 @@ class SettingsModelTest {
     }
 
     @Test fun videoFeatureProfilesFollowSizeAndFrameRate() {
-        // X14U real-time profiles: 1080p30 highlight + FCC + defringe, 1080p60 highlight + FCC, 4K / Open Gate none.
+        // X14U real-time profiles: 1080p30 highlight + FCC + defringe, 1080p60 highlight, 4K / Open Gate none.
         assertEquals(VideoFeatureFit(true, true, false, true), videoFeatureFit(VideoCropSize.HD, 30))
-        assertEquals(VideoFeatureFit(true, false, false, true), videoFeatureFit(VideoCropSize.HD, 60))
+        assertEquals(VideoFeatureFit(true, false, false, false), videoFeatureFit(VideoCropSize.HD, 60))
         assertEquals(VideoFeatureFit(false, false, false, false), videoFeatureFit(VideoCropSize.UHD, 30))
         assertEquals(VideoFeatureFit(false, false, false, false), videoFeatureFit(VideoCropSize.OpenGate, 24))
     }

@@ -39,15 +39,17 @@ data class VideoImageSettings(
  * processing features fit the frame time. The user's settings stay as set; a feature that doesn't fit the current
  * size and frame rate is silently left out (Settings says where each applies).
  * - 1080p 30 fps: highlight reconstruction (either method), FCC and defringe
- * - 1080p 60 fps: highlight reconstruction and FCC (with defringe the encoder dropped frames)
- * - 4K and Open Gate: none (each alone dropped frames at 4K30; base processing is ~28 of 33 ms)
+ * - 1080p 60 fps: highlight reconstruction only (~13 of 16.7 ms with it; with defringe the encoder dropped frames;
+ *   FCC isn't measured at 60, so it stays off to keep a margin for a warm phone)
+ * - 4K and Open Gate: none (each alone dropped frames at 4K30; base processing is ~28 of 33 ms). 4K60 also skips DCP,
+ *   lens correction, horizon lock and stabilisation (native, VideoRecorder: it records through the fast path)
  * - denoise: never in video (~110 ms a frame even at 1080p)
  */
 data class VideoFeatureFit(val highlight: Boolean, val defringe: Boolean, val denoise: Boolean, val fcc: Boolean)
 
 fun videoFeatureFit(size: VideoCropSize, fps: Int): VideoFeatureFit = when {
     size != VideoCropSize.HD -> VideoFeatureFit(highlight = false, defringe = false, denoise = false, fcc = false)
-    fps > 30 -> VideoFeatureFit(highlight = true, defringe = false, denoise = false, fcc = true)
+    fps > 30 -> VideoFeatureFit(highlight = true, defringe = false, denoise = false, fcc = false)
     else -> VideoFeatureFit(highlight = true, defringe = true, denoise = false, fcc = true)
 }
 
