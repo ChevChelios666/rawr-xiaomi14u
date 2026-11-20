@@ -53,60 +53,39 @@ bool VideoOutput::start(JNIEnv* env, jobject javaSurface, uint32_t width, uint32
         return false;
     // X14U (Nov 20, utalpt's 17U path): `adb shell setprop debug.rawr.enc_yuv 1` feeds the encoder YUV (NV12/P010)
     // written by our GPU through an ImageWriter, so the encoder no longer converts every RGBA frame itself (4K30
-    // drops frames once the phone is warm). Unset or 0: the RGBA swapchain as before. Prepared here, started in
-    // markStarted() after the session swaps this output in (the feeder thread belongs to the live object).
-    if (propInt("debug.rawr.enc_yuv") == 1 && env->GetJavaVM(&vm_) == JNI_OK) {
-        yuvPendingSurface_ = env->NewGlobalRef(javaSurface);
-        yuvPendingBitDepth_ = bitDepth;
-        outputFormat_ = preferredFormat(bitDepth);
-        extent_ = {width, height};
-        swapchainMs_ = 0;
-        return yuvPendingSurface_ != nullptr;
+    // dropped frames once the phone was warm; with YUV none, Nov 20). All of the setup runs here, outside the session
+    // lock (it took 33-57 ms; inside the lock it made the camera drop a frame at record start); only the feeder
+    // thread starts in markStarted(), once this output is the session's live one. Falls back to RGBA if it can't.
+    if (propInt("debug.rawr.enc_yuv") == 1) {
+        const auto t0 = std::chrono::steady_clock::now();
+        try {
+            if (startYuv(env, javaSurface, width, height, bitDepth)) {
+                swapchainMs_ = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+                YLOG("VIDEO_YUV_START ok=1 ms=%.1f", swapchainMs_);
+                return true;
+            }
+        } catch (const std::exception& error) {
+            YLOG("VIDEO_YUV_OUTPUT fallback=rgba reason=%s", error.what());
+        }
+        stopYuv();
     }
     return startRgba(env, javaSurface, width, height, bitDepth);
 }
-JNIEnv* VideoOutput::currentEnv() noexcept {
-    JNIEnv* env = nullptr;
-    if (!vm_) return nullptr;
-    const jint got = vm_->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
-    if (got == JNI_OK) return env;
-    if (got == JNI_EDETACHED && vm_->AttachCurrentThread(&env, nullptr) == JNI_OK) return env;
-    return nullptr;
-}
 bool VideoOutput::markStarted() noexcept {
-    if (jobject surface = yuvPendingSurface_) {
-        yuvPendingSurface_ = nullptr;
-        const uint32_t width = extent_.width, height = extent_.height, bitDepth = yuvPendingBitDepth_;
-        const auto t0 = std::chrono::steady_clock::now();
-        bool ok = false;
-        JNIEnv* env = currentEnv();
-        if (env) {
-            try {
-                ok = startYuv(env, surface, width, height, bitDepth);
-            } catch (const std::exception& error) {
-                YLOG("VIDEO_YUV_OUTPUT fallback=rgba reason=%s", error.what());
-            }
-            if (!ok) {
-                stopYuv();
-                try {
-                    ok = startRgba(env, surface, width, height, bitDepth);
-                } catch (const std::exception& error) {
-                    YLOG("VIDEO_YUV_OUTPUT rgba fallback failed: %s", error.what());
-                    ok = false;
-                }
-            }
-            env->DeleteGlobalRef(surface);
-        }
-        swapchainMs_ = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
-        YLOG("VIDEO_YUV_START ok=%d yuv=%d ms=%.1f", ok ? 1 : 0, yuv_ ? 1 : 0, swapchainMs_);
-        if (!ok) return false;
-    }
     startedAtNs_ = monotonicNs();
     ramp_.begin(startedAtNs_);
+    if (yuv_ && !feeder_.joinable()) {
+        try {
+            feeder_ = std::thread([this] { feederLoop(); });
+        } catch (const std::exception& error) {
+            YLOG("VIDEO_YUV_FEEDER failed: %s", error.what());
+            return false;
+        }
+    }
     return true;
 }
 void VideoOutput::swap(VideoOutput& other) noexcept {
-    // Only outputs that are not live YUV (a fresh one from start(), or a stopped one) are exchanged.
+    // Only outputs without a running feeder thread are exchanged (a fresh one from start(), or a stopped one).
     std::swap(window_, other.window_);
     std::swap(surface_, other.surface_);
     std::swap(swapchain_, other.swapchain_);
@@ -122,9 +101,41 @@ void VideoOutput::swap(VideoOutput& other) noexcept {
     std::swap(rendered_, other.rendered_);
     std::swap(ramp_, other.ramp_);
     std::swap(acquireWaitNs_, other.acquireWaitNs_);
-    std::swap(yuvPendingSurface_, other.yuvPendingSurface_);
-    std::swap(yuvPendingBitDepth_, other.yuvPendingBitDepth_);
+    // YUV state prepared by startYuv() (the feeder thread is not running yet).
+    std::swap(yuv_, other.yuv_);
     std::swap(vm_, other.vm_);
+    std::swap(writer_, other.writer_);
+    std::swap(writerClass_, other.writerClass_);
+    std::swap(imageClass_, other.imageClass_);
+    std::swap(hardwareBufferClass_, other.hardwareBufferClass_);
+    std::swap(dequeue_, other.dequeue_);
+    std::swap(queue_, other.queue_);
+    std::swap(writerClose_, other.writerClose_);
+    std::swap(getHardwareBuffer_, other.getHardwareBuffer_);
+    std::swap(setTimestamp_, other.setTimestamp_);
+    std::swap(setDataSpace_, other.setDataSpace_);
+    std::swap(imageClose_, other.imageClose_);
+    std::swap(hardwareBufferClose_, other.hardwareBufferClose_);
+    std::swap(ownedImages_, other.ownedImages_);
+    std::swap(encoderBuffers_, other.encoderBuffers_);
+    std::swap(yuvFrames_, other.yuvFrames_);
+    std::swap(yuvFences_, other.yuvFences_);
+    std::swap(readyImages_, other.readyImages_);
+    std::swap(pendingImages_, other.pendingImages_);
+    std::swap(outstandingImages_, other.outstandingImages_);
+    std::swap(nextYuvIndex_, other.nextYuvIndex_);
+    std::swap(yuvStopping_, other.yuvStopping_);
+    const uint64_t noBuffer = yuvNoBuffer_.load(std::memory_order_relaxed);
+    yuvNoBuffer_.store(other.yuvNoBuffer_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    other.yuvNoBuffer_.store(noBuffer, std::memory_order_relaxed);
+    std::swap(yuvNoReady_, other.yuvNoReady_);
+    std::swap(yuvNoImage_, other.yuvNoImage_);
+    std::swap(yuvAcquires_, other.yuvAcquires_);
+    std::swap(packSetLayout_, other.packSetLayout_);
+    std::swap(packLayout_, other.packLayout_);
+    std::swap(packPipeline_, other.packPipeline_);
+    std::swap(packPool_, other.packPool_);
+    std::swap(packSets_, other.packSets_);
 }
 bool VideoOutput::startRgba(JNIEnv* env, jobject javaSurface, uint32_t width, uint32_t height, uint32_t bitDepth) {
     const auto startedAt = std::chrono::steady_clock::now();
@@ -260,10 +271,6 @@ VkFormat VideoOutput::preferredFormat(uint32_t bitDepth) const {
 }
 void VideoOutput::stop() noexcept {
     if (swapchain_ || yuv_) ramp_.log("VIDEO_ENC_INPUT", true);  // a take shorter than the window
-    if (yuvPendingSurface_) {
-        if (JNIEnv* env = currentEnv()) env->DeleteGlobalRef(yuvPendingSurface_);
-        yuvPendingSurface_ = nullptr;
-    }
     stopYuv();
     const VkDevice device = context_.device();
     if (device) {
@@ -515,8 +522,7 @@ bool VideoOutput::startYuv(JNIEnv* env, jobject surface, uint32_t width, uint32_
         ++outstandingImages_;
     }
     yuv_ = true;
-    startedAtNs_ = monotonicNs();
-    feeder_ = std::thread([this] { feederLoop(); });
+    startedAtNs_ = monotonicNs();  // the feeder thread starts in markStarted()
     YLOG("VIDEO_YUV_OUTPUT format=%s %ux%u images=%u writerImages=%u", bitDepth == 8 ? "nv12" : "p010", width,
          height, kYuvImages, kYuvWriterImages);
     return true;

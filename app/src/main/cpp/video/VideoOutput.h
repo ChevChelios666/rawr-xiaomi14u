@@ -30,13 +30,12 @@ class VideoOutput final {
     VideoOutput& operator=(const VideoOutput&) = delete;
     bool start(JNIEnv* env, jobject surface, uint32_t width, uint32_t height, uint32_t bitDepth);
     void stop() noexcept;
-    // Exchanges outputs with another of the same context (one built outside the session lock). A YUV output is only
-    // prepared by start() and goes live in markStarted(), after the exchange (its feeder thread is tied to `this`).
+    // Exchanges outputs with another of the same context (one built outside the session lock). A YUV output is fully
+    // set up by start(); its feeder thread (tied to `this`) starts in markStarted(), after the exchange.
     void swap(VideoOutput& other) noexcept;
-    // Recording starts now (frames captured earlier are not encoded). False if a prepared YUV output could not start
-    // and the RGBA fallback failed too.
+    // Recording starts now (frames captured earlier are not encoded). False if the YUV feeder thread can't start.
     bool markStarted() noexcept;
-    bool ready() const noexcept { return swapchain_ != VK_NULL_HANDLE || yuv_ || yuvPendingSurface_ != nullptr; }
+    bool ready() const noexcept { return swapchain_ != VK_NULL_HANDLE || yuv_; }
     // YUV mode: the encoder is fed P010/NV12 through an ImageWriter that the GPU
     // writes directly, so the platform never converts RGBA on the GPU.
     bool yuv() const noexcept { return yuv_; }
@@ -55,7 +54,6 @@ class VideoOutput final {
     const std::string& offeredFormats() const noexcept { return offeredFormats_; }
     const char* outputFormatName() const noexcept {
         if (!ready()) return "none";
-        if (yuvPendingSurface_) return "yuv-pending";
         if (yuv_) return outputFormat_ == VK_FORMAT_R8G8B8A8_UNORM ? "nv12" : "p010";
         if (outputFormat_ == VK_FORMAT_R8G8B8A8_UNORM) return "rgba8";
         return outputFormat_ == VK_FORMAT_A2B10G10R10_UNORM_PACK32 ? "rgb10a2" : "rgba16f";
@@ -92,10 +90,6 @@ class VideoOutput final {
     };
     bool startYuv(JNIEnv* env, jobject surface, uint32_t width, uint32_t height, uint32_t bitDepth);
     bool startRgba(JNIEnv* env, jobject surface, uint32_t width, uint32_t height, uint32_t bitDepth);
-    JNIEnv* currentEnv() noexcept;
-    // X14U: debug.rawr.enc_yuv 1 asks for YUV; start() keeps the Surface (global ref) and markStarted() starts it.
-    jobject yuvPendingSurface_ = nullptr;
-    uint32_t yuvPendingBitDepth_ = 0;
     void stopYuv() noexcept;
     void feederLoop();
     EncoderBuffer* importEncoderBuffer(AHardwareBuffer* ahb);
