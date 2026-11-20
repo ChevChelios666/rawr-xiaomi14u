@@ -122,7 +122,8 @@ bool VideoSession::start(std::unique_ptr<VideoOutput> built, uint32_t width, uin
         // The swapchain was built outside the lock; the old (stopped) one leaves with `built`.
         output_.swap(*built);
         built.reset();
-        output_.markStarted();
+        // A YUV output (debug.rawr.enc_yuv 1) starts here, on the live object; it falls back to RGBA if it can't.
+        if (!output_.markStarted()) throw std::runtime_error("video output start");
         const double swapchainMs = output_.swapchainMs();
         activeConfig_ = desiredConfig_;
         const auto [sourceWidth, sourceHeight] = videoCropSource();

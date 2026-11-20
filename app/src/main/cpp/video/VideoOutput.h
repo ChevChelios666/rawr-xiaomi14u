@@ -1,13 +1,22 @@
 #pragma once
+#include <android/hardware_buffer.h>
 #include <android/native_window.h>
 #include <jni.h>
 #include <vulkan/vulkan.h>
 
 #include <array>
+#include <atomic>
+#include <condition_variable>
+#include <deque>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include "imaging/FrameLimits.h"
+#include "rawr/vk/OwnedImage.h"
 #include "video/EncoderRamp.h"
 namespace rawrcam::vulkan {
 class VulkanContext;
@@ -21,11 +30,24 @@ class VideoOutput final {
     VideoOutput& operator=(const VideoOutput&) = delete;
     bool start(JNIEnv* env, jobject surface, uint32_t width, uint32_t height, uint32_t bitDepth);
     void stop() noexcept;
-    // Exchanges swapchains with another output of the same context (one built outside the session lock).
+    // Exchanges outputs with another of the same context (one built outside the session lock). A YUV output is only
+    // prepared by start() and goes live in markStarted(), after the exchange (its feeder thread is tied to `this`).
     void swap(VideoOutput& other) noexcept;
-    // Recording starts now (frames captured earlier are not encoded).
-    void markStarted() noexcept;
-    bool ready() const noexcept { return swapchain_ != VK_NULL_HANDLE; }
+    // Recording starts now (frames captured earlier are not encoded). False if a prepared YUV output could not start
+    // and the RGBA fallback failed too.
+    bool markStarted() noexcept;
+    bool ready() const noexcept { return swapchain_ != VK_NULL_HANDLE || yuv_ || yuvPendingSurface_ != nullptr; }
+    // YUV mode: the encoder is fed P010/NV12 through an ImageWriter that the GPU
+    // writes directly, so the platform never converts RGBA on the GPU.
+    bool yuv() const noexcept { return yuv_; }
+    // Layout the output images rest in between frames.
+    VkImageLayout restingLayout() const noexcept {
+        return yuv_ ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    }
+    // YUV mode: converts output image imageIndex into its encoder buffer. Recorded
+    // after the tonemap, with the image in GENERAL layout.
+    void recordYuvPack(VkCommandBuffer command, uint32_t imageIndex);
+    uint64_t yuvNoBufferDrops() const noexcept { return yuvNoBuffer_.load(std::memory_order_relaxed); }
     VkExtent2D extent() const noexcept { return extent_; }
     VkFormat format() const noexcept { return outputFormat_; }
     VkFormat preferredFormat(uint32_t bitDepth) const;
@@ -33,12 +55,15 @@ class VideoOutput final {
     const std::string& offeredFormats() const noexcept { return offeredFormats_; }
     const char* outputFormatName() const noexcept {
         if (!ready()) return "none";
+        if (yuvPendingSurface_) return "yuv-pending";
+        if (yuv_) return outputFormat_ == VK_FORMAT_R8G8B8A8_UNORM ? "nv12" : "p010";
         if (outputFormat_ == VK_FORMAT_R8G8B8A8_UNORM) return "rgba8";
         return outputFormat_ == VK_FORMAT_A2B10G10R10_UNORM_PACK32 ? "rgb10a2" : "rgba16f";
     }
     bool acquire(uint32_t frameSlot, uint32_t* imageIndex);
     uint32_t encoderImageCount() const noexcept { return static_cast<uint32_t>(images_.size()); }
-    VkSemaphore available(uint32_t frameSlot) const { return available_[frameSlot]; }
+    // VK_NULL_HANDLE in YUV mode: the output image is free when acquire() returns.
+    VkSemaphore available(uint32_t frameSlot) const { return yuv_ ? VK_NULL_HANDLE : available_[frameSlot]; }
     VkSemaphore rendered(uint32_t frameSlot) const { return rendered_[frameSlot]; }
     // presentTimeNs (CLOCK_MONOTONIC) becomes the encoded frame's PTS when the
     // driver supports display timing; 0 keeps the queue-time timestamp.
@@ -50,6 +75,68 @@ class VideoOutput final {
 
    private:
     friend class VideoRecorder;
+    struct EncoderBuffer {
+        VkBuffer buffer = VK_NULL_HANDLE;
+        VkDeviceMemory memory = VK_NULL_HANDLE;
+        uint32_t yOffsetWords = 0, yStrideWords = 0, cOffsetWords = 0, cStrideWords = 0, swapUV = 0;
+    };
+    struct YuvFrame {
+        jobject image = nullptr;  // global ref while dequeued
+        EncoderBuffer* buffer = nullptr;
+        int64_t timestampNs = 0;
+        bool inUse = false;
+    };
+    struct ReadyImage {
+        jobject image = nullptr;
+        EncoderBuffer* buffer = nullptr;
+    };
+    bool startYuv(JNIEnv* env, jobject surface, uint32_t width, uint32_t height, uint32_t bitDepth);
+    bool startRgba(JNIEnv* env, jobject surface, uint32_t width, uint32_t height, uint32_t bitDepth);
+    JNIEnv* currentEnv() noexcept;
+    // X14U: debug.rawr.enc_yuv 1 asks for YUV; start() keeps the Surface (global ref) and markStarted() starts it.
+    jobject yuvPendingSurface_ = nullptr;
+    uint32_t yuvPendingBitDepth_ = 0;
+    void stopYuv() noexcept;
+    void feederLoop();
+    EncoderBuffer* importEncoderBuffer(AHardwareBuffer* ahb);
+    bool dequeueEncoderImage(JNIEnv* env);
+    void queueEncoderImage(JNIEnv* env, uint32_t index);
+    // Headroom for a slow (warm) GPU: frames in flight plus buffers already in
+    // hand. 6 writer images ran dry at 4K60 (~60 drops per 12 s on a warm phone).
+    static constexpr uint32_t kYuvImages = 6;       // output images (GPU side)
+    static constexpr uint32_t kYuvWriterImages = 16;  // encoder buffers we may hold at once
+    static constexpr uint32_t kYuvReady = 4;        // encoder buffers kept dequeued ahead
+    bool yuv_ = false;
+    JavaVM* vm_ = nullptr;
+    jobject writer_ = nullptr;
+    jclass writerClass_ = nullptr, imageClass_ = nullptr, hardwareBufferClass_ = nullptr;
+    jmethodID dequeue_ = nullptr, queue_ = nullptr, writerClose_ = nullptr, getHardwareBuffer_ = nullptr,
+              setTimestamp_ = nullptr, setDataSpace_ = nullptr, imageClose_ = nullptr, hardwareBufferClose_ = nullptr;
+    std::vector<rawr::vk::OwnedImage> ownedImages_;  // internal output images
+    std::unordered_map<uint64_t, std::unique_ptr<EncoderBuffer>> encoderBuffers_;
+    std::array<YuvFrame, kYuvImages> yuvFrames_{};
+    std::array<VkFence, kYuvImages> yuvFences_{};
+    std::deque<ReadyImage> readyImages_;
+    std::deque<uint32_t> pendingImages_;
+    uint32_t outstandingImages_ = 0;
+    uint32_t nextYuvIndex_ = 0;
+    std::mutex yuvMutex_;
+    std::condition_variable yuvCv_;
+    bool yuvStopping_ = false;
+    std::thread feeder_;
+    std::atomic<uint64_t> yuvNoBuffer_{0};
+    // Why a frame found no encoder buffer: none dequeued yet (encoder holding
+    // them) or every GPU output image still in flight (GPU behind).
+    uint64_t yuvNoReady_ = 0, yuvNoImage_ = 0, yuvAcquires_ = 0;  // yuvMutex_
+    double yuvDequeueMs_ = 0, yuvDequeueMaxMs_ = 0, yuvFenceMs_ = 0, yuvFenceMaxMs_ = 0;  // feeder
+    uint64_t yuvDequeues_ = 0, yuvQueued_ = 0;  // feeder
+    double yuvWriterMs_ = 0, yuvWriterMaxMs_ = 0, yuvImportMs_ = 0, yuvImportMaxMs_ = 0;  // feeder
+    uint64_t yuvImports_ = 0;  // feeder
+    VkDescriptorSetLayout packSetLayout_ = VK_NULL_HANDLE;
+    VkPipelineLayout packLayout_ = VK_NULL_HANDLE;
+    VkPipeline packPipeline_ = VK_NULL_HANDLE;
+    VkDescriptorPool packPool_ = VK_NULL_HANDLE;
+    std::array<VkDescriptorSet, kYuvImages> packSets_{};
     static constexpr uint32_t kPreferredEncoderImages = 5;
     static constexpr uint64_t kEncoderAcquireWaitNs = 3'000'000;
     rawrcam::vulkan::VulkanContext& context_;
@@ -62,11 +149,11 @@ class VideoOutput final {
     double swapchainMs_ = 0;
     uint64_t acquireWaitNs_ = kEncoderAcquireWaitNs;  // debug.rawr.enc_wait_ms
     int64_t startedAtNs_ = 0;
+    StartRamp ramp_{};  // the take's first seconds, frames handed to the encoder (VIDEO_ENC_INPUT)
     std::vector<VkImage> images_;
     std::vector<VkImageView> views_;
     std::vector<bool> initialized_;
     std::array<VkSemaphore, rawrcam::imaging::kRealtimeFramesInFlight> available_{};
     std::array<VkSemaphore, rawrcam::imaging::kRealtimeFramesInFlight> rendered_{};
-    StartRamp ramp_{};  // the take's first seconds, frames handed to the encoder (VIDEO_ENC_INPUT)
 };
 }  // namespace rawrcam::video
