@@ -115,7 +115,9 @@ VideoProcessingResources::Prepared VideoProcessingResources::prepare(rawrcam::vu
     out.key = key;
     out.device = context.device();
     for (auto& image : out.monitor)
-        image = rawrcam::vulkan::createOwnedImage(context.physicalDevice(), context.device(), key.width, key.height,
+        image = rawrcam::vulkan::createOwnedImage(context.physicalDevice(), context.device(),
+                                                  videoMonitorExtent(key.width, key.height).width,
+                                                  videoMonitorExtent(key.width, key.height).height,
                                                   VK_FORMAT_R8G8B8A8_UNORM,
                                                   VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
     out.dummyMonitor = rawrcam::vulkan::createOwnedImage(context.physicalDevice(), context.device(), 1, 1,

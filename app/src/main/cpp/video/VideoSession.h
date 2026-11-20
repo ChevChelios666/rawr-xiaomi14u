@@ -91,6 +91,11 @@ class VideoSession final {
     void stop() noexcept;
     bool ready() const noexcept { return output_.ready(); }
     VkExtent2D extent() const noexcept { return output_.extent(); }
+    // The on-screen monitor's size (see videoMonitorExtent).
+    VkExtent2D monitorExtent() const noexcept {
+        const auto e = output_.extent();
+        return videoMonitorExtent(e.width, e.height);
+    }
     // VkFormat ids the encoder Surface offered at start(), for diagnostics.
     const std::string& offeredFormats() const noexcept { return output_.offeredFormats(); }
     const std::string& startTimingJson() const noexcept { return startTimingJson_; }
