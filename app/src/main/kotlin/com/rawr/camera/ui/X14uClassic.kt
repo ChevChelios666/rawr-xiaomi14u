@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.ImageShader
 import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -91,6 +92,19 @@ internal object ClassicColors {
 
 @Composable
 internal fun isClassicStyle(): Boolean = LocalControlSurfaceStyle.current.let { it == ControlSurfaceStyle.Classic || it == ControlSurfaceStyle.Bronze }
+
+/**
+ * X14U (Nov 20): the Classic/Bronze body (full-screen leather, brushed metal, colour-dodge sheens) drawn once into its
+ * own GPU layer and reused, instead of redrawn on every UI frame. While recording, the histogram, audio meter and timer
+ * redraw the UI many times a second; with Bronze 4K30 dropped about twice as many frames as with Minimal (the encoder
+ * shares the GPU). `adb shell setprop debug.rawr.classic_cache 0` draws it every frame as before (reopen the app).
+ */
+private val classicCacheOn: Boolean by lazy {
+    com.rawr.camera.integration.DebugProps.int("debug.rawr.classic_cache", 1) != 0
+}
+
+private fun Modifier.classicCached(): Modifier =
+    if (classicCacheOn) graphicsLayer(compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen) else this
 
 /** The textures, made on first use: brushed streaks (an overlay), leather grain, the knurl of the ruler window. */
 internal object ClassicTextures {
@@ -497,7 +511,7 @@ internal class ClassicBodyPlan(
 
 @Composable
 internal fun X14uClassicBody(plan: ClassicBodyPlan, modifier: Modifier) {
-    Box(modifier.drawBehind {
+    Box(modifier.classicCached().drawBehind {
         drawLeather(Offset.Zero, size)
         // The status bar stays black.
         drawRect(Color.Black, Offset.Zero, Size(size.width, plan.topBar.start))
@@ -562,7 +576,7 @@ internal fun X14uClassicBody(plan: ClassicBodyPlan, modifier: Modifier) {
  */
 @Composable
 internal fun X14uClassicGlass(plan: ClassicBodyPlan, modifier: Modifier) {
-    Box(modifier.drawBehind {
+    Box(modifier.classicCached().drawBehind {
         val p = plan.picture
         fun glass(range: ClosedFloatingPointRange<Float>, color: Color) {
             val top = maxOf(range.start, p.top)

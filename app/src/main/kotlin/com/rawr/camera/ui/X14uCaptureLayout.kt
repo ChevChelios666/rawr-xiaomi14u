@@ -1287,7 +1287,16 @@ internal fun X14uCaptureLayout(
                         modifier = Modifier.fillMaxSize()
                     )
                 }
-                if (isVideo && videoHolding && !videoControls.recording) {
+                // Only once the press is clearly a hold (Nov 20: a tap to record flashed it for a split second).
+                var holdHintShown by remember { mutableStateOf(false) }
+                androidx.compose.runtime.LaunchedEffect(videoHolding) {
+                    holdHintShown = false
+                    if (videoHolding) {
+                        kotlinx.coroutines.delay(VIDEO_HOLD_HINT_DELAY_MS)
+                        holdHintShown = true
+                    }
+                }
+                if (isVideo && videoHolding && holdHintShown && !videoControls.recording) {
                     Text(
                         "Keep holding to record locked",
                         fontFamily = X14uFont, fontSize = dpText(13f), color = Color.White,
@@ -3790,3 +3799,6 @@ private fun X14uModeRow(
         }
     }
 }
+
+// A tap to start recording lasts well under this; a hold to record locked shows its hint after it.
+private const val VIDEO_HOLD_HINT_DELAY_MS = 350L
