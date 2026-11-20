@@ -88,7 +88,11 @@ internal class CaptureSettingsSync(
         }
         syncSetting({ it.effectiveVideoBitDepth() }) { prewarmVideo() }
         syncSetting({ it.experimentalZeroCopyEnabled }) { previewCoordinator.setExperimentalZeroCopy(it) }
-        syncSetting({ it.experimentalMultiframeEnabled }) { previewCoordinator.setExperimentalMultiframeEnabled(it) }
+        // X14U (Nov 20): `adb shell setprop debug.rawr.video_mf_off 1` stops the HDR+ frame ring in Video (it copies
+        // every RAW frame for a burst video never takes); read on each settings change, so switch modes after setting it.
+        syncSetting({ it.experimentalMultiframeEnabled && !(it.isVideo && DebugProps.int("debug.rawr.video_mf_off") == 1) }) {
+            previewCoordinator.setExperimentalMultiframeEnabled(it)
+        }
         syncSetting({ it.persistentEngineEnabled }) { previewCoordinator.setPersistentEngineEnabled(it) }
         // Keyed on profile identity + LUT structure (tone normalized out):
         // native profile switches rebuild the tonemap engine, so tone-only

@@ -95,9 +95,11 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         settingsEditor.update { it.editThroughLens(perLens, DeviceLensDefaults.lenses, edit) }
     val cameraLocation = com.rawr.camera.location.CameraLocation.get(application)
     private val levelSensor = com.rawr.camera.integration.CaptureLevelSensor(application)
+    private val thermalLog = com.rawr.camera.integration.ThermalLog(application)
     val foreground = com.rawr.camera.integration.CaptureForeground { active ->
         cameraLocation.setForeground(active)
         levelSensor.setActive(active)
+        thermalLog.setActive(active)
     }
     fun videoImageSettings(): com.rawr.camera.video.VideoImageSettings = latestSettings.toVideoImageSettings()
     fun videoEncoderConfig(): com.rawr.camera.settings.model.VideoEncoderConfig = latestSettings.videoEncoder.sanitized()
@@ -1114,6 +1116,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         horizonSensor.close()
         stabilizerSensor.close()
         levelSensor.setActive(false)
+        thermalLog.setActive(false)
         recording.closeWhenIdle {
             stillCaptureCoordinator.closeWhenIdle {
                 controller.close()

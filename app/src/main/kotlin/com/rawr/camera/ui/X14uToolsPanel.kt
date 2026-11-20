@@ -26,7 +26,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -469,7 +468,9 @@ internal fun X14uAspectMask(aspect: PhotoAspect, modifier: Modifier) {
 private fun rememberLevelReading(): LevelReading? {
     val context = LocalContext.current
     var reading by remember { mutableStateOf<LevelReading?>(null) }
-    DisposableEffect(context) {
+    // Only while the capture screen is showing: Settings (another activity) on top pauses it (Nov 20: the level kept
+    // clicking behind Settings).
+    androidx.lifecycle.compose.LifecycleResumeEffect(context) {
         val manager = context.getSystemService(android.hardware.SensorManager::class.java)
         val sensor = manager?.getDefaultSensor(android.hardware.Sensor.TYPE_GRAVITY)
             ?: manager?.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER)
@@ -481,7 +482,10 @@ private fun rememberLevelReading(): LevelReading? {
             override fun onAccuracyChanged(sensor: android.hardware.Sensor?, accuracy: Int) = Unit
         }
         if (sensor != null) manager.registerListener(listener, sensor, android.hardware.SensorManager.SENSOR_DELAY_GAME)
-        onDispose { manager?.unregisterListener(listener) }
+        onPauseOrDispose {
+            manager?.unregisterListener(listener)
+            reading = null
+        }
     }
     return reading
 }
@@ -489,6 +493,8 @@ private fun rememberLevelReading(): LevelReading? {
 /** Up / down tilt: the horizon line moves this far per degree, up to [LEVEL_PITCH_MAX_DEG]. */
 private const val LEVEL_PITCH_DP_PER_DEG = 3f
 private const val LEVEL_PITCH_MAX_DEG = 20f
+private const val LEVEL_CLICK_HOLD_MS = 250L
+private const val LEVEL_CLICK_GAP_MS = 1000L
 
 /**
  * Horizon level (Nov 19, option A "floating horizon"). The line is the horizon: it turns with the phone's roll (amber,
@@ -504,10 +510,17 @@ internal fun X14uLevel(modifier: Modifier) {
     val flat = r.flat
     // The click: straight (horizon view) or flat (bubble view).
     val level = if (flat) r.tiltLevel else r.rollLevel
-    var wasLevel by remember { mutableStateOf(false) }
+    // One click once the phone has stayed straight for a moment, at most one per second: near the horizon/bubble
+    // change (60-75 degrees of tilt) the reading switches between roll and tilt and used to click on every switch.
+    var lastClickMs by remember { mutableStateOf(0L) }
     androidx.compose.runtime.LaunchedEffect(level) {
-        if (level && !wasLevel) haptics.selection()
-        wasLevel = level
+        if (!level) return@LaunchedEffect
+        kotlinx.coroutines.delay(LEVEL_CLICK_HOLD_MS)
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - lastClickMs >= LEVEL_CLICK_GAP_MS) {
+            haptics.selection()
+            lastClickMs = now
+        }
     }
     val amber = Color(0xFFE8A33A)
     val green = Color(0xFF5BD16A)
