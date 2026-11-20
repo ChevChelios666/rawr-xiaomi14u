@@ -454,7 +454,7 @@ internal fun DistortionSettings(state: SettingsUiState, dispatch: SettingsDispat
     val v = state.values
     SettingsPageContainer(testTag = SettingsTestTags.sectionRoot("Distortion")) {
         SettingsGroup(
-            description = "Straightens lens distortion where calibrated. Photo: viewfinder, stills and DNG. Video: recordings."
+            description = "Straightens lens distortion where calibrated. Photo: viewfinder, stills and DNG. Video: recordings, except 4K60."
         ) {
             PhotoVideoTargetSelector(
                 photoOn = v.distortionCorrectionEnabled,

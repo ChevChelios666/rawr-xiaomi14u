@@ -146,13 +146,15 @@ VideoProcessingResources::Prepared VideoProcessingResources::prepare(rawrcam::vu
         if (config.highlightEnabled && config.highlightMethod == 1u) stage->prepareColoropp();
     }
     out.tonemap = makeTonemap(context, key.outputFormat, renderLut);
-    // X14U (Nov 20) test switch, from utalpt 70181e7: `adb shell setprop debug.rawr.enc_fast 1` (then reopen the app)
-    // records frames that need no neighbourhood stage (no highlight reconstruction, denoise, FCC/defringe, DCP, lens
-    // correction, horizon lock or stabilisation) in one pass: quad demosaic + WB + a per-frame baked render LUT
-    // straight into the encoder's YUV buffer. Needs the YUV encoder input and a 1:1 quad demosaic. Unset: off.
+    // X14U (Nov 20), from utalpt 70181e7: the one-pass fast path (quad demosaic + WB + a per-frame baked render LUT
+    // straight into the encoder's YUV buffer). Prepared for every recording wider than 2560 px (it's how 4K60 records,
+    // see VideoRecorder) and for any size with `adb shell setprop debug.rawr.enc_fast 1` (then reopen the app), which
+    // also uses it at 30 fps. Needs the YUV encoder input and a 1:1 quad demosaic.
     {
         char fastProp[PROP_VALUE_MAX] = {};
-        const bool wanted = __system_property_get("debug.rawr.enc_fast", fastProp) > 0 && fastProp[0] == '1';
+        const bool forced = __system_property_get("debug.rawr.enc_fast", fastProp) > 0 && fastProp[0] == '1';
+        const bool wanted = forced || key.width > 2560u;
+        out.fastForced = forced;
         const bool fastTenBit = key.outputFormat == VK_FORMAT_A2B10G10R10_UNORM_PACK32;
         const bool fits = (fastTenBit || key.outputFormat == VK_FORMAT_R8G8B8A8_UNORM) &&
                           out.demosaic->sensorScale() == 1u &&
@@ -184,6 +186,7 @@ void VideoProcessingResources::install(Prepared&& prepared) {
     demosaic_ = std::move(prepared.demosaic);
     fastBake_ = std::move(prepared.fastBake);
     fast_ = std::move(prepared.fast);
+    fastForced_ = prepared.fastForced;
     post_ = std::move(prepared.post);
     for (uint32_t i = 0; i < monitor_.size(); ++i) {
         monitor_[i] = prepared.monitor[i];

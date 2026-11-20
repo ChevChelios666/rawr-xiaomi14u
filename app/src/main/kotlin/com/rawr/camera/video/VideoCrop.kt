@@ -72,12 +72,10 @@ data class VideoCrop(
     }
 
     /**
-     * 60 fps: 1080p (the 2x reduction is the one demosaic light enough, with the scopes on too). X14U test switch
-     * (Nov 20): `adb shell setprop debug.rawr.allow_4k60 1` also offers it at 4K, for utalpt's one-pass fast path
-     * (debug.rawr.enc_fast 1); the full path can't keep 60 at 4K. Only where the lens's RAW runs at 60, as before.
+     * 60 fps: 1080p, and 4K (X14U, Nov 20: through utalpt's one-pass fast path, 4 min at 4K60 without a drop; the
+     * features it can't do are left out there). Only where the lens's RAW stream runs at 60. Not Open Gate.
      */
-    fun allowsSixty(): Boolean = size == VideoCropSize.HD ||
-        (size == VideoCropSize.UHD && com.rawr.camera.integration.DebugProps.int("debug.rawr.allow_4k60") == 1)
+    fun allowsSixty(): Boolean = size == VideoCropSize.HD || size == VideoCropSize.UHD
 
     fun persistedId(): String = "crop2:${size.name}:$shape"
 

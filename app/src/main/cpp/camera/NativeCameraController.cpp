@@ -1,5 +1,6 @@
 #include "camera/ShotHandover.h"
 #include "camera/NativeCameraController.h"
+#include "video/VideoRate.h"
 #include "camera/FaceOptions.h"
 #include "camera/JavaCameraDriver.h"
 #include "capture/BurstLimits.h"
@@ -1676,6 +1677,7 @@ struct NativeCameraController::Impl final : CameraEventSink {
         const bool wasSixty = capable && cadencePolicy.videoMode() && cadencePolicy.videoFps() == 60;
         const bool sixty = capable && video && sanitizedFps == 60;
         cadencePolicy.setVideoMode(video, fps);
+        rawrcam::video::videoModeFps().store(video ? sanitizedFps : 0, std::memory_order_relaxed);
         control.videoMode = cadencePolicy.videoMode();
         control.videoPreviewFps = cadencePolicy.videoFps();
         if (enteringVideo) {

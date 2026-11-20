@@ -1,4 +1,5 @@
 #include "video/VideoRecorder.h"
+#include "video/VideoRate.h"
 
 #include <android/log.h>
 #include <android/native_window_jni.h>
@@ -127,12 +128,19 @@ void VideoRecorder::record(VkCommandBuffer command, uint32_t frameSlot, uint32_t
         }
         output_.initialized_[imageIndex] = true;
     };
-    // utalpt's fast path (debug.rawr.enc_fast 1, see VideoProcessingResources::prepare): RAW -> encoder YUV in one
-    // pass when no stage needs neighbouring pixels after the demosaic. Otherwise the full path below. The reason is
-    // logged once per take (VIDEO_FAST_PATH). The scopes don't update on fast-path frames.
+    // utalpt's fast path (see VideoProcessingResources::prepare): RAW -> encoder YUV in one pass. X14U profiles
+    // (Nov 20): 4K above 30 fps always records this way (the full path takes ~28 ms of a 16.7 ms frame), and the
+    // features it can't do are left out there: DCP, lens correction, horizon lock and stabilisation here; highlight
+    // reconstruction, FCC, defringe and denoise are already off at 4K (VideoImageSettings.kt). Below that it runs only
+    // with debug.rawr.enc_fast 1 and only for frames that need none of those. The reason is logged once per take
+    // (VIDEO_FAST_PATH). The scopes don't update on fast-path frames.
+    const bool fastRate =
+        rawrcam::video::videoModeFps().load(std::memory_order_relaxed) > 30 && output_.extent_.width > 2560u;
     const char* fastReason = nullptr;
     if (!resources_.fast_ || !resources_.fastBake_)
         fastReason = "unavailable";
+    else if (!fastRate && !resources_.fastForced_)
+        fastReason = "full_path_rate";
     else if (!output_.yuv() || imageIndex >= VideoOutput::kYuvImages || !output_.yuvFrames_[imageIndex].buffer)
         fastReason = "no_yuv";
     else if (activeConfig.highlightEnabled)
@@ -141,17 +149,17 @@ void VideoRecorder::record(VkCommandBuffer command, uint32_t frameSlot, uint32_t
         fastReason = "denoise";
     else if (resources_.processingKey_.fccSteps != 0u || resources_.processingKey_.defringeStrength > 0.0f)
         fastReason = "fcc_defringe";
-    else if (dcp)
+    else if (!fastRate && dcp)
         fastReason = "dcp";
-    else if (lensDistortion || lensMirror != 0u)
+    else if (!fastRate && (lensDistortion || lensMirror != 0u))
         fastReason = "geometry";
-    else if (rawrcam::geometry::horizonSampling().active ||
-             rawrcam::geometry::stabilizerEnabled().load(std::memory_order_relaxed))
+    else if (!fastRate && (rawrcam::geometry::horizonSampling().active ||
+                           rawrcam::geometry::stabilizerEnabled().load(std::memory_order_relaxed)))
         fastReason = "horizon_or_stabilise";
-    if (resources_.fast_ && !resources_.fastLogged_) {
+    if (!resources_.fastLogged_) {
         resources_.fastLogged_ = true;
-        __android_log_print(ANDROID_LOG_INFO, "RawrNativeVideo", "VIDEO_FAST_PATH active=%d reason=%s",
-                            fastReason ? 0 : 1, fastReason ? fastReason : "none");
+        __android_log_print(ANDROID_LOG_INFO, "RawrNativeVideo", "VIDEO_FAST_PATH active=%d reason=%s rate60=%d",
+                            fastReason ? 0 : 1, fastReason ? fastReason : "none", fastRate ? 1 : 0);
     }
     if (!fastReason) {
         tonemap::TonemapRecordInfo bakeTone{};
@@ -243,7 +251,8 @@ void VideoRecorder::record(VkCommandBuffer command, uint32_t frameSlot, uint32_t
                  activeConfig.highlightThreshold, activeConfig.highlightCompression,
                  std::max(params.aePostGain * std::exp2(params.exposureEV), 1.0e-6f), shading, rawFrame.cfa, denoise,
                  geometry, rawFrame.cameraToLinearSrgb.data());
-    if (dcp) {
+    // X14U profile: no DCP above 2560 px wide (4K30 dropped frames with it).
+    if (dcp && output_.extent_.width <= 2560u) {
         auto& processor = resources_.dcp_[frameSlot];
         if (!processor) processor = std::make_unique<develop::rendered::DcpRenderStage>(
             resources_.context_.physicalDevice(), resources_.context_.device());

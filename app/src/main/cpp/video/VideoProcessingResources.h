@@ -1,5 +1,4 @@
 #pragma once
-#include <sys/system_properties.h>
 #include <tonemap/TonemapEngine.h>
 
 #include <array>
@@ -18,25 +17,12 @@ namespace rawrcam::vulkan {
 class VulkanContext;
 }
 namespace rawrcam::video {
-// The on-screen monitor while recording. X14U (Nov 20) test switch: `adb shell setprop debug.rawr.half_monitor 1`
-// (then reopen the app) writes it at half resolution (one pixel per 2x2) for recordings wider than 2560 px (4K, Open
-// Gate), which saves GPU time in the 33 ms budget (utalpt/rawr f64ee9f); 1080p keeps a full-size one. Unset: full size
-// as before (reverted in 8ba5409 while hunting the 4K drops; back as a switch). Read once per app run, so the monitor
-// images and the frames recorded into them always agree. The tonemap shader follows the monitor's size.
-// The one-pass fast path (debug.rawr.enc_fast 1) always writes a half-size monitor (one pixel per 2x2 cell), so it
-// turns the half-size monitor on too (Nov 20: with a full-size one its picture filled only a quarter of the screen).
-inline bool videoHalfMonitorEnabled() noexcept {
-    static const bool enabled = [] {
-        const auto on = [](const char* name) {
-            char value[PROP_VALUE_MAX] = {};
-            return __system_property_get(name, value) > 0 && value[0] == '1';
-        };
-        return on("debug.rawr.half_monitor") || on("debug.rawr.enc_fast");
-    }();
-    return enabled;
-}
+// The on-screen monitor while recording: half resolution (one pixel per 2x2) above 2560 px wide (4K, Open Gate), as in
+// utalpt/rawr f64ee9f. It saves GPU time at 4K30, and the one-pass fast path that records 4K60 always writes it at that
+// size (with a full-size one its picture filled a quarter of the screen, Nov 20). 1080p keeps a full-size monitor. The
+// tonemap shader follows the monitor's size.
 inline VkExtent2D videoMonitorExtent(uint32_t width, uint32_t height) noexcept {
-    if (width <= 2560u || !videoHalfMonitorEnabled()) return {width, height};
+    if (width <= 2560u) return {width, height};
     return {(width + 1u) / 2u, (height + 1u) / 2u};
 }
 class VideoProcessingResources final {
@@ -72,6 +58,7 @@ class VideoProcessingResources final {
         // utalpt's one-pass fast path (RAW -> encoder YUV) and the RGBA16F tonemap that bakes its LUT.
         std::unique_ptr<tonemap::TonemapEngine> fastBake;
         std::unique_ptr<VideoFastPath> fast;
+        bool fastForced = false;  // debug.rawr.enc_fast 1: fast path at any frame rate
         std::array<std::unique_ptr<rawr::post::PostDemosaicProcessor>, rawrcam::imaging::kRealtimeFramesInFlight>
             post{};
         std::array<rawrcam::vulkan::OwnedImage, rawrcam::imaging::kRealtimeFramesInFlight> monitor{};
@@ -106,6 +93,7 @@ class VideoProcessingResources final {
     std::unique_ptr<tonemap::TonemapEngine> fastBake_;
     std::unique_ptr<VideoFastPath> fast_;
     bool fastLogged_ = false;
+    bool fastForced_ = false;
     std::array<std::unique_ptr<rawr::post::PostDemosaicProcessor>, rawrcam::imaging::kRealtimeFramesInFlight> post_{};
     std::array<std::unique_ptr<develop::rendered::DcpRenderStage>, rawrcam::imaging::kRealtimeFramesInFlight> dcp_{};
     std::array<rawrcam::vulkan::OwnedImage, rawrcam::imaging::kRealtimeFramesInFlight> monitor_{};

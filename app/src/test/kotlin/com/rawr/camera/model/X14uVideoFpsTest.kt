@@ -12,22 +12,22 @@ import com.rawr.camera.video.VideoResolutionMode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-/** X14U: 60 fps is offered for small, light crops only (the former 1080p among them). */
+/** X14U: 60 fps at 1080p and 4K (4K60 through the one-pass fast path), not Open Gate. */
 class X14uVideoFpsTest {
     @Test
-    fun sixtyOnlyForSmallCrops() {
+    fun sixtyAt1080pAnd4kOnly() {
         val hd = CaptureUiState(capabilities = CaptureFixtures.baseline().copy(videoSixtyFps = true),
             videoCrop = VideoCrop.Default, videoFps = 30)
         assertEquals(60, CaptureReducer.reduce(hd, CycleVideoFps).videoFps)
         val uhd = hd.copy(videoCrop = VideoCrop.fromLegacy(VideoResolutionMode.UHD4K))
-        assertEquals(24, CaptureReducer.reduce(uhd, CycleVideoFps).videoFps)
+        assertEquals(60, CaptureReducer.reduce(uhd, CycleVideoFps).videoFps)
         // A lens whose RAW stream can't run at 60 (ultra-wide, teles, front, ISZ) skips it.
         val slow = hd.copy(capabilities = hd.capabilities.copy(videoSixtyFps = false))
         assertEquals(24, CaptureReducer.reduce(slow, CycleVideoFps).videoFps)
         val sixty = hd.copy(videoFps = 60)
         val next = CaptureReducer.reduce(sixty, CycleVideoResolution)
         assertEquals(VideoCrop.fromLegacy(VideoResolutionMode.UHD4K), next.videoCrop)
-        assertEquals(30, next.videoFps)
+        assertEquals(60, next.videoFps)
         val openGate = CaptureReducer.reduce(sixty, SetVideoCrop(VideoCrop(VideoCropSize.OpenGate)))
         assertEquals(30, openGate.videoFps)
     }
