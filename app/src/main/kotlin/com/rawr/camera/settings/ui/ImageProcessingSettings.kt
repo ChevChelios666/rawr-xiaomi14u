@@ -19,7 +19,7 @@ internal fun HighlightReconstructionSettings(state: SettingsUiState, dispatch: S
 @Composable
 internal fun HighlightReconstructionGroup(state: SettingsUiState, dispatch: SettingsDispatch) {
     val v = state.values
-    SettingsGroup(description = "Rebuilds clipped colour so blown areas stay detailed or white, not magenta. Photo and Video each use their own method.") {
+    SettingsGroup(description = "Rebuilds clipped colour so blown areas stay detailed or white, not magenta. Photo and Video each use their own method. Video: 1080p only; at 4K it's too slow for real time.") {
         PhotoVideoTargetSelector(
             photoOn = v.photoHighlightEnabled,
             videoOn = v.videoHighlightEnabled,
@@ -470,7 +470,7 @@ internal fun DistortionSettings(state: SettingsUiState, dispatch: SettingsDispat
 internal fun DefringeGroup(state: SettingsUiState, dispatch: SettingsDispatch) {
     val v = state.values
     SettingsGroup(
-        description = "Removes purple and blue fringes along bright edges. Strength: how much."
+        description = "Removes purple and blue fringes along bright edges. Strength: how much. Video: 1080p at 30 fps only; elsewhere too slow for real time."
     ) {
         PhotoVideoTargetSelector(
             photoOn = v.photoDefringeEnabled,

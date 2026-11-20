@@ -11,6 +11,7 @@
 
 #include "camera/CameraCallbackLifetime.h"
 #include "imaging/FrameIngressQueue.h"
+#include "imaging/FrameLimits.h"
 #include "imaging/FramePairer.h"
 #include "support/JoinGuard.h"
 #include "vulkan/DeviceObjects.h"
@@ -120,23 +121,27 @@ int main() {
             if (std::holds_alternative<imaging::RawFrameLease>(event.payload)) ++consumedImages;
             if (std::holds_alternative<metadata::FrameMetadataSnapshot>(event.payload)) ++consumedMetadata;
         });
-    int first = newFd();
-    queue.enqueue(frame(2, first, 100, 10));
-    int second = newFd();
-    queue.enqueue(frame(3, second, 200, 10));
-    assert(closed(first) && imagesDeleted == 2);
+    // The queue holds imaging::ingressImages() waiting images (X14U: 3; upstream 1); one more evicts the oldest.
+    const int depth = int(imaging::ingressImages());
+    std::vector<int> held;
+    for (int i = 0; i <= depth; ++i) {
+        held.push_back(newFd());
+        queue.enqueue(frame(2 + i, held.back(), uint64_t(100 * (i + 1)), 10));
+    }
+    assert(closed(held[0]) && imagesDeleted == 2);
     int stale = newFd();
-    queue.enqueue(frame(4, stale, 999, 9));
-    assert(closed(second) && queue.latestTimestamp(10) == 200 && queue.latestTimestamp(9) == 0);
+    queue.enqueue(frame(2 + depth + 1, stale, 999, 9));
+    assert(closed(held[1]) && queue.latestTimestamp(10) == uint64_t(100 * (depth + 1)) &&
+           queue.latestTimestamp(9) == 0);
     for (int i = 0; i < 9; ++i) queue.enqueue(metadata::FrameMetadataSnapshot{});
     queue.start();
     queue.stop();
-    assert(consumedImages == 1 && consumedMetadata == 8);
+    assert(consumedImages == unsigned(depth) && consumedMetadata == 8);
     assert(observed.images == 2 && observed.metadata == 1);
-    assert(imagesDeleted == 4 && closed(stale));
+    assert(imagesDeleted == 3 + depth && closed(stale));
     int rejected = newFd();
-    queue.enqueue(frame(5, rejected, 300, 10));
-    assert(closed(rejected) && imagesDeleted == 5);
+    queue.enqueue(frame(2 + depth + 2, rejected, 300, 10));
+    assert(closed(rejected) && imagesDeleted == 4 + depth);
     assert(!queue.enqueue(metadata::FrameMetadataSnapshot{}));
     // Splitting a lease: the image moves out, the fence stays and closes on replacement.
     int splitFd = newFd();

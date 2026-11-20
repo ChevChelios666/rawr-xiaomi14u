@@ -21,6 +21,9 @@ import com.rawr.camera.settings.model.FilmSimSection
 import com.rawr.camera.settings.model.SettingsDestination
 import com.rawr.camera.settings.ui.numericStepIndex
 import com.rawr.camera.video.toVideoImageSettings
+import com.rawr.camera.video.VideoCropSize
+import com.rawr.camera.video.videoFeatureFit
+import com.rawr.camera.video.VideoFeatureFit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -549,9 +552,19 @@ class SettingsModelTest {
         video = controller.state.value.values.toVideoImageSettings()
         assertTrue(video.highlightEnabled)
         assertEquals(1.5f, video.highlightThreshold)
-        assertEquals(3f, video.waveletDenoiseStrength)
+        // X14U: denoise never runs in video (too slow for real time); the setting is kept.
+        assertEquals(0f, video.waveletDenoiseStrength)
+        assertEquals(3f, controller.state.value.values.videoDenoiseStrength)
         assertEquals(0.6f, video.waveletDenoiseLuma)
         assertEquals(5, video.waveletDenoiseScales)
+    }
+
+    @Test fun videoFeatureProfilesFollowSizeAndFrameRate() {
+        // X14U real-time profiles: 1080p30 highlight + defringe, 1080p60 highlight, 4K / Open Gate neither.
+        assertEquals(VideoFeatureFit(true, true, false), videoFeatureFit(VideoCropSize.HD, 30))
+        assertEquals(VideoFeatureFit(true, false, false), videoFeatureFit(VideoCropSize.HD, 60))
+        assertEquals(VideoFeatureFit(false, false, false), videoFeatureFit(VideoCropSize.UHD, 30))
+        assertEquals(VideoFeatureFit(false, false, false), videoFeatureFit(VideoCropSize.OpenGate, 24))
     }
 
     @Test fun waveletLumaAndScalesClampAndReachNativeSpec() {

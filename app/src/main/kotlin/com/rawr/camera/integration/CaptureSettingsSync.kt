@@ -6,6 +6,7 @@ import com.rawr.camera.architecture.SyncToneControls
 import com.rawr.camera.model.CaptureMode
 import com.rawr.camera.settings.model.*
 import com.rawr.camera.video.toVideoImageSettings
+import com.rawr.camera.video.videoFeatureFit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -78,7 +79,9 @@ internal class CaptureSettingsSync(
         // Idle video uses RawPreview until recording supplies the monitor
         // image. Match its recovery switch to the recorder, including when
         // entering/leaving Video; photo recovery can alter LOG highlights.
-        syncSetting({ if (it.isVideo) it.videoHighlightEnabled else it.photoHighlightEnabled }) {
+        syncSetting({
+            if (it.isVideo) it.videoHighlightEnabled && it.videoFeatureFit().highlight else it.photoHighlightEnabled
+        }) {
             previewCoordinator.setHighlightReconstructionEnabled(it)
         }
         syncSetting({ it.toVideoImageSettings() }) {
