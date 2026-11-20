@@ -2,6 +2,7 @@
 
 #include <android/log.h>
 #include <android/native_window_jni.h>
+#include <sys/system_properties.h>
 #include <vulkan/vulkan_android.h>
 
 #include <algorithm>
@@ -102,6 +103,7 @@ void VideoProcessingResources::beginRecording() {
     monitorPending_.fill(false);
     monitorSumMs_ = 0.0;
     monitorSamples_ = 0;
+    fastLogged_ = false;
     stagePending_.fill(false);
     stageSumMs_.fill(0.0);
     stageSamples_ = 0;
@@ -144,6 +146,34 @@ VideoProcessingResources::Prepared VideoProcessingResources::prepare(rawrcam::vu
         if (config.highlightEnabled && config.highlightMethod == 1u) stage->prepareColoropp();
     }
     out.tonemap = makeTonemap(context, key.outputFormat, renderLut);
+    // X14U (Nov 20) test switch, from utalpt 70181e7: `adb shell setprop debug.rawr.enc_fast 1` (then reopen the app)
+    // records frames that need no neighbourhood stage (no highlight reconstruction, denoise, FCC/defringe, DCP, lens
+    // correction, horizon lock or stabilisation) in one pass: quad demosaic + WB + a per-frame baked render LUT
+    // straight into the encoder's YUV buffer. Needs the YUV encoder input and a 1:1 quad demosaic. Unset: off.
+    {
+        char fastProp[PROP_VALUE_MAX] = {};
+        const bool wanted = __system_property_get("debug.rawr.enc_fast", fastProp) > 0 && fastProp[0] == '1';
+        const bool fastTenBit = key.outputFormat == VK_FORMAT_A2B10G10R10_UNORM_PACK32;
+        const bool fits = (fastTenBit || key.outputFormat == VK_FORMAT_R8G8B8A8_UNORM) &&
+                          out.demosaic->sensorScale() == 1u &&
+                          std::string(out.demosaic->method()) == "quad_guided_chroma";
+        if (wanted && !fits)
+            __android_log_print(ANDROID_LOG_INFO, "RawrNativeVideo",
+                                "VIDEO_FAST_PATH unavailable: demosaic=%s scale=%u format=%d", out.demosaic->method(),
+                                out.demosaic->sensorScale(), int(key.outputFormat));
+        if (wanted && fits) {
+            try {
+                out.fastBake = makeTonemap(context, VK_FORMAT_R16G16B16A16_SFLOAT, renderLut);
+                out.fast = std::make_unique<VideoFastPath>(context.physicalDevice(), context.device(), key.width,
+                                                           key.height, fastTenBit);
+            } catch (const std::exception& error) {
+                __android_log_print(ANDROID_LOG_WARN, "RawrNativeVideo", "VIDEO_FAST_PATH unavailable: %s",
+                                    error.what());
+                out.fast.reset();
+                out.fastBake.reset();
+            }
+        }
+    }
     return out;
 }
 void VideoProcessingResources::install(Prepared&& prepared) {
@@ -152,6 +182,8 @@ void VideoProcessingResources::install(Prepared&& prepared) {
     processingKey_ = prepared.key;
     tonemap_ = std::move(prepared.tonemap);
     demosaic_ = std::move(prepared.demosaic);
+    fastBake_ = std::move(prepared.fastBake);
+    fast_ = std::move(prepared.fast);
     post_ = std::move(prepared.post);
     for (uint32_t i = 0; i < monitor_.size(); ++i) {
         monitor_[i] = prepared.monitor[i];
@@ -173,6 +205,8 @@ void VideoProcessingResources::release() noexcept {
     if (device && tonemap_) (void)context_.waitIdle();
     for (auto& stage : dcp_) stage.reset();
     tonemap_.reset();
+    fast_.reset();
+    fastBake_.reset();
     for (auto& stage : post_) stage.reset();
     demosaic_.reset();
     if (device) {
@@ -194,6 +228,7 @@ void VideoProcessingResources::updateRenderLut(const tonemap::lut::LutChain* ren
     if (!tonemap_) return;
     if (recording) check(context_.waitIdle(), "video LUT wait");
     tonemap_ = makeTonemap(context_, processingKey_.outputFormat, renderLut);
+    if (fastBake_) fastBake_ = makeTonemap(context_, VK_FORMAT_R16G16B16A16_SFLOAT, renderLut);
 }
 void VideoProcessingResources::collectStageTiming(uint32_t frameSlot) {
     if (!stagePending_[frameSlot]) return;
