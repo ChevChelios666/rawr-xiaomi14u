@@ -329,6 +329,8 @@ class RawPreviewCoordinator(application: Application) : AutoCloseable {
     /** X14U video crop: the sensor window recordings use (0x0 = the original size rule). */
     fun setVideoCropSource(width: Int, height: Int) = native.setVideoCropSource(width, height)
     fun setStabilizer(enabled: Boolean, focalNorm: Float) = native.setStabilizer(enabled, focalNorm)
+
+    fun setVideoProfileDcp(on: Boolean) = native.setVideoProfileDcp(on)
     fun setCarryWhiteBalance(on: Boolean) = native.setCarryWhiteBalance(on)
     fun setFaceOptions(focus: Boolean, exposure: Boolean) = native.setFaceOptions(focus, exposure)
     fun setViewfinderHold(on: Boolean) = native.setViewfinderHold(on)

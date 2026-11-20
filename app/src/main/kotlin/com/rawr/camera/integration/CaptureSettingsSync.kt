@@ -6,7 +6,8 @@ import com.rawr.camera.architecture.SyncToneControls
 import com.rawr.camera.model.CaptureMode
 import com.rawr.camera.settings.model.*
 import com.rawr.camera.video.toVideoImageSettings
-import com.rawr.camera.video.videoFeatureFit
+import com.rawr.camera.video.VideoProfileFeature
+import com.rawr.camera.video.videoProfileAllows
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -73,17 +74,21 @@ internal class CaptureSettingsSync(
         syncSetting({ it.persistZslRingEnabled }) { previewCoordinator.setPersistZslRingEnabled(it) }
         syncSetting({ it.photoLensShadingEnabled }) { previewCoordinator.setLensShadingCorrectionEnabled(it) }
         // The viewfinder frames what the current mode saves.
-        syncSetting({ if (it.isVideo) it.videoDistortionCorrectionEnabled else it.distortionCorrectionEnabled }) {
+        syncSetting({
+            if (it.isVideo) it.videoDistortionCorrectionEnabled && it.videoProfileAllows(VideoProfileFeature.LensCorrection)
+            else it.distortionCorrectionEnabled
+        }) {
             previewCoordinator.setDistortionCorrectionEnabled(it)
         }
         // Idle video uses RawPreview until recording supplies the monitor
         // image. Match its recovery switch to the recorder, including when
         // entering/leaving Video; photo recovery can alter LOG highlights.
         syncSetting({
-            if (it.isVideo) it.videoHighlightEnabled && it.videoFeatureFit().highlight else it.photoHighlightEnabled
+            if (it.isVideo) it.videoHighlightEnabled && it.videoProfileAllows(VideoProfileFeature.Highlight) else it.photoHighlightEnabled
         }) {
             previewCoordinator.setHighlightReconstructionEnabled(it)
         }
+        syncSetting({ it.videoProfileAllows(VideoProfileFeature.Dcp) }) { previewCoordinator.setVideoProfileDcp(it) }
         syncSetting({ it.toVideoImageSettings() }) {
             previewCoordinator.setVideoImageSettings(it)
             // FCC and defringe are part of the prewarmed pipeline.

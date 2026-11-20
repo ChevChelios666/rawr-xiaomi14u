@@ -1,5 +1,6 @@
 #include "geometry/HorizonLock.h"
 #include "geometry/Stabilizer.h"
+#include "video/VideoRate.h"
 #include "camera/FaceOptions.h"
 #include "camera/ShotHandover.h"
 #include "encoding/OutputAspect.h"
@@ -231,6 +232,12 @@ extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreview
         rawrcam::geometry::stabilizerTrack().clear();
     if (std::isfinite(focalNorm) && focalNorm > 0.05f)
         rawrcam::geometry::stabilizerFocalNorm().store(float(focalNorm), std::memory_order_relaxed);
+}
+
+// X14U (Nov 20): the real-time profile's DCP switch for the current video mode.
+extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_setVideoProfileDcp(JNIEnv*, jobject,
+                                                                                                          jboolean on) {
+    rawrcam::video::videoProfileDcp().store(on == JNI_TRUE, std::memory_order_relaxed);
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_rawr_camera_integration_NativePreviewEngine_pushStabilizerSample(

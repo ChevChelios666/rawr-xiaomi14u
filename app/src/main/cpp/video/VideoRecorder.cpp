@@ -128,14 +128,14 @@ void VideoRecorder::record(VkCommandBuffer command, uint32_t frameSlot, uint32_t
         }
         output_.initialized_[imageIndex] = true;
     };
-    // utalpt's fast path (see VideoProcessingResources::prepare): RAW -> encoder YUV in one pass. X14U profiles
-    // (Nov 20): 4K above 30 fps always records this way (the full path takes ~28 ms of a 16.7 ms frame), and the
-    // features it can't do are left out there: DCP, lens correction, horizon lock and stabilisation here; highlight
-    // reconstruction, FCC, defringe and denoise are already off at 4K (VideoImageSettings.kt). Below that it runs only
-    // with debug.rawr.enc_fast 1 and only for frames that need none of those. The reason is logged once per take
-    // (VIDEO_FAST_PATH). The scopes don't update on fast-path frames.
+    // utalpt's fast path (see VideoProcessingResources::prepare): RAW -> encoder YUV in one pass. 4K above 30 fps
+    // always records this way (the full path takes ~28 ms of a 16.7 ms frame) while its real-time profile has every
+    // feature off (Settings → Video Encoder → Real-time profiles; switching one on there sends 4K60 through the full
+    // path, to test). Below that it runs only with debug.rawr.enc_fast 1 and only for frames that need none of them.
+    // The reason is logged once per take (VIDEO_FAST_PATH). The scopes don't update on fast-path frames.
     const bool fastRate =
         rawrcam::video::videoModeFps().load(std::memory_order_relaxed) > 30 && output_.extent_.width > 2560u;
+    const bool dcpOn = dcp && rawrcam::video::videoProfileDcp().load(std::memory_order_relaxed);
     const char* fastReason = nullptr;
     if (!resources_.fast_ || !resources_.fastBake_)
         fastReason = "unavailable";
@@ -149,12 +149,13 @@ void VideoRecorder::record(VkCommandBuffer command, uint32_t frameSlot, uint32_t
         fastReason = "denoise";
     else if (resources_.processingKey_.fccSteps != 0u || resources_.processingKey_.defringeStrength > 0.0f)
         fastReason = "fcc_defringe";
-    else if (!fastRate && dcp)
+    else if (dcpOn)
         fastReason = "dcp";
-    else if (!fastRate && (lensDistortion || lensMirror != 0u))
+    // The fast path can't mirror; at 4K60 a front lens records unmirrored rather than through the full path.
+    else if (lensDistortion || (!fastRate && lensMirror != 0u))
         fastReason = "geometry";
-    else if (!fastRate && (rawrcam::geometry::horizonSampling().active ||
-                           rawrcam::geometry::stabilizerEnabled().load(std::memory_order_relaxed)))
+    else if (rawrcam::geometry::horizonSampling().active ||
+             rawrcam::geometry::stabilizerEnabled().load(std::memory_order_relaxed))
         fastReason = "horizon_or_stabilise";
     if (!resources_.fastLogged_) {
         resources_.fastLogged_ = true;
@@ -251,8 +252,8 @@ void VideoRecorder::record(VkCommandBuffer command, uint32_t frameSlot, uint32_t
                  activeConfig.highlightThreshold, activeConfig.highlightCompression,
                  std::max(params.aePostGain * std::exp2(params.exposureEV), 1.0e-6f), shading, rawFrame.cfa, denoise,
                  geometry, rawFrame.cameraToLinearSrgb.data());
-    // X14U profile: no DCP above 2560 px wide (4K30 dropped frames with it).
-    if (dcp && output_.extent_.width <= 2560u) {
+    // X14U: DCP only where the real-time profile allows it.
+    if (dcpOn) {
         auto& processor = resources_.dcp_[frameSlot];
         if (!processor) processor = std::make_unique<develop::rendered::DcpRenderStage>(
             resources_.context_.physicalDevice(), resources_.context_.device());

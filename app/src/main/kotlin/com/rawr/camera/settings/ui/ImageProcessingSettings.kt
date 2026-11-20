@@ -19,7 +19,7 @@ internal fun HighlightReconstructionSettings(state: SettingsUiState, dispatch: S
 @Composable
 internal fun HighlightReconstructionGroup(state: SettingsUiState, dispatch: SettingsDispatch) {
     val v = state.values
-    SettingsGroup(description = "Rebuilds clipped colour so blown areas stay detailed or white, not magenta. Photo and Video each use their own method. Video: 1080p only (30 and 60 fps); at 4K it's too slow for real time.") {
+    SettingsGroup(description = "Rebuilds clipped colour so blown areas stay detailed or white, not magenta. Photo and Video each use their own method. Video: per mode in Video Encoder → Real-time profiles.") {
         PhotoVideoTargetSelector(
             photoOn = v.photoHighlightEnabled,
             videoOn = v.videoHighlightEnabled,
@@ -416,7 +416,7 @@ internal fun DemosaicGroup(state: SettingsUiState, dispatch: SettingsDispatch) {
     }
     SettingsGroup(
         title = "False color correction · Video",
-        description = "One correction step in video: fewer coloured specks on fine detail. Video: 1080p at 30 fps only; elsewhere too slow for real time."
+        description = "One correction step in video: fewer coloured specks on fine detail. Video: per mode in Video Encoder → Real-time profiles."
     ) {
         SettingsSwitchRow(
             title = "Video false color correction",
@@ -454,7 +454,7 @@ internal fun DistortionSettings(state: SettingsUiState, dispatch: SettingsDispat
     val v = state.values
     SettingsPageContainer(testTag = SettingsTestTags.sectionRoot("Distortion")) {
         SettingsGroup(
-            description = "Straightens lens distortion where calibrated. Photo: viewfinder, stills and DNG. Video: recordings, except 4K60."
+            description = "Straightens lens distortion where calibrated. Photo: viewfinder, stills and DNG. Video: recordings, per mode in Video Encoder → Real-time profiles."
         ) {
             PhotoVideoTargetSelector(
                 photoOn = v.distortionCorrectionEnabled,
@@ -470,7 +470,7 @@ internal fun DistortionSettings(state: SettingsUiState, dispatch: SettingsDispat
 internal fun DefringeGroup(state: SettingsUiState, dispatch: SettingsDispatch) {
     val v = state.values
     SettingsGroup(
-        description = "Removes purple and blue fringes along bright edges. Strength: how much. Video: 1080p at 30 fps only; elsewhere too slow for real time."
+        description = "Removes purple and blue fringes along bright edges. Strength: how much. Video: per mode in Video Encoder → Real-time profiles."
     ) {
         PhotoVideoTargetSelector(
             photoOn = v.photoDefringeEnabled,

@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.rawr.camera.settings.architecture.SetVideoEncoder
 import com.rawr.camera.settings.architecture.SettingsDispatch
 import com.rawr.camera.settings.model.KeyframeInterval
@@ -14,6 +15,7 @@ import com.rawr.camera.settings.model.VideoAudioSource
 import com.rawr.camera.settings.model.VideoBitrateMode
 import com.rawr.camera.settings.model.VideoEncoderConfig
 import com.rawr.camera.video.VideoEncoderCapabilities
+import com.rawr.camera.video.VideoProfileFeature
 import com.rawr.camera.video.VideoResolutionMode
 
 @Composable
@@ -26,6 +28,7 @@ internal fun VideoEncoderSettings(state: SettingsUiState, dispatch: SettingsDisp
     val unprocessedSupported = remember { com.rawr.camera.video.VideoAudioInput.supportsUnprocessed(context) }
     val bFramesProduced = remember { com.rawr.camera.video.EncoderObservations.bFramesProduced(context) }
     SettingsPageContainer(testTag = SettingsTestTags.sectionRoot("VideoEncoder")) {
+        VideoProfilesGroup(state, dispatch)
         VideoHoldToLockGroup()
         SettingsGroup(
             title = "Recording",
@@ -220,6 +223,76 @@ internal fun VideoEncoderSettings(state: SettingsUiState, dispatch: SettingsDisp
                 }
             }
         }
+    }
+}
+
+/**
+ * X14U (Nov 20) real-time profiles: per video mode, which processing features run while recording. A feature runs when
+ * its main Video switch (method, strength) is on and its switch here is on for the current mode. Tapping a row opens
+ * the feature's settings; the switch toggles it for the selected mode only.
+ */
+@Composable
+private fun VideoProfilesGroup(state: SettingsUiState, dispatch: SettingsDispatch) {
+    val v = state.values
+    val profiles = com.rawr.camera.video.VideoProfiles.decode(v.videoProfiles)
+    val current = com.rawr.camera.video.VideoProfileMode.of(
+        com.rawr.camera.video.VideoCrop.fromId(v.videoResolutionId).size,
+        com.rawr.camera.settings.model.videoFpsOrDefault(v.videoFps)
+    )
+    var mode by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(current) }
+    val modes = com.rawr.camera.video.VideoProfileMode.entries
+    SettingsGroup(
+        title = "Real-time profiles",
+        description = "What runs while recording, per video mode. A feature runs when it's on here and in its own " +
+            "settings (tap a row). 24 fps uses the 30 fps profile. Your current mode: ${current.label}."
+    ) {
+        CompactSegments(modes.map { it.chip }, { modes[it] == mode }, { mode = modes[it] })
+        SettingDivider()
+        val rows = listOf(
+            Triple(VideoProfileFeature.Highlight, v.videoHighlightEnabled, com.rawr.camera.settings.model.SettingsSection.HighlightReconstruction),
+            Triple(VideoProfileFeature.Fcc, v.videoFccEnabled, com.rawr.camera.settings.model.SettingsSection.Demosaic),
+            Triple(VideoProfileFeature.Defringe, v.videoDefringeEnabled, com.rawr.camera.settings.model.SettingsSection.Defringe),
+            Triple(VideoProfileFeature.Denoise, v.videoDenoiseEnabled, com.rawr.camera.settings.model.SettingsSection.Denoise),
+            Triple(VideoProfileFeature.Dcp, null, com.rawr.camera.settings.model.SettingsSection.Lens),
+            Triple(VideoProfileFeature.LensCorrection, v.videoDistortionCorrectionEnabled, com.rawr.camera.settings.model.SettingsSection.Distortion)
+        )
+        val toggle: (com.rawr.camera.video.VideoProfileFeature, Boolean) -> Unit = { feature, on ->
+            dispatch.invoke(com.rawr.camera.settings.architecture.SetVideoProfileFeature(mode, feature, on))
+        }
+        rows.forEach { (feature, mainOn, section) ->
+            ToggleSubmenuRow(
+                title = feature.label,
+                checked = profiles.allows(mode, feature),
+                supportingText = when {
+                    mainOn == false -> "Off in its settings"
+                    feature == VideoProfileFeature.Dcp -> "The lens's video DCP (Lens settings)"
+                    else -> null
+                },
+                testTag = "video_profile_${feature.id}",
+                onOpen = { dispatch.invoke(com.rawr.camera.settings.architecture.OpenSection(section)) },
+                onCheckedChange = { toggle(feature, it) }
+            )
+            SettingDivider()
+        }
+        SettingsSwitchRow(
+            title = VideoProfileFeature.Stabilise.label,
+            checked = profiles.allows(mode, VideoProfileFeature.Stabilise),
+            supportingText = "Stabilise below; Lock and Follow from the Level tile"
+        ) { toggle(VideoProfileFeature.Stabilise, it) }
+        if (mode == com.rawr.camera.video.VideoProfileMode.Uhd60) {
+            SettingDivider()
+            SettingsRow(
+                "4K 60 fps",
+                supportingText = "Records through the one-pass fast path while every switch here is off; " +
+                    "any switch on sends it through the full path, which may drop frames."
+            )
+        }
+        SettingDivider()
+        SettingsRow(
+            "Reset profiles to defaults",
+            value = if (v.videoProfiles.isBlank()) "Default" else null,
+            onClick = { dispatch.invoke(com.rawr.camera.settings.architecture.ResetVideoProfiles) }
+        )
     }
 }
 

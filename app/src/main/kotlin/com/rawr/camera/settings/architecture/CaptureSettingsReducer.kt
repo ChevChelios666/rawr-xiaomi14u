@@ -87,6 +87,13 @@ internal fun reduceCaptureSettings(
         state.withValues(state.values.copy(horizonSmoothing = action.value))
     }
 
+    is SetVideoProfileFeature -> state.withValues(
+        state.values.copy(
+            videoProfiles = com.rawr.camera.video.VideoProfiles.decode(state.values.videoProfiles)
+                .with(action.mode, action.feature, action.on).encode()
+        )
+    )
+    is ResetVideoProfiles -> state.withValues(state.values.copy(videoProfiles = ""))
     is SetVideoStabilize -> {
         state.withValues(state.values.copy(videoStabilize = action.value))
     }

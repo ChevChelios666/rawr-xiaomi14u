@@ -73,6 +73,12 @@ data class SetVideoHorizonLock(val value: Boolean) : SettingsApplicationAction
 data class SetHorizonLockRange(val value: com.rawr.camera.settings.model.HorizonLockRange) : SettingsApplicationAction
 data class SetHorizonSmoothing(val value: com.rawr.camera.settings.model.HorizonSmoothing) : SettingsApplicationAction
 data class SetVideoStabilize(val value: com.rawr.camera.settings.model.VideoStabilize) : SettingsApplicationAction
+data class SetVideoProfileFeature(
+    val mode: com.rawr.camera.video.VideoProfileMode,
+    val feature: com.rawr.camera.video.VideoProfileFeature,
+    val on: Boolean
+) : SettingsApplicationAction
+data object ResetVideoProfiles : SettingsApplicationAction
 data class SetVideoShutterAngle(val value: Boolean) : SettingsApplicationAction
 data class SetPanoMerge(val value: Boolean) : SettingsApplicationAction
 data class SetPanoKeepFrames(val value: Boolean) : SettingsApplicationAction

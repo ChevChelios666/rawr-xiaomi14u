@@ -22,8 +22,9 @@ import com.rawr.camera.settings.model.SettingsDestination
 import com.rawr.camera.settings.ui.numericStepIndex
 import com.rawr.camera.video.toVideoImageSettings
 import com.rawr.camera.video.VideoCropSize
-import com.rawr.camera.video.videoFeatureFit
-import com.rawr.camera.video.VideoFeatureFit
+import com.rawr.camera.video.VideoProfileFeature
+import com.rawr.camera.video.VideoProfileMode
+import com.rawr.camera.video.VideoProfiles
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -559,12 +560,31 @@ class SettingsModelTest {
         assertEquals(5, video.waveletDenoiseScales)
     }
 
-    @Test fun videoFeatureProfilesFollowSizeAndFrameRate() {
-        // X14U real-time profiles: 1080p30 highlight + FCC + defringe, 1080p60 highlight, 4K / Open Gate none.
-        assertEquals(VideoFeatureFit(true, true, false, true), videoFeatureFit(VideoCropSize.HD, 30))
-        assertEquals(VideoFeatureFit(true, false, false, false), videoFeatureFit(VideoCropSize.HD, 60))
-        assertEquals(VideoFeatureFit(false, false, false, false), videoFeatureFit(VideoCropSize.UHD, 30))
-        assertEquals(VideoFeatureFit(false, false, false, false), videoFeatureFit(VideoCropSize.OpenGate, 24))
+    @Test fun videoProfilesDefaultEditAndReset() {
+        val d = VideoProfiles.DEFAULT
+        val hd30 = VideoProfileMode.of(VideoCropSize.HD, 30)
+        assertEquals(VideoProfileMode.Hd30, VideoProfileMode.of(VideoCropSize.HD, 24))
+        assertEquals(VideoProfileMode.Hd60, VideoProfileMode.of(VideoCropSize.HD, 60))
+        assertEquals(VideoProfileMode.Uhd60, VideoProfileMode.of(VideoCropSize.UHD, 60))
+        assertEquals(VideoProfileMode.OpenGate30, VideoProfileMode.of(VideoCropSize.OpenGate, 24))
+        assertTrue(d.allows(hd30, VideoProfileFeature.Fcc))
+        assertFalse(d.allows(VideoProfileMode.Hd60, VideoProfileFeature.Defringe))
+        assertFalse(d.allows(VideoProfileMode.Uhd30, VideoProfileFeature.Highlight))
+        assertTrue(d.allows(VideoProfileMode.Uhd30, VideoProfileFeature.LensCorrection))
+        assertTrue(VideoProfileFeature.entries.none { d.allows(VideoProfileMode.Uhd60, it) })
+        assertTrue(VideoProfileMode.entries.none { d.allows(it, VideoProfileFeature.Denoise) })
+        assertEquals(d, VideoProfiles.decode(d.encode()))
+        assertEquals(d, VideoProfiles.decode("garbage"))
+
+        val controller = PersistentSettingsController()
+        controller.dispatch(SetVideoProfileFeature(VideoProfileMode.Uhd30, VideoProfileFeature.Highlight, true))
+        controller.dispatch(SetVideoProfileFeature(VideoProfileMode.Hd30, VideoProfileFeature.Fcc, false))
+        val edited = VideoProfiles.decode(controller.state.value.values.videoProfiles)
+        assertTrue(edited.allows(VideoProfileMode.Uhd30, VideoProfileFeature.Highlight))
+        assertFalse(edited.allows(VideoProfileMode.Hd30, VideoProfileFeature.Fcc))
+        assertTrue(edited.allows(VideoProfileMode.Hd30, VideoProfileFeature.Defringe))
+        controller.dispatch(ResetVideoProfiles)
+        assertEquals("", controller.state.value.values.videoProfiles)
     }
 
     @Test fun waveletLumaAndScalesClampAndReachNativeSpec() {

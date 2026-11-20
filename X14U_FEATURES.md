@@ -32,6 +32,7 @@ git cherry-pick <first> <next> ...
 | **Horizon Lock / Follow** (portable) | Level video with a fixed crop, or gimbal-like roll follow. | `HorizonLock.h`, `RawDevelopRecorder.cpp`, `PresentRecorder.cpp` | ed338d9, c793e35, 9d04373, 582e91d, 8d3a846, 613d29b, 4d0cbe8 |
 | **Hold to record locked** (portable) | Holding the record button records with exposure, focus and WB locked. | `VideoLockSettings.kt`, `VideoCaptureControls.kt` | 6767f76, bc19e1d |
 | **Video export from bursts** (portable) | HEVC / H.264 / GIF with deflicker, and stacking. | `BurstViewerActivity.kt`, `StackJni.cpp` | 9b4194b |
+| **Real-time profiles** (portable) | Per video mode (1080p30/60, 4K30/60, Open Gate 30), which processing features run while recording: highlight reconstruction, FCC, defringe, denoise, DCP, lens correction, stabilise. Editable in Settings → Video Encoder; defaults from frame-time tests. | `VideoProfiles.kt`, `VideoImageSettings.kt`, `VideoRecorder.cpp` | (next build) |
 | **Test switches** | adb switches for encoder tests (`enc_extra_images`, `enc_wait_ms`, `enc_rate`, `enc_prio`, `video_mf_off`, `half_monitor`, `classic_cache`), plus encoder start and thermal logs. | `VideoOutput.cpp`, `NativeAvRecorder.cpp`, `ThermalLog.kt`, `DebugProps.kt` | dfaca25, b68f310, b757f3c, 36253f7 |
 
 ## Photo and capture

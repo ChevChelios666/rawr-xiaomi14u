@@ -10,4 +10,12 @@ inline std::atomic<int>& videoModeFps() noexcept {
     return value;
 }
 
+// X14U (Nov 20): the real-time profile's DCP switch for the current video mode (Settings → Video Encoder → Real-time
+// profiles), set from Kotlin with NativePreviewEngine.setVideoProfileDcp. The other profile switches reach native
+// through the video settings and the horizon/stabiliser setters.
+inline std::atomic<bool>& videoProfileDcp() noexcept {
+    static std::atomic<bool> value{true};
+    return value;
+}
+
 }  // namespace rawrcam::video

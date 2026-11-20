@@ -51,6 +51,9 @@ class NativePreviewEngine {
     /** X14U video stabilisation on/off, with the lens's focal length over the sensor width. */
     external fun setStabilizer(enabled: Boolean, focalNorm: Float)
 
+    /** X14U real-time video profile: DCP on/off for the current video mode (the recorder reads it each frame). */
+    external fun setVideoProfileDcp(on: Boolean)
+
     /** X14U video stabilisation: the shake to take out at [timeNs] (CLOCK_BOOTTIME), camera axes, radians. */
     external fun pushStabilizerSample(timeNs: Long, pitch: Float, yaw: Float, roll: Float)
 

@@ -49,6 +49,7 @@ import com.rawr.camera.settings.preferences.SettingsPreferencesStore
 import com.rawr.camera.storage.GalleryMediaStore
 import com.rawr.camera.video.VideoResolutionMode
 import com.rawr.camera.video.toVideoImageSettings
+import com.rawr.camera.video.videoProfileAllows
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -933,8 +934,11 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             kotlinx.coroutines.flow.combine(
                 settingsEditor.values.map {
-                    HorizonSettings(it.videoHorizonLock, it.horizonLockRange,
-                        if (it.videoHorizonFollow) it.horizonSmoothing.seconds else 0f, it.videoStabilize)
+                    // The real-time profile's Stabilise / Horizon lock switch for the current video mode.
+                    val allowed = it.videoProfileAllows(com.rawr.camera.video.VideoProfileFeature.Stabilise)
+                    HorizonSettings(it.videoHorizonLock && allowed, it.horizonLockRange,
+                        if (it.videoHorizonFollow && allowed) it.horizonSmoothing.seconds else 0f,
+                        if (allowed) it.videoStabilize else com.rawr.camera.settings.model.VideoStabilize.Off)
                 }.distinctUntilChanged(),
                 controller.state.map { (it.captureMode == com.rawr.camera.model.CaptureMode.Video) to it.selectedLensId }
                     .distinctUntilChanged(),
