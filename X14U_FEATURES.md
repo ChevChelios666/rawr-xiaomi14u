@@ -1,0 +1,101 @@
+# Rawr X14U: what this fork adds
+
+This is a fork of [Rawr](https://github.com/adityawarmanfw/rawr) by Fidocia Wima Adityawarman, tuned for the **Xiaomi 14 Ultra**. It installs as its own app ("Rawr X14U", `com.rawr.camera.x14u`) beside Rawr. Upstream Rawr is merged in selectively: vivo, Samsung, 200 MP and UI-tooling work is left out. The untouched upstream code is on the `upstream-main` branch.
+
+Most of the code was written with Claude (Anthropic) and tested on the phone by the fork's owner. The video YUV path comes from [utalpt/rawr](https://github.com/utalpt/rawr) (Paulo Gonçalves).
+
+**Download:** [debug APK](https://github.com/apos-fandango/rawr-xiaomi14u/releases/tag/debug), rebuilt from `main` on every change.
+
+## How to take a feature
+
+Each feature below lists its commits, oldest first: the first one adds it, and the others are follow-ups and fixes. Cherry-pick them in that order:
+
+```sh
+git remote add x14u https://github.com/apos-fandango/rawr-xiaomi14u
+git fetch x14u
+git cherry-pick <first> <next> ...
+```
+
+- **Searching the history:** `git log --grep=<word> x14u/main`. Commit messages are plain descriptions, and many explain why with log evidence.
+- **Expect conflicts:** features build on the X14U capture screen (`X14uCaptureLayout.kt`) and on the lens options. Pieces marked **portable** work on other phones; pieces marked **X14U** depend on this phone's cameras, keys or accessories.
+
+## Video
+
+| Feature | What it does | Main files | Commits |
+|---|---|---|---|
+| **YUV encoder input** (portable; from utalpt) | Our GPU writes NV12/P010 straight into the encoder's buffers through an `ImageWriter`, so the encoder doesn't convert RGBA itself. **Fixed 4K30 frame drops**, see [the investigation](#4k30-frame-drops-solved). `adb shell setprop debug.rawr.enc_yuv 0` brings back the RGBA swapchain. | `video/VideoOutput.cpp`, `video/shaders/video_yuv_pack.comp`, `VideoRecorder.cpp`, `VideoSession.cpp` | 3b8348a, 46015fb, fdd0d29 |
+| **Encoder output built outside the session lock** (portable) | The encoder Surface setup (gralloc probes, ~300 ms) no longer holds the session lock, so the camera doesn't drop frames at record start. | `SessionEngine.cpp`, `VideoSession.cpp` | 42675fb, 203b96b |
+| **1080p60** | 60 fps where the RAW stream runs at 60 (quad demosaic for 2x reduced video). | `CameraRequestCadence.h`, `NativeAvRecorder.cpp` | 84c307b, 7f454ce, 6ac701f, eac2dc8, a9cfaa9, 31a1fd8 |
+| **Video lens / run-as lens** (X14U) | A lens can run as another (hidden) lens in video, e.g. the 1x's "1xV" mode. | `LensOptions.kt`, `CaptureViewModel.kt` | 82b0f02, 7b3dd57 |
+| **Crop, downscale, GPU resample** (portable) | Aspect / pixel crop / downscale with GPU resampling; standard sizes (4K, 1080p, Open Gate). | `VideoProcessingResources.h`, `VideoRecorder.cpp` | 4145309, 7a11864 |
+| **Gyro stabilisation** (portable) | Off / Standard / Strong, time-synced per frame. | `Stabilizer.h`, `present.frag`, `VideoRecorder.cpp` | 9bd6bac |
+| **Horizon Lock / Follow** (portable) | Level video with a fixed crop, or gimbal-like roll follow. | `HorizonLock.h`, `RawDevelopRecorder.cpp`, `PresentRecorder.cpp` | ed338d9, c793e35, 9d04373, 582e91d, 8d3a846, 613d29b, 4d0cbe8 |
+| **Hold to record locked** (portable) | Holding the record button records with exposure, focus and WB locked. | `VideoLockSettings.kt`, `VideoCaptureControls.kt` | 6767f76, bc19e1d |
+| **Video export from bursts** (portable) | HEVC / H.264 / GIF with deflicker, and stacking. | `BurstViewerActivity.kt`, `StackJni.cpp` | 9b4194b |
+| **Test switches** | adb switches for encoder tests (`enc_extra_images`, `enc_wait_ms`, `enc_rate`, `enc_prio`, `video_mf_off`, `half_monitor`, `classic_cache`), plus encoder start and thermal logs. | `VideoOutput.cpp`, `NativeAvRecorder.cpp`, `ThermalLog.kt`, `DebugProps.kt` | dfaca25, b68f310, b757f3c, 36253f7 |
+
+## Photo and capture
+
+| Feature | What it does | Main files | Commits |
+|---|---|---|---|
+| **Lens options** (X14U) | Aperture (four steps, f/1.6 to f/4), DCG, ISZ 2x and 50 MP as rows on one lens; per-lens overrides, video DCP per lens, native f-numbers. | `LensOptions.kt`, `LensProfiles.kt` | 8246f38, 7572538, 25f704c, 7b3dd57 |
+| **Real 50 MP RAW** (X14U) | 1x (f/2 only) and 0.5x full-size RAW, with autofocus from the 12 MP viewfinder. See [50 MP findings](#50-mp-findings). | `CaptureViewModel.kt` | 604483d, 4c0222c, 23902d9, 9aec427, 41ad6d8, 7bdb218, 6ea9468 |
+| **Digital zoom** (portable) | Pinch / zoom ruler across the whole lens chain (0.5–10x), centred crop, tap mapping; the zoom and 35 mm equivalent written into JPEG and DNG; the crop kept in merged shots. | `ZoomChain.kt`, `OutputAspect.h`, `DngExif.cpp`, `JpegExif.cpp`, `CaptureJob.cpp` | 5376ffa, 268a2dc, b0c2146, b718302, bf9c6b2, fcde197 |
+| **Long exposures** (portable) | Long shutters run as their own capture, not the next viewfinder frame. | `NativeCameraController.cpp` | 271a72c, 565b087 |
+| **Burst** (portable) | Hold to shoot at 10/20/30 fps, a pre-capture ring (PRE 1–3 s), Pixel-style stacks Google Photos groups, a private store with a viewer, develop in Rawr or another editor. | `BurstStore.kt`, `BurstViewerActivity.kt`, `PrecaptureRing.h`, `SingleFrameCoordinator.cpp` | 935d75d, f0bd25c, 12a150b, c4223f0, 3d523df, a180961, dcd16ae, e799e09, 3080a17, 752975d |
+| **Timed burst** (portable) | Intervalometer. | `TimedBurstSettings.kt` | a92b20b |
+| **Pano** (portable) | Guided frame sets (manual or automatic) stitched on the phone with a slim static OpenCV build; the canvas is sized within a memory budget. | `PanoStitchJni.cpp`, `X14uPano.kt` | 81efe85, 5f22430, 86a70c6, 7f97a64, 604483d, 1fa7d07, 1feb45c, d7766de |
+| **Sensor defect concealment** (portable) | Hot or dead pixels hidden in merges (GPU) and listed in DNGs (FixBadPixelsList), using the same rule as single frames. | `rx_defect_patch.comp`, `HotPixelConceal.cpp`, `DngGainMapOpcode.cpp` | a726ab1 |
+| **Faces** (portable) | "Focus on Faces" and "Expose for Faces". | `CameraFocusControls.cpp` | 5a70853 |
+| **Film recipe in DNG** | Spektra recipe written for StopBath. | `DngExif.cpp`, `StopBathSpektra.kt` | cdfabf7, ecbcfab |
+
+## Capture screen and controls
+
+| Feature | What it does | Main files | Commits |
+|---|---|---|---|
+| **X14U capture screen** | Stock proportions; Photo / Pro / Video (plus Burst and Pano); each mode keeps its own Look, exposure and WB. | `X14uCaptureLayout.kt` | 92f8e34, 36fcbd9, 6cb8e8e, beabc62, 8292b2d, 3ef8c3a |
+| **Tools panel** (swipe down) | Grids, aspect crop, level, histogram / waveform, overlays, WB presets, location, DCP. | `X14uToolsPanel.kt` | b123eda, 0df1ad6, 2096b83, 41e26c7 |
+| **Focus aids** | Focus loupe with a GPU focus meter; MF ruler on a diopter scale; peaking that ignores sensor specks. | `X14uFocusLoupe.kt`, `focus_peaking.comp` | 1bbd356, 0734974, bc97dbb |
+| **Level** | Floating horizon line, steadier lock, smooth change to the bubble. | `X14uToolsPanel.kt` | 6f5f8bf, b757f3c |
+| **Photography Kit grip over USB** (X14U accessory) | Dial (EV, shutter, ISO, WB, aperture, focus, zoom), zoom lever, record and shutter buttons, read as raw USB HID reports. | `GripUsbReader.kt`, `GripControls.kt` | 713a2fa, 79063f0, 2fa2f3a, 0e4043f, 581f0ab, 3ef8c3a |
+| **Presets** | Saved capture presets (P0 baseline, P1…) with a strip and details sheet. | `CapturePresets.kt`, `X14uPresets.kt` | e356097, e7d9bf3, c7869fd |
+| **Classic / Bronze styles** | A camera-body look (leather, metal, drum rulers); the body is drawn once into a GPU layer. | `X14uClassic.kt` | 2c3ee52, 10bfd96, 7d1703e, 74d7aa8 |
+| **Landscape** | Pills, chips and panels turn as a whole. | `X14uCaptureLayout.kt` | c5b872f, 207fe16, a51e4e8 |
+
+## Findings
+
+### 4K30 frame drops (solved)
+
+**Symptom:** 4K30 recordings dropped frames, starting a few seconds to a minute into a take, sooner the warmer the phone, and faster with the heavier Bronze UI. 1080p and 24 fps were fine.
+
+**What it wasn't**, each tested with an adb switch on 60–100 s takes:
+- the encoder's operating-rate and realtime-priority hints
+- bitrate (45 vs 80 Mbps)
+- more Surface images or a longer wait for a free one
+- the HDR+ frame ring in video
+- the idle frame-rate rule
+
+**Cause:** the encoder's input was RGBA, which the platform converted to YUV for every 4K frame on the GPU, the same GPU that also runs our RAW pipeline and the UI. When the phone warmed up, Xiaomi throttled clocks before Android's thermal status changed, and the encoder fell just under 30 fps. It holds about 16 frames, so the backlog took tens of seconds to show.
+
+**Fix:** feed it YUV written by our own GPU pass (utalpt's `ImageWriter` path). Five takes of 67–93 s, Minimal, Bronze and LOG, with the battery up to 41 °C: **0 encoder drops**, and the encoder at 30.0 fps throughout.
+
+**Lesson:** test on long takes, and log temperature. Short takes and Android's thermal status both hid the problem.
+
+### 50 MP findings
+
+- **1x:** the phone's full-size RAW mode exists only at f/2. Other apertures only come through the phone's own processed route, so the 50 mp chip locks Aperture to f/2.
+- **3x and 5x:** the phone's "50 MP" there is a binned 12 MP frame upscaled, not a real full-size readout. The real 3x readout also fixes focus when its session starts, and manual focus doesn't move it, so focus can't be corrected. Both were tried and removed (6ea9468).
+- **0.5x:** real 50 MP RAW works, with a measured ISO gain (×1.43, 7bdb218).
+
+## Known issues and open ends
+
+- **One camera frame at record start:** with YUV, 5 of 7 takes lost one camera frame in the first quarter second (`INGRESS_QUEUE_PRESSURE rawDropped=1`). It's not the YUV setup time (moved outside the lock in 46015fb, and it still happened). Next step: per-frame GPU and import timing for the first 2 s of a take.
+- **Heat:** the RAW viewfinder runs the GPU about two thirds busy even when idle. Candidates to cut: the HDR+ ring in video (`video_mf_off`), the half-size monitor (`half_monitor`), and UI redraws while recording.
+- **Upstream and forks:** utalpt's `yuv-probe` branch has a one-pass RAW→YUV fast path (4K60), a clean recording view, a Gyroflow log and more, none of them ported yet.
+
+## Branches
+
+- **`main`:** the X14U app; each push builds the debug APK.
+- **`upstream-main`:** Rawr as published, for diffs.
+- **`hold/next-build`:** work in progress.
+- **`wip/next-build`:** compile check only.

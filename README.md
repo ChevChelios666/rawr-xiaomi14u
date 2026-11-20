@@ -1,3 +1,7 @@
+> **Rawr X14U:** this is a fork of Rawr for the **Xiaomi 14 Ultra** (installs as its own app beside Rawr).
+> What it adds, how to take a feature (commits per feature), and what we found: **[X14U_FEATURES.md](X14U_FEATURES.md)**.
+> Download: [debug APK](https://github.com/apos-fandango/rawr-xiaomi14u/releases/tag/debug). Upstream Rawr as published: branch `upstream-main`.
+
 <p align="center">
   <img src="docs/assets/rawr-logo.png" alt="Rawr logo" width="200">
 </p>
