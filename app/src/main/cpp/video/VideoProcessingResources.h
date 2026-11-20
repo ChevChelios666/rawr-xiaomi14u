@@ -23,10 +23,15 @@ namespace rawrcam::video {
 // Gate), which saves GPU time in the 33 ms budget (utalpt/rawr f64ee9f); 1080p keeps a full-size one. Unset: full size
 // as before (reverted in 8ba5409 while hunting the 4K drops; back as a switch). Read once per app run, so the monitor
 // images and the frames recorded into them always agree. The tonemap shader follows the monitor's size.
+// The one-pass fast path (debug.rawr.enc_fast 1) always writes a half-size monitor (one pixel per 2x2 cell), so it
+// turns the half-size monitor on too (Nov 20: with a full-size one its picture filled only a quarter of the screen).
 inline bool videoHalfMonitorEnabled() noexcept {
     static const bool enabled = [] {
-        char value[PROP_VALUE_MAX] = {};
-        return __system_property_get("debug.rawr.half_monitor", value) > 0 && value[0] == '1';
+        const auto on = [](const char* name) {
+            char value[PROP_VALUE_MAX] = {};
+            return __system_property_get(name, value) > 0 && value[0] == '1';
+        };
+        return on("debug.rawr.half_monitor") || on("debug.rawr.enc_fast");
     }();
     return enabled;
 }
