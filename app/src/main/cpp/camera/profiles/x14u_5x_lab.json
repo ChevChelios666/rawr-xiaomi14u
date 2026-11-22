@@ -1,0 +1,151 @@
+{
+  "id": "x14u_5x_lab",
+  "schema": 2,
+  "name": "X14U 5x FullRes Lab",
+  "version": 1,
+  "default": true,
+  "description": "Experimental 5x RAW16 FullRes: 900D vs 900E on aurora Global. Unverified; safe side-by-side app only.",
+  "match": {
+    "models": [
+      "24030PN60G"
+    ]
+  },
+  "lenses": [
+    {
+      "id": "1x",
+      "enabled": true,
+      "camera": {
+        "id": "2"
+      },
+      "streams": {
+        "raw": {
+          "format": "RAW10",
+          "width": 0,
+          "height": 0
+        }
+      }
+    },
+    {
+      "id": "5x12",
+      "enabled": true,
+      "camera": {
+        "id": "5"
+      },
+      "streams": {
+        "raw": {
+          "format": "RAW10",
+          "width": 0,
+          "height": 0
+        }
+      }
+    },
+    {
+      "id": "5x_900D",
+      "enabled": true,
+      "camera": {
+        "id": "5",
+        "physical": ""
+      },
+      "streams": {
+        "raw": {
+          "format": "RAW16",
+          "width": 8192,
+          "height": 6144,
+          "highResLive": true,
+          "buffers": {
+            "usage": "0x100003"
+          }
+        },
+        "companion": {
+          "mode": "fixed",
+          "width": 640,
+          "height": 480,
+          "format": "private",
+          "targeted": false,
+          "physical": false
+        }
+      },
+      "session": {
+        "cameraApi": "java",
+        "opMode": 36877,
+        "template": "still",
+        "frameRate": 15,
+        "startupDelayMs": 500
+      },
+      "vendorKeys": [
+        {
+          "tag": "xiaomi.remosaic.enabled",
+          "type": "byte",
+          "scope": "session",
+          "values": [
+            1
+          ],
+          "enabled": true
+        },
+        {
+          "tag": "xiaomi.remosaic.enabled",
+          "type": "byte",
+          "scope": "request",
+          "values": [
+            1
+          ],
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "5x_900E",
+      "enabled": true,
+      "camera": {
+        "id": "5",
+        "physical": ""
+      },
+      "streams": {
+        "raw": {
+          "format": "RAW16",
+          "width": 8192,
+          "height": 6144,
+          "highResLive": true,
+          "buffers": {
+            "usage": "0x100003"
+          }
+        },
+        "companion": {
+          "mode": "fixed",
+          "width": 640,
+          "height": 480,
+          "format": "private",
+          "targeted": false,
+          "physical": false
+        }
+      },
+      "session": {
+        "cameraApi": "java",
+        "opMode": 36878,
+        "template": "still",
+        "frameRate": 15,
+        "startupDelayMs": 500
+      },
+      "vendorKeys": [
+        {
+          "tag": "xiaomi.remosaic.enabled",
+          "type": "byte",
+          "scope": "session",
+          "values": [
+            1
+          ],
+          "enabled": true
+        },
+        {
+          "tag": "xiaomi.remosaic.enabled",
+          "type": "byte",
+          "scope": "request",
+          "values": [
+            1
+          ],
+          "enabled": true
+        }
+      ]
+    }
+  ]
+}
