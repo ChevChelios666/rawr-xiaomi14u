@@ -1,0 +1,156 @@
+{
+  "id": "x14u_5x_dual_20261123",
+  "schema": 2,
+  "name": "X14U 5x dual RAW still lab",
+  "version": 1,
+  "default": true,
+  "description": "5x ID5: RAW16 4096x3072 AF/viewfinder + RAW16 8192x6144 still only; single photo, three session opmode controls. Experimental; not for working profiles.",
+  "match": {
+    "models": [
+      "24030PN60G"
+    ]
+  },
+  "lenses": [
+    {
+      "id": "5x-12",
+      "enabled": true,
+      "camera": {
+        "id": "5"
+      },
+      "streams": {
+        "raw": {
+          "format": "RAW16",
+          "width": 4096,
+          "height": 3072
+        },
+        "companion": {
+          "mode": "off"
+        }
+      },
+      "session": {
+        "cameraApi": "java",
+        "opMode": 0,
+        "template": "still",
+        "frameRate": 15
+      },
+      "vendorKeys": []
+    },
+    {
+      "id": "5xD-900E",
+      "enabled": true,
+      "camera": {
+        "id": "5"
+      },
+      "streams": {
+        "raw": {
+          "format": "RAW16",
+          "width": 4096,
+          "height": 3072
+        },
+        "photo": {
+          "format": "RAW16",
+          "width": 8192,
+          "height": 6144,
+          "buffers": {
+            "usage": "0x100003",
+            "count": 2
+          },
+          "includePreview": false,
+          "mergeFrameLimit": 1
+        },
+        "companion": {
+          "mode": "off"
+        }
+      },
+      "session": {
+        "cameraApi": "java",
+        "opMode": 36878,
+        "template": "still",
+        "frameRate": 15,
+        "startupDelayMs": 500
+      },
+      "request": {
+        "defaults": "rawr"
+      },
+      "vendorKeys": []
+    },
+    {
+      "id": "5xD-900D",
+      "enabled": true,
+      "camera": {
+        "id": "5"
+      },
+      "streams": {
+        "raw": {
+          "format": "RAW16",
+          "width": 4096,
+          "height": 3072
+        },
+        "photo": {
+          "format": "RAW16",
+          "width": 8192,
+          "height": 6144,
+          "buffers": {
+            "usage": "0x100003",
+            "count": 2
+          },
+          "includePreview": false,
+          "mergeFrameLimit": 1
+        },
+        "companion": {
+          "mode": "off"
+        }
+      },
+      "session": {
+        "cameraApi": "java",
+        "opMode": 36877,
+        "template": "still",
+        "frameRate": 15,
+        "startupDelayMs": 500
+      },
+      "request": {
+        "defaults": "rawr"
+      },
+      "vendorKeys": []
+    },
+    {
+      "id": "5xD-std",
+      "enabled": true,
+      "camera": {
+        "id": "5"
+      },
+      "streams": {
+        "raw": {
+          "format": "RAW16",
+          "width": 4096,
+          "height": 3072
+        },
+        "photo": {
+          "format": "RAW16",
+          "width": 8192,
+          "height": 6144,
+          "buffers": {
+            "usage": "0x100003",
+            "count": 2
+          },
+          "includePreview": false,
+          "mergeFrameLimit": 1
+        },
+        "companion": {
+          "mode": "off"
+        }
+      },
+      "session": {
+        "cameraApi": "java",
+        "opMode": 0,
+        "template": "still",
+        "frameRate": 15,
+        "startupDelayMs": 500
+      },
+      "request": {
+        "defaults": "rawr"
+      },
+      "vendorKeys": []
+    }
+  ]
+}
