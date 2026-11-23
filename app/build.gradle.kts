@@ -118,8 +118,8 @@ android {
     buildTypes {
         debug {
             // X14U build: its own app (installs beside Rawr and Rawr Debug).
-            applicationIdSuffix = ".x14u.x5dual"
-            resValue("string", "app_name", "Rawr X14U 5x Dual")
+            applicationIdSuffix = ".x14u.x5single"
+            resValue("string", "app_name", "Rawr X14U 5x Single")
             // Native EXIF Software tag; must match BuildConfig.VERSION_NAME.
             externalNativeBuild { cmake { arguments += "-DRAWR_VERSION_NAME=${debugVersionName.get()}" } }
         }
