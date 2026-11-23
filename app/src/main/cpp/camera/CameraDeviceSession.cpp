@@ -643,8 +643,19 @@ bool CameraDeviceSession::createSession(ANativeWindow* window, const std::option
     // TEMPLATE_PREVIEW 30/30 assumption and clamp shutter priority near 1/30.
     // Build one session-parameter request, then add the lens profile's
     // session keys (e.g. a vendor sensor/readout mode).
+    // Isolated X14U 5x dual experiment: user-saved lenses may override the bundled JSON.
+    // Apply the preview repeating template only to the proven 900D test route.
+    // Leave the still capture template and stream topology unchanged.
+    const bool x14u900dPreviewProbe =
+        selected && selected->cameraId == "5" && selected->lensId == "5xD-900D" &&
+        recipe.opMode == 36877 && captureWindow_ != nullptr;
     const RequestTemplate repeatingTemplate =
-        recipe.repeatingStillTemplate ? RequestTemplate::StillCapture : RequestTemplate::Preview;
+        x14u900dPreviewProbe ? RequestTemplate::Preview
+                             : (recipe.repeatingStillTemplate ? RequestTemplate::StillCapture : RequestTemplate::Preview);
+    if (x14u900dPreviewProbe) {
+        diag("X14U_5XD_TEMPLATE_PROBE lens=5xD-900D cameraId=5 opMode=36877 source=" +
+             std::string(recipe.repeatingStillTemplate ? "still" : "preview") + " applied=preview");
+    }
     const bool minimalDefaults = recipe.requestDefaults == RequestDefaults::Minimal;
     const auto joined = [](const std::vector<std::string>& items) {
         std::string out;
