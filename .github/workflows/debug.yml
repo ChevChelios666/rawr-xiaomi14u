@@ -2,7 +2,7 @@ name: Rawr X14U build
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'lab/5x-dual-still-20261123']
   pull_request:
   workflow_dispatch:
 
