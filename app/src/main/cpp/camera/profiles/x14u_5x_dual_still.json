@@ -1,10 +1,10 @@
 {
-  "id": "x14u_5x_dual_20261123",
+  "id": "x14u_5x_fullres_single_20261123",
   "schema": 2,
-  "name": "X14U 5x dual RAW still lab",
+  "name": "X14U 5x single RAW FullRes diagnostic",
   "version": 1,
   "default": true,
-  "description": "5x ID5: RAW16 4096x3072 AF/viewfinder + RAW16 8192x6144 still only; single photo, three session opmode controls. Experimental; not for working profiles.",
+  "description": "Isolated test: camera ID5, one RAW16 8192x6144 output, opMode 0x900D, preview repeat. No second photo stream. Lens 5x-12 is retained only as reference. Experimental: valid Bayer not proven.",
   "match": {
     "models": [
       "24030PN60G"
@@ -36,7 +36,7 @@
       "vendorKeys": []
     },
     {
-      "id": "5xD-900E",
+      "id": "5xF-900D-single",
       "enabled": true,
       "camera": {
         "id": "5"
@@ -44,58 +44,8 @@
       "streams": {
         "raw": {
           "format": "RAW16",
-          "width": 4096,
-          "height": 3072
-        },
-        "photo": {
-          "format": "RAW16",
           "width": 8192,
-          "height": 6144,
-          "buffers": {
-            "usage": "0x100003",
-            "count": 2
-          },
-          "includePreview": false,
-          "mergeFrameLimit": 1
-        },
-        "companion": {
-          "mode": "off"
-        }
-      },
-      "session": {
-        "cameraApi": "java",
-        "opMode": 36878,
-        "template": "preview",
-        "frameRate": 15,
-        "startupDelayMs": 500
-      },
-      "request": {
-        "defaults": "rawr"
-      },
-      "vendorKeys": []
-    },
-    {
-      "id": "5xD-900D",
-      "enabled": true,
-      "camera": {
-        "id": "5"
-      },
-      "streams": {
-        "raw": {
-          "format": "RAW16",
-          "width": 4096,
-          "height": 3072
-        },
-        "photo": {
-          "format": "RAW16",
-          "width": 8192,
-          "height": 6144,
-          "buffers": {
-            "usage": "0x100003",
-            "count": 2
-          },
-          "includePreview": false,
-          "mergeFrameLimit": 1
+          "height": 6144
         },
         "companion": {
           "mode": "off"
@@ -104,45 +54,6 @@
       "session": {
         "cameraApi": "java",
         "opMode": 36877,
-        "template": "preview",
-        "frameRate": 15,
-        "startupDelayMs": 500
-      },
-      "request": {
-        "defaults": "rawr"
-      },
-      "vendorKeys": []
-    },
-    {
-      "id": "5xD-std",
-      "enabled": true,
-      "camera": {
-        "id": "5"
-      },
-      "streams": {
-        "raw": {
-          "format": "RAW16",
-          "width": 4096,
-          "height": 3072
-        },
-        "photo": {
-          "format": "RAW16",
-          "width": 8192,
-          "height": 6144,
-          "buffers": {
-            "usage": "0x100003",
-            "count": 2
-          },
-          "includePreview": false,
-          "mergeFrameLimit": 1
-        },
-        "companion": {
-          "mode": "off"
-        }
-      },
-      "session": {
-        "cameraApi": "java",
-        "opMode": 0,
         "template": "preview",
         "frameRate": 15,
         "startupDelayMs": 500
