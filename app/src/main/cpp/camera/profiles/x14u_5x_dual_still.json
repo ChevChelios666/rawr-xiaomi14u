@@ -1,10 +1,10 @@
 {
-  "id": "x14u_5x_fullres_single_20261123",
+  "id": "x14u_5x_raw16_unlisted_probe_20261123",
   "schema": 2,
-  "name": "X14U 5x single RAW FullRes diagnostic",
+  "name": "X14U 5x RAW16 unlisted 8192 lab",
   "version": 1,
   "default": true,
-  "description": "Isolated test: camera ID5, one RAW16 8192x6144 output, opMode 0x900D, preview repeat. No second photo stream. Lens 5x-12 is retained only as reference. Experimental: valid Bayer not proven.",
+  "description": "Isolated probe only: camera ID5 8192x6144 RAW16 highResLive=true bypasses advertised size negotiation. No parallel photo stream, no vendor keys. FullRes Bayer/AF unverified; stop on error.",
   "match": {
     "models": [
       "24030PN60G"
@@ -12,31 +12,7 @@
   },
   "lenses": [
     {
-      "id": "5x-12",
-      "enabled": true,
-      "camera": {
-        "id": "5"
-      },
-      "streams": {
-        "raw": {
-          "format": "RAW16",
-          "width": 4096,
-          "height": 3072
-        },
-        "companion": {
-          "mode": "off"
-        }
-      },
-      "session": {
-        "cameraApi": "java",
-        "opMode": 0,
-        "template": "still",
-        "frameRate": 15
-      },
-      "vendorKeys": []
-    },
-    {
-      "id": "5xF-900D-single",
+      "id": "5xF-900D-unlisted",
       "enabled": true,
       "camera": {
         "id": "5"
@@ -45,7 +21,8 @@
         "raw": {
           "format": "RAW16",
           "width": 8192,
-          "height": 6144
+          "height": 6144,
+          "highResLive": true
         },
         "companion": {
           "mode": "off"
