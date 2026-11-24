@@ -44,6 +44,17 @@ jobs:
             exit 1
           }
           Write-Host 'PowerShell ParseFile: PASS'
+      - name: Check offline PowerShell runner syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile('scripts/Run_ID5_Probe_Offline.ps1', [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count -ne 0) {
+            $parseErrors | ForEach-Object { Write-Error $_.ToString() }
+            exit 1
+          }
+          Write-Host 'Offline PowerShell ParseFile: PASS'
       - uses: actions/upload-artifact@v4
         with:
           name: x14u-x5-yuvraw-probe-${{ github.sha }}
