@@ -1,0 +1,41 @@
+name: X14U ID5 Isolated YUV RAW Probe
+
+on:
+  push:
+    branches:
+      - lab/5x-yuv-raw-still-probe-20261124
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: x14u-id5-yuvraw-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile isolated probe
+        run: ./gradlew :x5-probe:assembleDebug --no-daemon --stacktrace
+      - name: Verify APK identity
+        run: |
+          test -s x5-probe/build/outputs/apk/debug/x5-probe-debug.apk
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging x5-probe/build/outputs/apk/debug/x5-probe-debug.apk | grep 'package: name=\x27com.rawr.camera.x14u.x5yuvprobe\x27'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: x14u-x5-yuvraw-probe-${{ github.sha }}
+          path: x5-probe/build/outputs/apk/debug/x5-probe-debug.apk
+          if-no-files-found: error
+          retention-days: 14
