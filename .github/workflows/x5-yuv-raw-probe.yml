@@ -32,7 +32,7 @@ jobs:
       - name: Verify APK identity
         run: |
           test -s x5-probe/build/outputs/apk/debug/x5-probe-debug.apk
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging x5-probe/build/outputs/apk/debug/x5-probe-debug.apk | grep 'package: name=\x27com.rawr.camera.x14u.x5yuvprobe\x27'
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging x5-probe/build/outputs/apk/debug/x5-probe-debug.apk | grep -F "package: name='com.rawr.camera.x14u.x5yuvprobe'"
       - uses: actions/upload-artifact@v4
         with:
           name: x14u-x5-yuvraw-probe-${{ github.sha }}
