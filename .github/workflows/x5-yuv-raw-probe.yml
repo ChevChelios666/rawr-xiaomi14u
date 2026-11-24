@@ -33,6 +33,17 @@ jobs:
         run: |
           test -s x5-probe/build/outputs/apk/debug/x5-probe-debug.apk
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging x5-probe/build/outputs/apk/debug/x5-probe-debug.apk | grep -F "package: name='com.rawr.camera.x14u.x5yuvprobe'"
+      - name: Check PowerShell runner syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile('scripts/x5-probe-run.ps1', [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count -ne 0) {
+            $parseErrors | ForEach-Object { Write-Error $_.ToString() }
+            exit 1
+          }
+          Write-Host 'PowerShell ParseFile: PASS'
       - uses: actions/upload-artifact@v4
         with:
           name: x14u-x5-yuvraw-probe-${{ github.sha }}
