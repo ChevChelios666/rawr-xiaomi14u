@@ -79,11 +79,19 @@ Get-Content -LiteralPath (Join-Path $work 'logcat_full.txt') |
     Set-Content -LiteralPath (Join-Path $work 'logcat_filtered.txt') -Encoding UTF8
 
 $remote = '/sdcard/Download/X14U_X5_YUV_PROBE'
-$list = @(& $AdbPath -s $serial shell ls -la $remote 2>&1)
+try {
+    $list = @(& $AdbPath -s $serial shell ls -la $remote 2>&1)
+} catch {
+    $list = @('Device sample directory inaccessible: ' + $_.Exception.Message)
+}
 $list | Out-File -LiteralPath (Join-Path $work 'samples_on_device.txt') -Encoding UTF8
 if ($list -match '\.raw16le|\.json|_FAIL_') {
-    & $AdbPath -s $serial pull $remote (Join-Path $work 'samples')
-    if ($LASTEXITCODE -ne 0) { Write-Host 'RAW pull failed. Sending logs anyway.' -ForegroundColor Yellow }
+    try {
+        & $AdbPath -s $serial pull $remote (Join-Path $work 'samples')
+        if ($LASTEXITCODE -ne 0) { Write-Host 'RAW pull failed. Sending logs anyway.' -ForegroundColor Yellow }
+    } catch {
+        Write-Host ('RAW pull error; logs preserved: ' + $_.Exception.Message) -ForegroundColor Yellow
+    }
 } else {
     Write-Host 'No sample files found; sending logs and session status.' -ForegroundColor Yellow
 }
