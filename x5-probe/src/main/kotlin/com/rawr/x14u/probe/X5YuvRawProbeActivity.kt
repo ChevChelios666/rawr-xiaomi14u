@@ -143,18 +143,29 @@ class X5YuvRawProbeActivity : Activity() {
     private fun openCameraOnce() {
         try {
             val manager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-            if (CAMERA_ID !in manager.cameraIdList) {
-                failure("camera_list", "Camera ID $CAMERA_ID not visible to this package")
-                return
+            // cameraIdList is not an authorization test for an explicitly named camera:
+            // log visibility, then let CameraManager/openCamera report the actual result.
+            // Xiaomi may expose different lists to stock and third-party packages.
+            val visibleIds = try {
+                manager.cameraIdList.toList()
+            } catch (error: Exception) {
+                emit("CAMERA_LIST_ERROR type=${error.javaClass.simpleName} message=${error.message}")
+                emptyList()
             }
-            characteristics = manager.getCameraCharacteristics(CAMERA_ID)
+            emit("CAMERA_LIST target=$CAMERA_ID listed=${CAMERA_ID in visibleIds} visible=${visibleIds.joinToString(",")}")
+            characteristics = try {
+                manager.getCameraCharacteristics(CAMERA_ID)
+            } catch (error: Exception) {
+                emit("CHARACTERISTICS_UNAVAILABLE id=$CAMERA_ID type=${error.javaClass.simpleName} message=${error.message}")
+                null
+            }
             val map = characteristics?.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
             val yuvAvailable = map?.getOutputSizes(ImageFormat.YUV_420_888)
                 ?.any { it.width == YUV_WIDTH && it.height == YUV_HEIGHT } ?: false
             val rawAvailable = map?.getOutputSizes(ImageFormat.RAW_SENSOR)
                 ?.any { it.width == RAW_WIDTH && it.height == RAW_HEIGHT } ?: false
-            emit("PUBLIC_MAP yuv2560=$yuvAvailable raw50=$rawAvailable (vendor unlisted may still work)")
-            emit("OPEN_CAMERA id=$CAMERA_ID")
+            emit("PUBLIC_MAP present=${map != null} yuv2560=$yuvAvailable raw50=$rawAvailable")
+            emit("DIRECT_OPEN_ATTEMPT id=$CAMERA_ID listed=${CAMERA_ID in visibleIds}")
             manager.openCamera(CAMERA_ID, object : CameraDevice.StateCallback() {
                 override fun onOpened(device: CameraDevice) {
                     camera = device
