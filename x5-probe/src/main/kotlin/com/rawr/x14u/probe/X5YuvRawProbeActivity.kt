@@ -90,7 +90,7 @@ class X5YuvRawProbeActivity : Activity() {
         }
         val header = TextView(this).apply {
             textSize = 22f
-            text = "ID5 | 0x900D\nYUV 2560x1920 + RAW16 8192x6144"
+            text = "ID5 PROBE V2 | 0x900D\nYUV 2560x1920 + RAW16 8192x6144"
         }
         layout.addView(header)
         startButton = Button(this).apply { text = "1. START ONCE" }

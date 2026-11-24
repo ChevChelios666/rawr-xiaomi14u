@@ -11,8 +11,8 @@ android {
         applicationId = "com.rawr.camera.x14u.x5yuvprobe"
         minSdk = 34
         targetSdk = 34
-        versionCode = 1
-        versionName = "x5-yuv-raw-20261124"
+        versionCode = 2
+        versionName = "x5-yuv-raw-20261124-v2"
     }
 
     compileOptions {
@@ -20,7 +20,18 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // Use the same tracked debug certificate on every CI build of this isolated module.
+    signingConfigs.getByName("debug") {
+        storeFile = rootProject.file("app/x14u-debug.keystore")
+        storePassword = "android"
+        keyAlias = "androiddebugkey"
+        keyPassword = "android"
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release { isMinifyEnabled = false }
     }
 }
