@@ -1,0 +1,44 @@
+name: AGC X14U One Run Script Verification
+
+on:
+  push:
+    branches:
+      - lab/agc-50mp-provenance-20261125
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-windows-powershell:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $source = 'scripts/AGC_X14U_ONE_RUN.ps1'
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $source).Path, [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              throw 'PS5.1 parser failed'
+          }
+          Write-Host "WINPS51_SYNTAX_OK tokens=$($tokens.Count)"
+      - name: Validate package contents and safety invariants
+        shell: powershell
+        run: |
+          $ps = Get-Content -LiteralPath 'scripts/AGC_X14U_ONE_RUN.ps1' -Raw
+          $cmd = Get-Content -LiteralPath 'scripts/RUN_AGC_ONE_RUN.cmd' -Raw
+          $readme = Get-Content -LiteralPath 'scripts/AGC_README_UA.txt' -Raw
+          if ([string]::IsNullOrWhiteSpace($cmd) -or [string]::IsNullOrWhiteSpace($readme)) { throw 'Missing launch/help content' }
+          foreach ($word in @('START-Process','Get-MediaPaths','camera_active_snapshots','logcat', 'Compress-Archive', 'Get-FileHash', 'Read-Host', 'Wait-Job')) {
+              if ($ps.IndexOf($word, [StringComparison]::OrdinalIgnoreCase) -lt 0) { throw "Missing: $word" }
+          }
+          foreach ($bad in @('adb uninstall', 'shell rm', 'kill-server', 'logcat -c', 'fastboot')) {
+              if ($ps.Contains($bad)) { throw "Unsafe command: $bad" }
+          }
+          if ($cmd.IndexOf('AGC_X14U_ONE_RUN.ps1', [StringComparison]::Ordinal) -lt 0) { throw 'Bad cmd runner' }
+          Write-Host 'CHECKS_OK'
