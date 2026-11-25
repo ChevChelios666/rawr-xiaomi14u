@@ -55,7 +55,7 @@ jobs:
           [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f).Path,[ref]$t,[ref]$e) | Out-Null
           if ($e.Count -gt 0) { $e | ForEach-Object { Write-Host $_.Message }; throw 'PS5.1 parsing failed' }
           $s = [IO.File]::ReadAllText((Resolve-Path $f).Path)
-          foreach($needle in @("CaptureStage '4'", "CaptureStage '5'", 'Get-FileHash', 'CameraService', 'logcat', 'Compress-Archive')) {
+          foreach($needle in @("CaptureStage '4'", "CaptureStage '5'", 'Get-FileHash', 'dumpsys media.camera', 'logcat', 'Compress-Archive')) {
             if (!$s.Contains($needle)) { throw "Missing checked function: $needle" }
           }
           if ($s -match '(?im)^\s*(&\s*)?adb\s+uninstall' -or $s -match '(?im)\badb\s+shell\s+rm\b') { throw 'Unexpected destructive action' }
