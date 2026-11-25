@@ -11,8 +11,8 @@ android {
         applicationId = "com.rawr.camera.x14u.x5yuvprobe"
         minSdk = 34
         targetSdk = 34
-        versionCode = 4
-        versionName = "id4-id5-surfacetexture-20261125-v4"
+        versionCode = 5
+        versionName = "id4-id5-glpreview-20261125-v5"
     }
 
     compileOptions {

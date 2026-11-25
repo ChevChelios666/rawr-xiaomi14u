@@ -1,5 +1,5 @@
 # X14U ID4/ID5 same-package admission comparison, Windows PowerShell 5.1.
-# Camera2 stages: 0x900D, SurfaceTexture preview + RAW_SENSOR 8192x6144.
+# Camera2 stages: 0x900D, OpenGL-backed SurfaceTexture preview + RAW_SENSOR 8192x6144.
 # No root, no system changes, no deletion of photos or working lenses.
 [CmdletBinding()]
 param()
@@ -64,7 +64,7 @@ function CaptureStage([string]$id) {
     Write-Host ''
     Write-Host '==============================================================' -ForegroundColor Yellow
     Write-Host "STAGE: $label  |  camera ID=$id  |  opmode=0x900D" -ForegroundColor Yellow
-    Write-Host 'On the phone: verify the header displays the correct ID and TEXTURE V4.'
+    Write-Host 'On the phone: verify the header displays the correct ID and GLPREVIEW V5.'
     Write-Host 'Tap 1. START ONCE exactly once.'
     Write-Host 'If PREVIEW_RUNNING: tap 2. CAPTURE ONE RAW, then wait for RAW_SAVE_OK or FAIL.'
     Write-Host 'If FAIL: DO NOT RETRY. Return to the laptop.'
@@ -80,7 +80,7 @@ function CaptureStage([string]$id) {
 }
 
 try {
-    Record 'X14U ID4/ID5 admission control V3. No AGC; two unchanged stream definitions.'
+    Record 'X14U ID4/ID5 admission control V5. No AGC; two unchanged stream definitions.'
     if (!(Test-Path -LiteralPath $apk -PathType Leaf)) { throw "APK missing: $apk" }
     if (!(Test-Path -LiteralPath $checksumFile -PathType Leaf)) { throw "SHA file missing: $checksumFile" }
     $expected = ((Get-Content -LiteralPath $checksumFile -TotalCount 1).Trim() -split '\s+')[0].ToUpperInvariant()

@@ -8,6 +8,9 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.ImageFormat
 import android.graphics.SurfaceTexture
+import android.opengl.GLES11Ext
+import android.opengl.GLES20
+import android.opengl.GLSurfaceView
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
@@ -27,7 +30,6 @@ import android.os.HandlerThread
 import android.provider.MediaStore
 import android.util.Log
 import android.view.Surface
-import android.view.TextureView
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -37,6 +39,8 @@ import java.io.IOException
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import javax.microedition.khronos.egl.EGLConfig
+import javax.microedition.khronos.opengles.GL10
 
 /**
  * Isolated X14U 5x probe. Not the production Rawr pipeline.
@@ -66,7 +70,8 @@ class X5YuvRawProbeActivity : Activity() {
     private lateinit var statusView: TextView
     private var camera: CameraDevice? = null
     private var session: CameraCaptureSession? = null
-    private lateinit var previewView: TextureView
+    private lateinit var previewView: GLSurfaceView
+    @Volatile private var glTexture: SurfaceTexture? = null
     private var previewSurface: Surface? = null
     private var rawReader: ImageReader? = null
     private val launched = AtomicBoolean(false)
@@ -94,25 +99,46 @@ class X5YuvRawProbeActivity : Activity() {
         }
         val header = TextView(this).apply {
             textSize = 22f
-            text = "ID${cameraId} TEXTURE V4 | 0x900D\nSurfaceTexture 2560x1920 + RAW16 8192x6144"
+            text = "ID${cameraId} GLPREVIEW V5 | 0x900D\nSurfaceTexture 2560x1920 + RAW16 8192x6144"
         }
         layout.addView(header)
-        previewView = TextureView(this).apply {
-            surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                override fun onSurfaceTextureAvailable(st: SurfaceTexture, width: Int, height: Int) {
-                    emit("TEXTURE_AVAILABLE view=${width}x${height} requested=${YUV_WIDTH}x${YUV_HEIGHT}")
-                    startButton.isEnabled = true
+        // One-variable control: OpenGL-backed SurfaceTexture, similar to PhotonVidCam.
+        // RAW reader, package ID, opmode and camera ID remain as in V4.
+        previewView = GLSurfaceView(this).apply {
+            setEGLContextClientVersion(2)
+            setRenderer(object : GLSurfaceView.Renderer {
+                override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
+                    val ids = IntArray(1)
+                    GLES20.glGenTextures(1, ids, 0)
+                    GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, ids[0])
+                    GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
+                        GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+                    GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
+                        GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+                    val texture = SurfaceTexture(ids[0])
+                    texture.setDefaultBufferSize(YUV_WIDTH, YUV_HEIGHT)
+                    texture.setOnFrameAvailableListener({ previewView.requestRender() }, cameraHandler)
+                    glTexture = texture
+                    emit("GL_TEXTURE_AVAILABLE textureId=${ids[0]} size=${YUV_WIDTH}x${YUV_HEIGHT}")
+                    runOnUiThread { startButton.isEnabled = true }
                 }
-                override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, width: Int, height: Int) {
-                    emit("TEXTURE_VIEW_RESIZED ${width}x${height}")
+                override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
+                    GLES20.glViewport(0, 0, width, height)
+                    emit("GL_SURFACE_RESIZED width=$width height=$height")
                 }
-                override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
-                    emit("TEXTURE_DESTROYED")
-                    startButton.isEnabled = false
-                    return true
+                override fun onDrawFrame(gl: GL10?) {
+                    GLES20.glClearColor(0f, 0f, 0f, 1f)
+                    GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+                    val texture = glTexture ?: return
+                    try {
+                        texture.updateTexImage()
+                        yuvFrameCount++
+                    } catch (error: Exception) {
+                        Log.w(TAG, "GL_TEXTURE_UPDATE_FAIL ${error.message}")
+                    }
                 }
-                override fun onSurfaceTextureUpdated(st: SurfaceTexture) { yuvFrameCount++ }
-            }
+            })
+            renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
         }
         val previewHeight = (230 * resources.displayMetrics.density).toInt()
         layout.addView(previewView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, previewHeight))
@@ -211,10 +237,10 @@ class X5YuvRawProbeActivity : Activity() {
 
     private fun createExactlyTwoOutputs(device: CameraDevice) {
         try {
-            val texture = previewView.surfaceTexture ?: throw IllegalStateException("SurfaceTexture unavailable")
+            val texture = glTexture ?: throw IllegalStateException("OpenGL SurfaceTexture unavailable")
             texture.setDefaultBufferSize(YUV_WIDTH, YUV_HEIGHT)
             previewSurface = Surface(texture)
-            emit("PREVIEW_CONSUMER SurfaceTexture size=${YUV_WIDTH}x${YUV_HEIGHT}")
+            emit("PREVIEW_CONSUMER GLSurfaceView+SurfaceTexture size=${YUV_WIDTH}x${YUV_HEIGHT}")
             rawReader = ImageReader.newInstance(RAW_WIDTH, RAW_HEIGHT, ImageFormat.RAW_SENSOR, 2)
             rawReader!!.setOnImageAvailableListener({ reader ->
                 val image = try { reader.acquireNextImage() } catch (error: Exception) {
@@ -363,7 +389,7 @@ class X5YuvRawProbeActivity : Activity() {
             val json = JSONObject().apply {
                 put("cameraId", cameraId)
                 put("opMode", OP_MODE)
-                put("streamTopology", "SurfaceTexture 2560x1920 repeating + RAW_SENSOR 8192x6144 still")
+                put("streamTopology", "GLSurfaceView+SurfaceTexture 2560x1920 repeating + RAW_SENSOR 8192x6144 still")
                 put("width", width)
                 put("height", height)
                 put("imageFormat", format)
@@ -430,6 +456,8 @@ class X5YuvRawProbeActivity : Activity() {
         try { session?.close() } catch (_: Exception) { }
         try { camera?.close() } catch (_: Exception) { }
         try { previewSurface?.release() } catch (_: Exception) { }
+        try { glTexture?.release() } catch (_: Exception) { }
+        try { previewView.onPause() } catch (_: Exception) { }
         try { rawReader?.close() } catch (_: Exception) { }
         cameraThread.quitSafely()
         ioThread.quitSafely()
