@@ -57,7 +57,7 @@ function CaptureStage([string]$id) {
     $startText = (& $script:adb -s $script:device shell am start -n $component --es probe_camera_id $id | Out-String).Trim()
     Record "LAUNCH $label exit=$LASTEXITCODE $startText"
     if ($LASTEXITCODE -ne 0 -or $startText -match 'Error:|Exception') {
-        throw "Cannot launch $label: $startText"
+        throw "Cannot launch ${label}: $startText"
     }
     Start-Sleep -Seconds 2
     Snapshot "${label}_BEFORE"
