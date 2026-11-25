@@ -11,8 +11,8 @@ android {
         applicationId = "com.rawr.camera.x14u.x5yuvprobe"
         minSdk = 34
         targetSdk = 34
-        versionCode = 2
-        versionName = "x5-yuv-raw-20261124-v2"
+        versionCode = 3
+        versionName = "id4-id5-control-20261125-v3"
     }
 
     compileOptions {

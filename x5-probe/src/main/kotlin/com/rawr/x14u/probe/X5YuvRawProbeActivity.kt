@@ -44,7 +44,6 @@ import java.util.concurrent.atomic.AtomicReference
 class X5YuvRawProbeActivity : Activity() {
     companion object {
         private const val TAG = "X14U5XProbe"
-        private const val CAMERA_ID = "5"
         private const val OP_MODE = 36877
         private const val YUV_WIDTH = 2560
         private const val YUV_HEIGHT = 1920
@@ -70,7 +69,8 @@ class X5YuvRawProbeActivity : Activity() {
     private val shotSent = AtomicBoolean(false)
     private val rawReceived = AtomicBoolean(false)
     private val captureResult = AtomicReference<TotalCaptureResult?>(null)
-    private val filePrefix = "X14U_ID5_YUVRAW_${System.currentTimeMillis()}"
+    private val cameraId: String by lazy { if (intent.getStringExtra("probe_camera_id") == "4") "4" else "5" }
+    private val filePrefix: String by lazy { "X14U_ID${cameraId}_YUVRAW_${System.currentTimeMillis()}" }
     @Volatile private var yuvFrameCount = 0
     private var characteristics: CameraCharacteristics? = null
 
@@ -90,7 +90,7 @@ class X5YuvRawProbeActivity : Activity() {
         }
         val header = TextView(this).apply {
             textSize = 22f
-            text = "ID5 PROBE V2 | 0x900D\nYUV 2560x1920 + RAW16 8192x6144"
+            text = "ID${cameraId} CONTROL V3 | 0x900D\nYUV 2560x1920 + RAW16 8192x6144"
         }
         layout.addView(header)
         startButton = Button(this).apply { text = "1. START ONCE" }
@@ -113,7 +113,7 @@ class X5YuvRawProbeActivity : Activity() {
             }
         }
         captureButton.setOnClickListener { captureOneRaw() }
-        emit("NEW_PROBE pkg=$packageName cam=$CAMERA_ID op=$OP_MODE yuv=${YUV_WIDTH}x${YUV_HEIGHT} raw=${RAW_WIDTH}x${RAW_HEIGHT}")
+        emit("NEW_PROBE pkg=$packageName cam=$cameraId op=$OP_MODE yuv=${YUV_WIDTH}x${YUV_HEIGHT} raw=${RAW_WIDTH}x${RAW_HEIGHT}")
     }
 
     private fun emit(message: String) {
@@ -152,11 +152,11 @@ class X5YuvRawProbeActivity : Activity() {
                 emit("CAMERA_LIST_ERROR type=${error.javaClass.simpleName} message=${error.message}")
                 emptyList()
             }
-            emit("CAMERA_LIST target=$CAMERA_ID listed=${CAMERA_ID in visibleIds} visible=${visibleIds.joinToString(",")}")
+            emit("CAMERA_LIST target=$cameraId listed=${cameraId in visibleIds} visible=${visibleIds.joinToString(",")}")
             characteristics = try {
-                manager.getCameraCharacteristics(CAMERA_ID)
+                manager.getCameraCharacteristics(cameraId)
             } catch (error: Exception) {
-                emit("CHARACTERISTICS_UNAVAILABLE id=$CAMERA_ID type=${error.javaClass.simpleName} message=${error.message}")
+                emit("CHARACTERISTICS_UNAVAILABLE id=$cameraId type=${error.javaClass.simpleName} message=${error.message}")
                 null
             }
             val map = characteristics?.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
@@ -165,8 +165,8 @@ class X5YuvRawProbeActivity : Activity() {
             val rawAvailable = map?.getOutputSizes(ImageFormat.RAW_SENSOR)
                 ?.any { it.width == RAW_WIDTH && it.height == RAW_HEIGHT } ?: false
             emit("PUBLIC_MAP present=${map != null} yuv2560=$yuvAvailable raw50=$rawAvailable")
-            emit("DIRECT_OPEN_ATTEMPT id=$CAMERA_ID listed=${CAMERA_ID in visibleIds}")
-            manager.openCamera(CAMERA_ID, object : CameraDevice.StateCallback() {
+            emit("DIRECT_OPEN_ATTEMPT id=$cameraId listed=${cameraId in visibleIds}")
+            manager.openCamera(cameraId, object : CameraDevice.StateCallback() {
                 override fun onOpened(device: CameraDevice) {
                     camera = device
                     emit("CAMERA_OPENED id=${device.id}")
@@ -220,7 +220,7 @@ class X5YuvRawProbeActivity : Activity() {
                         return
                     }
                     session = configured
-                    emit("SESSION_CONFIGURED cam=$CAMERA_ID op=0x900D outputs=2 yuv=$YUV_WIDTH,$YUV_HEIGHT raw=$RAW_WIDTH,$RAW_HEIGHT")
+                    emit("SESSION_CONFIGURED cam=$cameraId op=0x900D outputs=2 yuv=$YUV_WIDTH,$YUV_HEIGHT raw=$RAW_WIDTH,$RAW_HEIGHT")
                     startYuvRepeating(device, configured)
                 }
                 override fun onConfigureFailed(configured: CameraCaptureSession) {
@@ -228,7 +228,7 @@ class X5YuvRawProbeActivity : Activity() {
                     configured.close()
                 }
             })
-            emit("CONFIGURE_REQUEST cam=$CAMERA_ID op=0x900D outputs=[YUV_420_888:${YUV_WIDTH}x${YUV_HEIGHT},RAW_SENSOR:${RAW_WIDTH}x${RAW_HEIGHT}] useCase=0,0 keys=none")
+            emit("CONFIGURE_REQUEST cam=$cameraId op=0x900D outputs=[YUV_420_888:${YUV_WIDTH}x${YUV_HEIGHT},RAW_SENSOR:${RAW_WIDTH}x${RAW_HEIGHT}] useCase=0,0 keys=none")
             device.createCaptureSession(config)
         } catch (error: Exception) {
             failure("configure_exception", error.javaClass.simpleName + ":" + error.message)
@@ -342,7 +342,7 @@ class X5YuvRawProbeActivity : Activity() {
                 black.getOffsetForIndex(1, 0), black.getOffsetForIndex(1, 1)
             )
             val json = JSONObject().apply {
-                put("cameraId", CAMERA_ID)
+                put("cameraId", cameraId)
                 put("opMode", OP_MODE)
                 put("streamTopology", "YUV 2560x1920 repeating + RAW_SENSOR 8192x6144 still")
                 put("width", width)
