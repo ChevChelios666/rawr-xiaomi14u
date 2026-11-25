@@ -1,0 +1,31 @@
+name: X14U PVC5X 0x900E Guarded Read-only Collector
+on:
+  push:
+    branches:
+      - lab/pvc5x-remosaic-opmode-900e-20261125
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-powershell51:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse, inspect and simulate V6 preflight verification logic
+        shell: powershell
+        run: |
+          $path = 'scripts/PVC5X_900E_ONE_RUN.ps1'
+          $tokens = $null
+          $err = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path).Path,[ref]$tokens,[ref]$err) | Out-Null
+          if ($err.Count -gt 0) { $err | ForEach-Object { Write-Host $_.Message }; throw 'Windows PowerShell 5.1 parser failure' }
+          $body = [IO.File]::ReadAllText((Resolve-Path $path).Path)
+          foreach($name in @('Client package:', 'Camera device 5 dynamic info', 'CUSTOM\s*\(36878\)', 'ImageReader-8192x6144f20','PREFLIGHT_FAIL','PREFLIGHT_PASS','DumpCamera','Read-Host','Compress-Archive')) {
+            if (!$body.Contains($name)) { throw "Missing preflight invariant: $name" }
+          }
+          if ($body -match 'adb\s+(uninstall|install)' -or $body -match 'logcat\s+-c') { throw 'Unexpected destructive command' }
+          $slice = 'Camera device 5 dynamic info: == Client package: com.xiaomi.module.evaluation Device status: ACTIVE Operation mode: CUSTOM (36878) Consumer name: ImageReader-8192x6144f20m3'
+          if ($slice -notmatch 'Operation mode:\s*CUSTOM\s*\(36878\)' -or $slice -notmatch 'Consumer name:\s*ImageReader-8192x6144f20') { throw 'Expected acceptance regex mismatch' }
+          $wrong = $slice.Replace('(36878)','(36877)')
+          if ($wrong -match 'Operation mode:\s*CUSTOM\s*\(36878\)') { throw 'Wrong opmode accepted' }
+          Write-Host 'WINPS51_AND_PREFLIGHT_PASS'
