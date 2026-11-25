@@ -1,5 +1,5 @@
 # X14U ID4/ID5 same-package admission comparison, Windows PowerShell 5.1.
-# Two Camera2 sessions only: 0x900D, YUV 2560x1920 + RAW_SENSOR 8192x6144.
+# Camera2 stages: 0x900D, SurfaceTexture preview + RAW_SENSOR 8192x6144.
 # No root, no system changes, no deletion of photos or working lenses.
 [CmdletBinding()]
 param()
@@ -64,7 +64,7 @@ function CaptureStage([string]$id) {
     Write-Host ''
     Write-Host '==============================================================' -ForegroundColor Yellow
     Write-Host "STAGE: $label  |  camera ID=$id  |  opmode=0x900D" -ForegroundColor Yellow
-    Write-Host 'On the phone: verify the header displays the correct ID and CONTROL V3.'
+    Write-Host 'On the phone: verify the header displays the correct ID and TEXTURE V4.'
     Write-Host 'Tap 1. START ONCE exactly once.'
     Write-Host 'If PREVIEW_RUNNING: tap 2. CAPTURE ONE RAW, then wait for RAW_SAVE_OK or FAIL.'
     Write-Host 'If FAIL: DO NOT RETRY. Return to the laptop.'
@@ -129,7 +129,18 @@ try {
     Record "LOGCAT_STREAM_STARTED pid=$($script:continuousLog.Id)"
     Start-Sleep -Seconds 2
     Snapshot 'BASELINE'
-    if (CaptureStage '4') { $null = CaptureStage '5' }
+    if (CaptureStage '4') {
+        $checkFile = Join-Path $outDir 'logcat_ID4_3X_CONTROL_AFTER.txt'
+        $stageLog = if (Test-Path -LiteralPath $checkFile) { Get-Content -LiteralPath $checkFile -Raw } else { '' }
+        $markerAt = $stageLog.LastIndexOf('STAGE_BEGIN_ID4_3X_CONTROL')
+        if ($markerAt -ge 0) { $stageLog = $stageLog.Substring($markerAt) }
+        if ($stageLog -match 'SESSION_CONFIGURED cam=4') {
+            Record 'ID4_ADMISSION_CONFIRMED; CONTINUE_ID5'
+            $null = CaptureStage '5'
+        } else {
+            Record 'SKIP_ID5_ID4_NOT_CONFIGURED_OR_LOG_UNAVAILABLE'
+        }
+    }
     Mark 'CONTROL_END'
     Record "TEST_END stages=$($script:stageCompleted)"
 } catch {

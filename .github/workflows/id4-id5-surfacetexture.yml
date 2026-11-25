@@ -1,0 +1,62 @@
+name: X14U ID4-ID5 SurfaceTexture Control V4
+on:
+  push:
+    branches:
+      - lab/x14u-id4-id5-surfacetexture-20261125
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile isolated X14U Camera2 control APK
+        run: |
+          ./gradlew :x5-probe:assembleDebug --no-daemon
+          test -s x5-probe/build/outputs/apk/debug/x5-probe-debug.apk
+      - name: Verify package identity, version and prebuilt APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=x5-probe/build/outputs/apk/debug/x5-probe-debug.apk
+          AAPT=$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -name aapt -type f | sort -V | tail -n 1)
+          "$AAPT" dump badging "$APK" > apk_badging.txt
+          grep -F "package: name='com.rawr.camera.x14u.x5yuvprobe' versionCode='3'" apk_badging.txt
+          sha256sum "$APK" > APK_SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: x14u-id4-id5-control-v3-${{ github.sha }}
+          path: |
+            x5-probe/build/outputs/apk/debug/x5-probe-debug.apk
+            APK_SHA256.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-powershell:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse Windows PowerShell 5.1, check runner structure
+        shell: powershell
+        run: |
+          $f = 'scripts/RUN_ID4_ID5_CONTROL.ps1'
+          $t = $null; $e = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f).Path,[ref]$t,[ref]$e) | Out-Null
+          if ($e.Count -gt 0) { $e | ForEach-Object { Write-Host $_.Message }; throw 'PS5.1 parsing failed' }
+          $s = [IO.File]::ReadAllText((Resolve-Path $f).Path)
+          foreach($needle in @("CaptureStage '4'", "CaptureStage '5'", 'Get-FileHash', 'dumpsys media.camera', 'logcat', 'Compress-Archive')) {
+            if (!$s.Contains($needle)) { throw "Missing checked function: $needle" }
+          }
+          if ($s -match '(?im)^\s*(&\s*)?adb\s+uninstall' -or $s -match '(?im)\badb\s+shell\s+rm\b') { throw 'Unexpected destructive action' }
+          Write-Host 'WINPS51 PARSE AND STATIC INVARIANTS PASS'

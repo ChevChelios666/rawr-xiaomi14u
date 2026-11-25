@@ -7,6 +7,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.ImageFormat
+import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
@@ -25,6 +26,8 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.provider.MediaStore
 import android.util.Log
+import android.view.Surface
+import android.view.TextureView
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -38,7 +41,7 @@ import java.util.concurrent.atomic.AtomicReference
 /**
  * Isolated X14U 5x probe. Not the production Rawr pipeline.
  * One configure attempt, two outputs in the observed 3x order:
- *   YUV_420_888 2560x1920 repeating, RAW_SENSOR 8192x6144 one-shot.
+ *   SurfaceTexture 2560x1920 repeating, RAW_SENSOR 8192x6144 one-shot.
  * OP mode 36877 (0x900D), zero vendor keys / zero stream-use-case overrides.
  */
 class X5YuvRawProbeActivity : Activity() {
@@ -63,7 +66,8 @@ class X5YuvRawProbeActivity : Activity() {
     private lateinit var statusView: TextView
     private var camera: CameraDevice? = null
     private var session: CameraCaptureSession? = null
-    private var yuvReader: ImageReader? = null
+    private lateinit var previewView: TextureView
+    private var previewSurface: Surface? = null
     private var rawReader: ImageReader? = null
     private val launched = AtomicBoolean(false)
     private val shotSent = AtomicBoolean(false)
@@ -90,10 +94,29 @@ class X5YuvRawProbeActivity : Activity() {
         }
         val header = TextView(this).apply {
             textSize = 22f
-            text = "ID${cameraId} CONTROL V3 | 0x900D\nYUV 2560x1920 + RAW16 8192x6144"
+            text = "ID${cameraId} TEXTURE V4 | 0x900D\nSurfaceTexture 2560x1920 + RAW16 8192x6144"
         }
         layout.addView(header)
-        startButton = Button(this).apply { text = "1. START ONCE" }
+        previewView = TextureView(this).apply {
+            surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                override fun onSurfaceTextureAvailable(st: SurfaceTexture, width: Int, height: Int) {
+                    emit("TEXTURE_AVAILABLE view=${width}x${height} requested=${YUV_WIDTH}x${YUV_HEIGHT}")
+                    startButton.isEnabled = true
+                }
+                override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, width: Int, height: Int) {
+                    emit("TEXTURE_VIEW_RESIZED ${width}x${height}")
+                }
+                override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
+                    emit("TEXTURE_DESTROYED")
+                    startButton.isEnabled = false
+                    return true
+                }
+                override fun onSurfaceTextureUpdated(st: SurfaceTexture) { yuvFrameCount++ }
+            }
+        }
+        val previewHeight = (230 * resources.displayMetrics.density).toInt()
+        layout.addView(previewView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, previewHeight))
+        startButton = Button(this).apply { text = "1. START ONCE"; isEnabled = false }
         captureButton = Button(this).apply { text = "2. CAPTURE ONE RAW"; isEnabled = false }
         statusView = TextView(this).apply { textSize = 16f; text = "Ready. No camera opened yet.\n" }
         layout.addView(startButton)
@@ -188,15 +211,11 @@ class X5YuvRawProbeActivity : Activity() {
 
     private fun createExactlyTwoOutputs(device: CameraDevice) {
         try {
-            yuvReader = ImageReader.newInstance(YUV_WIDTH, YUV_HEIGHT, ImageFormat.YUV_420_888, 3)
+            val texture = previewView.surfaceTexture ?: throw IllegalStateException("SurfaceTexture unavailable")
+            texture.setDefaultBufferSize(YUV_WIDTH, YUV_HEIGHT)
+            previewSurface = Surface(texture)
+            emit("PREVIEW_CONSUMER SurfaceTexture size=${YUV_WIDTH}x${YUV_HEIGHT}")
             rawReader = ImageReader.newInstance(RAW_WIDTH, RAW_HEIGHT, ImageFormat.RAW_SENSOR, 2)
-            yuvReader!!.setOnImageAvailableListener({ reader ->
-                try {
-                    reader.acquireLatestImage()?.use { yuvFrameCount++ }
-                } catch (error: Exception) {
-                    Log.w(TAG, "YUV_DRAIN_ERROR ${error.message}")
-                }
-            }, ioHandler)
             rawReader!!.setOnImageAvailableListener({ reader ->
                 val image = try { reader.acquireNextImage() } catch (error: Exception) {
                     failure("raw_acquire", error.message ?: "unknown")
@@ -208,7 +227,7 @@ class X5YuvRawProbeActivity : Activity() {
                     } else image.close()
                 }
             }, ioHandler)
-            val yuv = OutputConfiguration(yuvReader!!.surface)
+            val yuv = OutputConfiguration(requireNotNull(previewSurface))
             val raw = OutputConfiguration(rawReader!!.surface)
             // Both stream use cases remain their Camera2 default (=0). No vendor keys.
             val outputs = listOf(yuv, raw)
@@ -220,15 +239,15 @@ class X5YuvRawProbeActivity : Activity() {
                         return
                     }
                     session = configured
-                    emit("SESSION_CONFIGURED cam=$cameraId op=0x900D outputs=2 yuv=$YUV_WIDTH,$YUV_HEIGHT raw=$RAW_WIDTH,$RAW_HEIGHT")
+                    emit("SESSION_CONFIGURED cam=$cameraId op=0x900D outputs=2 texture=$YUV_WIDTH,$YUV_HEIGHT raw=$RAW_WIDTH,$RAW_HEIGHT")
                     startYuvRepeating(device, configured)
                 }
                 override fun onConfigureFailed(configured: CameraCaptureSession) {
-                    failure("configure", "CameraService rejected YUV+RAW session")
+                    failure("configure", "CameraService rejected SurfaceTexture+RAW session")
                     configured.close()
                 }
             })
-            emit("CONFIGURE_REQUEST cam=$cameraId op=0x900D outputs=[YUV_420_888:${YUV_WIDTH}x${YUV_HEIGHT},RAW_SENSOR:${RAW_WIDTH}x${RAW_HEIGHT}] useCase=0,0 keys=none")
+            emit("CONFIGURE_REQUEST cam=$cameraId op=0x900D outputs=[SurfaceTexture:${YUV_WIDTH}x${YUV_HEIGHT},RAW_SENSOR:${RAW_WIDTH}x${RAW_HEIGHT}] useCase=0,0 keys=none")
             device.createCaptureSession(config)
         } catch (error: Exception) {
             failure("configure_exception", error.javaClass.simpleName + ":" + error.message)
@@ -238,12 +257,12 @@ class X5YuvRawProbeActivity : Activity() {
     private fun startYuvRepeating(device: CameraDevice, configured: CameraCaptureSession) {
         try {
             val preview = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
-                addTarget(requireNotNull(yuvReader).surface)
+                addTarget(requireNotNull(previewSurface))
                 set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
                 set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
             }.build()
             configured.setRepeatingRequest(preview, object : CameraCaptureSession.CaptureCallback() {}, cameraHandler)
-            emit("PREVIEW_RUNNING target=YUV_ONLY; RAW not targeted; button ready")
+            emit("PREVIEW_RUNNING target=SurfaceTexture_ONLY; RAW not targeted; button ready")
             runOnUiThread { captureButton.isEnabled = true }
         } catch (error: Exception) {
             failure("preview", error.javaClass.simpleName + ":" + error.message)
@@ -344,7 +363,7 @@ class X5YuvRawProbeActivity : Activity() {
             val json = JSONObject().apply {
                 put("cameraId", cameraId)
                 put("opMode", OP_MODE)
-                put("streamTopology", "YUV 2560x1920 repeating + RAW_SENSOR 8192x6144 still")
+                put("streamTopology", "SurfaceTexture 2560x1920 repeating + RAW_SENSOR 8192x6144 still")
                 put("width", width)
                 put("height", height)
                 put("imageFormat", format)
@@ -365,7 +384,7 @@ class X5YuvRawProbeActivity : Activity() {
                 put("checkedRows", checkedRows)
                 put("rawFile", name)
                 put("expectedFileBytes", height.toLong() * activeBytes)
-                put("yuvFramesSeen", yuvFrameCount)
+                put("previewTextureUpdates", yuvFrameCount)
             }
             saveText("${filePrefix}_metadata.json", json.toString(2))
             emit("RAW_SAVE_OK file=$name bytes=${height.toLong() * activeBytes} firstRows=$firstRowsNonZero lastRows=$lastRowsNonZero")
@@ -410,7 +429,7 @@ class X5YuvRawProbeActivity : Activity() {
         captureButton.isEnabled = false
         try { session?.close() } catch (_: Exception) { }
         try { camera?.close() } catch (_: Exception) { }
-        try { yuvReader?.close() } catch (_: Exception) { }
+        try { previewSurface?.release() } catch (_: Exception) { }
         try { rawReader?.close() } catch (_: Exception) { }
         cameraThread.quitSafely()
         ioThread.quitSafely()
