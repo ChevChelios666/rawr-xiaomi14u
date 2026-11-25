@@ -31,11 +31,11 @@ jobs:
           APK=x5-probe/build/outputs/apk/debug/x5-probe-debug.apk
           AAPT=$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -name aapt -type f | sort -V | tail -n 1)
           "$AAPT" dump badging "$APK" > apk_badging.txt
-          grep -F "package: name='com.rawr.camera.x14u.x5yuvprobe' versionCode='3'" apk_badging.txt
+          grep -F "package: name='com.rawr.camera.x14u.x5yuvprobe' versionCode='4'" apk_badging.txt
           sha256sum "$APK" > APK_SHA256.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: x14u-id4-id5-control-v3-${{ github.sha }}
+          name: x14u-id4-id5-texture-v4-${{ github.sha }}
           path: |
             x5-probe/build/outputs/apk/debug/x5-probe-debug.apk
             APK_SHA256.txt
