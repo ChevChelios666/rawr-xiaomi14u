@@ -1,0 +1,23 @@
+{
+  "device": "Xiaomi 14 Ultra aurora, V816.0.12.0.UNAMIXM",
+  "installed_app": "PhotonVidCam 0.98 (4389), com.xiaomi.module.evaluation",
+  "target_camera_id": "5",
+  "observations": {
+    "raw_stream_8192x6144_0x900d": "confirmed_log",
+    "one_raw_buffer_produced": "confirmed_log",
+    "dng_valid_fullres_bayer": "failed",
+    "dng_nonzero_samples": 12582912,
+    "dng_zero_samples": 37748736,
+    "v6_0x900e_effective_opmode": "unverified",
+    "v6_stream_configuration": "failed_-38",
+    "source_of_zero_padding": "unverified"
+  },
+  "prepared": {
+    "diagnostic_source": "prepared",
+    "java_17_compile": "pass",
+    "synthetic_tests": "pass",
+    "safe_overlay_apply_tests": "pass",
+    "signed_compatible_photon_apk": "not_built",
+    "on_device_input_buffer_measurement": "not_run"
+  }
+}

@@ -1,0 +1,31 @@
+name: X14U PhotonVidCam RAW50 Source-only Audit CI
+on:
+  push:
+    branches:
+      - lab/pvc-5x-raw-buffer-audit-20261125
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Compile audit and hooks, run synthetic RAW16 + overlay integrity tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd diagnostics/photonvidcam-raw50
+          sh tests/verify.sh
+      - name: Assert no APK masquerades as a validated release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -f diagnostics/photonvidcam-raw50/PhotonVidCam_signed.apk
+          grep -q 'not_built' diagnostics/photonvidcam-raw50/STATUS.json
+          echo 'SOURCE_ONLY_NO_SIGNED_APK_ASSERTION_PASS'
