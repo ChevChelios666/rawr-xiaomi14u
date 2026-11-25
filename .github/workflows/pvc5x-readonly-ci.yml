@@ -1,0 +1,34 @@
+name: X14U PhotonVidCam 5x Read-only Collector CI
+on:
+  push:
+    branches:
+      - lab/x14u-pvc5x-onerun-collector-20261125
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-powershell-51:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse Windows PowerShell 5.1 and check safe collector properties
+        shell: powershell
+        run: |
+          $file = 'scripts/PVC5X_ONE_RUN.ps1'
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file).Path,[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Host $_.Message }; throw 'PowerShell 5.1 parse failed' }
+          $s = [IO.File]::ReadAllText((Resolve-Path $file).Path)
+          foreach($text in @('com.xiaomi.module.evaluation','MediaList','Start-Job','Start-Process','dumpsys media.camera','Get-FileHash','Compress-Archive','Read-Host')) {
+            if (!$s.Contains($text)) { throw "Missing feature: $text" }
+          }
+          foreach($danger in @(' shell rm ', 'logcat -c', 'adb uninstall','kill-server','install -r','fastboot flash')) {
+            if ($s.Contains($danger)) { throw "Unsafe command: $danger" }
+          }
+          $runner = [IO.File]::ReadAllText((Resolve-Path 'scripts/RUN_PVC5X_ONE_RUN.cmd').Path)
+          if (!$runner.Contains('PVC5X_ONE_RUN.ps1')) { throw 'Wrong runner target' }
+          Write-Host 'WINPS51_PARSE_AND_STRUCTURE_PASS'
