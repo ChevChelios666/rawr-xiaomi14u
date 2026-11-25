@@ -1,0 +1,35 @@
+name: X14U PhotonVidCam Installed APK Collector Windows Check
+
+on:
+  push:
+    branches:
+      - lab/pvc-installed-apk-readonly-20261125
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-windows-powershell:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse actual collector with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $path = 'scripts/X14U_PhotonVidCam_Exact_APK_Collector_20261125.ps1'
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path).Path,[ref]$tokens,[ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | ForEach-Object { Write-Host $_.Message }
+            throw 'PowerShell 5.1 parse failed'
+          }
+          $source = [System.IO.File]::ReadAllText((Resolve-Path $path).Path)
+          foreach($term in @('com.xiaomi.module.evaluation', 'shell pm path', 'dumpsys package', 'Get-FileHash', 'CreateFromDirectory', 'Compress')) {
+            if (!$source.Contains($term)) { throw "Missing checked operation: $term" }
+          }
+          if ($source -match '\b(?:install|uninstall|root|remount|reboot)\b' -and $source -match '\badb\s+uninstall\b') {
+            throw 'Unexpected uninstall operation'
+          }
+          Write-Host 'WINPS51_COLLECTOR_PARSE_PASS'
