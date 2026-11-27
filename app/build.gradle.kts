@@ -118,8 +118,8 @@ android {
     buildTypes {
         debug {
             // X14U build: its own app (installs beside Rawr and Rawr Debug).
-            applicationIdSuffix = ".x14u.galleryfix"
-            resValue("string", "app_name", "Rawr X14U GalleryFix")
+            applicationIdSuffix = ".x14u.hybrid3xlab"
+            resValue("string", "app_name", "Rawr X14U Hybrid3x Phase1")
             // Native EXIF Software tag; must match BuildConfig.VERSION_NAME.
             externalNativeBuild { cmake { arguments += "-DRAWR_VERSION_NAME=${debugVersionName.get()}" } }
         }

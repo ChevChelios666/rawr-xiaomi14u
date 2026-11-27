@@ -71,6 +71,9 @@ struct SessionRecipe {
     // The camera API that runs the session, and what only the Java one can carry.
     CameraApi cameraApi = CameraApi::Native;
     uint32_t opMode = 0;
+    // X14U ID4 phase-1 experiment: YUV repeating preview + ONE full-size RAW capture output.
+    // The regular RAW viewfinder is absent; display bridging is a separate phase.
+    bool hybrid3xAdmissionOnly = false;
     int64_t rawStreamUseCase = 0;
     int64_t photoStreamUseCase = 0;
     int64_t companionStreamUseCase = 0;
@@ -81,6 +84,7 @@ struct SessionRecipe {
 struct RecipeInputs {
     bool forcedCompanion = false;     // debug.rawr.companion_stream=1
     bool automaticCompanion = false;  // the unverified-device rule, after the start ladder and fallbacks
+    bool hybrid3xAdmissionOnly = false;  // manually armed, only ID4 RAW50 route
 };
 
 [[nodiscard]] inline GateHold defaultGateHold(const LensRoute& lens) noexcept {
@@ -116,6 +120,22 @@ struct RecipeInputs {
         c.required = lens.companionSize.has_value();
         c.source = lens.companionSize ? "profile" : lens.photoStream ? "capture_stream" : in.forcedCompanion ? "override" : "rule";
         r.companion = c;
+    }
+    if (in.hybrid3xAdmissionOnly) {
+        // Exact Photon-like topology: YUV preview + RAW50 capture. Do not create a RAW viewfinder.
+        // The YUV ImageReader is only drained in phase 1 (black on-screen preview); no pixel
+        // renderer is claimed. A required companion must never be silently removed by fallback.
+        CompanionRecipe c;
+        c.privateFormat = false;
+        c.size = std::pair<uint32_t, uint32_t>{2560u, 1920u};
+        c.targeted = true;
+        c.physical = false;  // direct Camera ID4, no physical routing via a logical ID
+        c.detach = false;
+        c.required = true;
+        c.source = "x14u_hybrid3x_phase1";
+        r.companion = c;
+        r.hybrid3xAdmissionOnly = true;
+        r.photoIncludePreview = false;  // no RAW viewfinder output on still requests
     }
     r.auxJpeg = lens.auxJpegSize;
     r.auxJpegBufferUsage = lens.auxJpegBufferUsage;

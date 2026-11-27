@@ -963,10 +963,22 @@ struct NativeCameraController::Impl final : CameraEventSink {
             rollbackCameraStartLocked(lock, "start_ladder_gave_up");
             return;
         }
+        // Explicit opt-in only. Do not affect other lenses or normal GalleryFix operation.
+        const bool hybridArmed = systemProperty("debug.rawr.x14u_hybrid3x") == "1";
+        const bool hybridEligible = route.cameraId == "4" && route.physicalCameraId.empty() &&
+                                    route.photoStream && route.photoStream->width == 8192u &&
+                                    route.photoStream->height == 6144u &&
+                                    route.photoStream->format == geometry::RawPixelFormat::Raw16 &&
+                                    route.opMode == 0x900Du;
+        const bool hybrid3x = hybridArmed && hybridEligible;
+        if (hybridArmed && !hybridEligible)
+            diag("X14U_HYBRID3X_SKIP reason=route_requires_direct_ID4_photoStream_RAW16_8192x6144_opmode_0x900D");
+        if (hybrid3x)
+            diag("X14U_HYBRID3X_PHASE1_BEGIN cameraId=4 op=0x900D expectedOutputs=YUV2560x1920,RAW16_8192x6144 rawOutputs=1 previewDisplay=not_implemented");
         const SessionRecipe recipe = resolveSessionRecipe(
             route, RecipeInputs{companionOverride == "1",
                                 companionByRule && ladderPlan != CameraStartLadder::Plan::RawOnly &&
-                                    !rawOnlyRoutes.count(companionRouteKey)});
+                                    !rawOnlyRoutes.count(companionRouteKey), hybrid3x});
         const bool companionStream = recipe.companion.has_value();
         if (route.disableCompanion)
             diag("CAMERA_COMPANION_DISABLED lens=" + route.lensId + " source=profile");
@@ -994,10 +1006,10 @@ struct NativeCameraController::Impl final : CameraEventSink {
         try {
             configured = callbacks.configurePreview &&
                          callbacks.configurePreview(setupGeneration, *setupContext, setupCapabilities);
-            if (configured && callbacks.createRawWindow)
+            if (configured && !hybrid3x && callbacks.createRawWindow)
                 window = callbacks.createRawWindow(setupGeneration, route.stream.width, route.stream.height,
                                                    route.stream.format);
-            if (configured && window && route.photoStream && callbacks.createCaptureWindow)
+            if (configured && (hybrid3x || window) && route.photoStream && callbacks.createCaptureWindow)
                 captureWindow = callbacks.createCaptureWindow(setupGeneration, route.photoStream->width,
                                                               route.photoStream->height,
                                                               route.photoStream->format);
@@ -1012,15 +1024,15 @@ struct NativeCameraController::Impl final : CameraEventSink {
             lock.lock();
             return;
         }
-        if (!configured || !window || (route.photoStream && !captureWindow)) {
+        if (!configured || (!hybrid3x && !window) || (route.photoStream && !captureWindow)) {
             // Not handed to the device session yet: nothing else owns them.
             lock.unlock();
             if (configured && window && callbacks.destroyRawWindow) callbacks.destroyRawWindow(setupGeneration);
             if (captureWindow && callbacks.destroyCaptureWindow) callbacks.destroyCaptureWindow(setupGeneration);
             lock.lock();
             rollbackCameraStartLocked(lock, !configured ? "configure_preview"
-                                            : !window   ? "create_raw_window"
-                                                        : "create_capture_window");
+                                            : (!hybrid3x && !window) ? "create_raw_window"
+                                                                      : "create_capture_window");
             return;
         }
         deviceSession.setRawWindow(window);
@@ -1049,7 +1061,7 @@ struct NativeCameraController::Impl final : CameraEventSink {
             // RAW-only through a full reopen: the failed configure can take
             // the device down with it.
             const bool retryRawOnly =
-                opened && companionStream && companionOverride != "1" && !route.companionSize &&
+                opened && companionStream && !hybrid3x && companionOverride != "1" && !route.companionSize &&
                 (ladderEligible ? !startLadder.rawOnly(ladderKey) : rawOnlyRoutes.insert(companionRouteKey).second);
             if (retryRawOnly) {
                 if (ladderEligible) startLadder.configureRejected(ladderKey);

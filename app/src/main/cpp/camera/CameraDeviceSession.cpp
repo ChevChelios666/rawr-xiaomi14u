@@ -570,7 +570,8 @@ bool CameraDeviceSession::createSession(ANativeWindow* window, const std::option
     companionDetachable_ = false;
     stillGate_ = recipe.gate;
 
-    if (!device_ || !rawWindow_) {
+    if (!device_ || (!recipe.hybrid3xAdmissionOnly && !rawWindow_) ||
+        (recipe.hybrid3xAdmissionOnly && !captureWindow_)) {
         return false;
     }
 
@@ -583,9 +584,12 @@ bool CameraDeviceSession::createSession(ANativeWindow* window, const std::option
     RequestStatus s = ACAMERA_OK;
     const std::string physicalCameraId = selected ? selected->physicalCameraId : std::string();
     std::vector<SessionOutput> outputs;
-    outputs.push_back({rawWindow_, physicalCameraId, recipe.rawStreamUseCase});
+    if (!recipe.hybrid3xAdmissionOnly)
+        outputs.push_back({rawWindow_, physicalCameraId, recipe.rawStreamUseCase});
+    else
+        diag("X14U_HYBRID3X_TOPOLOGY preview=YUV420_2560x1920 capture=RAW16_8192x6144 rawOutputs=1 binnedRawOutput=0");
     const uint32_t rawWidth = selected ? selected->stream.width : 0, rawHeight = selected ? selected->stream.height : 0;
-    profileCompanionTargeted_ = !selected || selected->companionTargeted;
+    profileCompanionTargeted_ = recipe.hybrid3xAdmissionOnly || !selected || selected->companionTargeted;
     stopViewfinderForPhotos_ = selected && selected->stopViewfinderForPhotos;
     captureStillTemplate_ = recipe.captureStillTemplate;
     photoIncludePreview_ = recipe.photoIncludePreview;
@@ -746,15 +750,19 @@ bool CameraDeviceSession::createSession(ANativeWindow* window, const std::option
         return fail("request", "status=" + statusText(s));
     }
 
-    s = request_->addTarget(rawWindow_);
-    if (!ok(s)) {
-        return fail("add_target", "status=" + statusText(s));
+    if (!recipe.hybrid3xAdmissionOnly) {
+        s = request_->addTarget(rawWindow_);
+        if (!ok(s)) {
+            return fail("add_target", "status=" + statusText(s));
+        }
     }
     if (companionWindow_ && profileCompanionTargeted_) {
         s = request_->addTarget(companionWindow_);
         if (!ok(s)) return fail("add_companion_target", "status=" + statusText(s));
         companionTargeted_ = true;
     }
+    if (recipe.hybrid3xAdmissionOnly && !companionTargeted_)
+        return fail("hybrid3x", "reason=missing_yuv_repeating_target");
 
     applyPreviewRequestDefaults(request_.get(), *cameraContext_, minimalDefaults);
     // Stills, multiframe bursts and video all come from this repeating RAW

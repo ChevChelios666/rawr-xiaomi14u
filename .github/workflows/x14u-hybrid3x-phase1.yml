@@ -1,0 +1,38 @@
+name: X14U Hybrid3x Admission Phase 1
+on:
+  push:
+    branches:
+      - lab/x14u-hybrid3x-admission-phase1-20261127
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools ndk;29.0.14206865 cmake;3.31.6
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: false
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Static source guard
+        run: |
+          grep -q 'hybrid3xAdmissionOnly' app/src/main/cpp/camera/CameraDeviceSession.cpp
+          grep -q 'X14U_HYBRID3X_TOPOLOGY' app/src/main/cpp/camera/CameraDeviceSession.cpp
+          grep -q 'com.rawr.camera' app/build.gradle.kts
+          grep -q 'x14u.hybrid3xlab' app/build.gradle.kts
+      - name: Build debug APK
+        run: ./gradlew :app:assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: X14U-HYBRID3X-PHASE1-${{ github.sha }}
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 14
