@@ -192,11 +192,12 @@ public final class MainActivity extends Activity {
                 if(keys!=null)for(CaptureRequest.Key<?> key:keys)
                     if(VALIDATION_KEY.equals(key.getName())) {listed=key;break;}
                 if(listed==null) {log("KEY_NOT_LISTED variant_B_no_change_no_capture "+VALIDATION_KEY);stop();return;}
-                Class<?> type=listed.getType();
-                log("KEY_FOUND name="+listed.getName()+" type="+type.getName());
-                if(type!=byte[].class) {log("KEY_TYPE_MISMATCH do_not_guess "+type);stop();return;}
+                // X14U SCAM TEST reported this key as byte[]. Android public Camera2
+                // API does not expose CaptureRequest.Key#getType().
+                log("KEY_FOUND name="+listed.getName()+" type=byte[]_from_X14U_SCAM_dump");
                 CaptureRequest.Builder params=device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
-                params.set((CaptureRequest.Key<byte[]>)listed,new byte[]{1});
+                CaptureRequest.Key<byte[]> typedKey = new CaptureRequest.Key<>(VALIDATION_KEY,byte[].class);
+                params.set(typedKey,new byte[]{1});
                 sc.setSessionParameters(params.build());
                 log("SESSION_KEY_REQUESTED "+VALIDATION_KEY+" type=byte[] value=01");
             } else log("CONTROL_NO_VENDOR_SESSION_KEY");
