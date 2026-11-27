@@ -1,0 +1,10 @@
+{
+  "source": ["SCAM-TEST-1.13.apk", "SCAMERA-0.98-31295-SCAM.apk"],
+  "derived_app_package": "com.x14u.scamlab",
+  "controls": {"A":"no vendor session key", "B":"only overrideResourceCostValidation byte[]{1}"},
+  "topology": "Camera ID4/5, 0x900D, YUV2560x1920 repeating + one RAW_SENSOR8192x6144 still",
+  "build": "pending CI",
+  "on_device": "UNVERIFIED",
+  "raw50_bayer": "UNVERIFIED",
+  "installed_working_apps_modified": false
+}

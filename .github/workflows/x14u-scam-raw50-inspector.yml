@@ -1,0 +1,36 @@
+name: X14U SCAM RAW50 ImageReader Inspector
+on:
+  push:
+    branches:
+      - lab/x14u-scam-raw50-inspector-20261127
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Guard original apps and test ABI
+        shell: bash
+        run: |
+          test -f scamlab/src/main/java/com/x14u/scamlab/MainActivity.java
+          grep -q 'overrideResourceCostValidation' scamlab/src/main/java/com/x14u/scamlab/MainActivity.java
+          grep -q 'RAW_Q' scamlab/src/main/java/com/x14u/scamlab/MainActivity.java
+          grep -q 'com.x14u.scamlab' scamlab/build.gradle.kts
+      - name: Assemble separate diagnostic APK
+        run: ./gradlew :scamlab:assembleDebug --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: X14U-SCAM-RAW50-LAB-${{ github.sha }}
+          path: scamlab/build/outputs/apk/debug/*.apk
+          retention-days: 14
